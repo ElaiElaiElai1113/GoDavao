@@ -4,6 +4,8 @@ import 'package:godavao/features/dashboard/presentation/dashboard_page.dart';
 import 'package:godavao/features/dashboard/presentation/testing_dashboard_page.dart';
 import 'package:godavao/features/maps/passenger_map_page.dart';
 import 'package:godavao/features/ride_status/presentation/driver_ride_status_page.dart';
+import 'package:godavao/features/ride_status/presentation/driver_rides_page.dart';
+import 'package:godavao/features/ride_status/presentation/passenger_rides_page.dart';
 import 'package:godavao/features/routes/presentation/pages/driver_route_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'features/auth/presentation/auth_page.dart';
@@ -34,6 +36,7 @@ class GoDavaoApp extends StatelessWidget {
       routes: {
         '/dashboard': (context) => const DashboardPage(),
         '/driver_rides': (context) => const DriverRidesPage(),
+        '/passenger_rides': (_) => const PassengerRidesPage(),
         '/testing': (context) => const TestingDashboardPage(),
         '/passenger_map': (context) => const PassengerMapPage(),
         '/driver_route': (context) => const DriverRoutePage(),

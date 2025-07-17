@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../auth/presentation/auth_page.dart';
-import '../../routes/presentation/pages/driver_route_page.dart';
 import '../../maps/passenger_map_page.dart';
+import '../../routes/presentation/pages/driver_route_page.dart';
+import '../../ride_status/presentation/driver_rides_page.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -16,17 +18,28 @@ class _DashboardPageState extends State<DashboardPage> {
   Map<String, dynamic>? userInfo;
   bool loading = true;
 
+  @override
+  void initState() {
+    super.initState();
+    fetchUserInfo();
+  }
+
   Future<void> fetchUserInfo() async {
     final user = supabase.auth.currentUser;
     if (user == null) return;
 
-    final response =
-        await supabase.from('users').select().eq('id', user.id).single();
+    try {
+      final response =
+          await supabase.from('users').select().eq('id', user.id).single();
 
-    setState(() {
-      userInfo = response;
-      loading = false;
-    });
+      setState(() {
+        userInfo = response;
+        loading = false;
+      });
+    } catch (e) {
+      debugPrint("Error fetching user info: $e");
+      setState(() => loading = false);
+    }
   }
 
   void _logout() async {
@@ -37,12 +50,6 @@ class _DashboardPageState extends State<DashboardPage> {
       MaterialPageRoute(builder: (_) => const AuthPage()),
       (_) => false,
     );
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    fetchUserInfo();
   }
 
   @override
@@ -85,6 +92,8 @@ class _DashboardPageState extends State<DashboardPage> {
             Text("Role: $role"),
             if (role == 'driver') Text("Vehicle Info: $vehicle"),
             const SizedBox(height: 24),
+
+            // Passenger UI
             if (role == 'passenger') ...[
               ElevatedButton(
                 onPressed: () {
@@ -97,11 +106,14 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
               ElevatedButton(
                 onPressed: () {
-                  Navigator.pushNamed(context, '/testing');
+                  Navigator.pushNamed(context, '/passenger_rides');
                 },
-                child: const Text("Open Testing Dashboard"),
+                child: const Text("View My Rides"),
               ),
-            ] else if (role == 'driver') ...[
+            ],
+
+            // Driver UI
+            if (role == 'driver') ...[
               ElevatedButton(
                 onPressed: () {
                   Navigator.push(
@@ -113,9 +125,12 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
               ElevatedButton(
                 onPressed: () {
-                  Navigator.pushNamed(context, '/driver_rides');
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const DriverRidesPage()),
+                  );
                 },
-                child: const Text('View Ride Matches'),
+                child: const Text("View Ride Matches"),
               ),
             ],
           ],

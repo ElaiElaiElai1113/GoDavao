@@ -95,7 +95,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (_) => PassengerRideStatusPage(matchId: matchId),
+              builder: (_) => PassengerRideStatusPage(rideRequestId: rideId),
             ),
           );
         } else {
