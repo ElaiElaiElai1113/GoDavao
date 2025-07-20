@@ -1,12 +1,14 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class PassengerRideStatusPage extends StatefulWidget {
-  final String rideRequestId;
-  const PassengerRideStatusPage({super.key, required this.rideRequestId});
+  final String matchId;
+  const PassengerRideStatusPage({Key? key, required this.matchId})
+    : super(key: key);
 
   @override
   State<PassengerRideStatusPage> createState() =>
@@ -16,177 +18,187 @@ class PassengerRideStatusPage extends StatefulWidget {
 class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
   final supabase = Supabase.instance.client;
 
-  String status = 'pending';
-  String pickupAddress = '';
-  String destinationAddress = '';
-  String? driverName;
+  Map<String, dynamic>? ride;
+  LatLng? _driverPos;
   bool loading = true;
-
-  late final StreamSubscription<List<Map<String, dynamic>>> _rideSub;
-
-  final statusStages = ['pending', 'accepted', 'en_route', 'completed'];
+  String? errorMessage;
+  StreamSubscription<List<Map<String, dynamic>>>? _rideSub;
+  StreamSubscription<List<Map<String, dynamic>>>? _locSub;
 
   @override
   void initState() {
     super.initState();
-    _initRide();
-    _subscribeToRideStatus();
-  }
-
-  Future<void> _initRide() async {
-    final result =
-        await supabase
-            .from('ride_requests')
-            .select('pickup_lat, pickup_lng, destination_lat, destination_lng')
-            .eq('id', widget.rideRequestId)
-            .maybeSingle();
-
-    if (result == null) return;
-
-    final pickup = await _reverseGeocode(
-      result['pickup_lat'],
-      result['pickup_lng'],
-    );
-    final destination = await _reverseGeocode(
-      result['destination_lat'],
-      result['destination_lng'],
-    );
-
-    if (!mounted) return;
-    setState(() {
-      pickupAddress = pickup;
-      destinationAddress = destination;
-    });
-
-    _fetchDriverName();
-  }
-
-  Future<void> _fetchDriverName() async {
-    final match =
-        await supabase
-            .from('ride_matches')
-            .select('driver_routes(driver_id, users(name))')
-            .eq('ride_request_id', widget.rideRequestId)
-            .maybeSingle();
-
-    if (match != null &&
-        match['driver_routes'] != null &&
-        match['driver_routes']['users'] != null) {
-      if (!mounted) return;
-      setState(() {
-        driverName = match['driver_routes']['users']['name'] ?? 'Driver';
-      });
-    }
-
-    if (!mounted) return;
-    setState(() => loading = false);
-  }
-
-  void _subscribeToRideStatus() {
+    _loadRide();
     _rideSub = supabase
-        .from('ride_requests')
+        .from('ride_matches')
         .stream(primaryKey: ['id'])
-        .eq('id', widget.rideRequestId)
-        .listen((event) {
-          if (!mounted || event.isEmpty) return;
-          setState(() {
-            status = event.first['status'] ?? 'pending';
-          });
+        .eq('id', widget.matchId)
+        .listen((_) => _loadRide());
+    _locSub = supabase
+        .from('driver_locations')
+        .stream(primaryKey: ['ride_match_id'])
+        .eq('ride_match_id', widget.matchId)
+        .listen((rows) {
+          if (rows.isNotEmpty) {
+            final r = rows.first;
+            final lat = r['lat'] as double?;
+            final lng = r['lng'] as double?;
+            if (lat != null && lng != null) {
+              setState(() => _driverPos = LatLng(lat, lng));
+            }
+          }
         });
-  }
-
-  Future<String> _reverseGeocode(dynamic lat, dynamic lng) async {
-    try {
-      final latD = lat is double ? lat : double.tryParse(lat.toString());
-      final lngD = lng is double ? lng : double.tryParse(lng.toString());
-      if (latD == null || lngD == null) return 'Unknown location';
-
-      final placemarks = await placemarkFromCoordinates(latD, lngD);
-      if (placemarks.isNotEmpty) {
-        final place = placemarks.first;
-        return "${place.street}, ${place.locality}, ${place.country}";
-      }
-    } catch (e) {
-      debugPrint("Geocoding failed: $e");
-    }
-    return 'Unknown location';
-  }
-
-  Future<void> _cancelRide() async {
-    await supabase
-        .from('ride_requests')
-        .update({'status': 'cancelled'})
-        .eq('id', widget.rideRequestId);
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Ride cancelled')));
-    Navigator.pop(context);
-  }
-
-  int getCurrentStep() {
-    final index = statusStages.indexOf(status);
-    return index >= 0 ? index : 0;
   }
 
   @override
   void dispose() {
-    _rideSub.cancel();
+    _rideSub?.cancel();
+    _locSub?.cancel();
     super.dispose();
+  }
+
+  Future<void> _loadRide() async {
+    setState(() {
+      loading = true;
+      errorMessage = null;
+    });
+    try {
+      final resp =
+          await supabase
+              .from('ride_matches')
+              .select(r'''
+            id,
+            status,
+            ride_requests(
+              pickup_lat,
+              pickup_lng,
+              destination_lat,
+              destination_lng,
+              users(name)
+            )
+          ''')
+              .eq('id', widget.matchId)
+              .maybeSingle();
+
+      if (resp == null || resp['ride_requests'] == null) {
+        throw Exception('Ride not found');
+      }
+      setState(() {
+        ride = resp;
+        loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        errorMessage = e.toString();
+        loading = false;
+      });
+    }
+  }
+
+  Future<String> _rev(double lat, double lng) async {
+    try {
+      final pm = await placemarkFromCoordinates(lat, lng);
+      final p = pm.first;
+      return '${p.street}, ${p.locality}';
+    } catch (_) {
+      return 'Unknown location';
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (loading)
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (errorMessage != null)
+      return Scaffold(body: Center(child: Text(errorMessage!)));
+
+    final req = ride!['ride_requests'];
+    final pickup = LatLng(
+      double.parse(req['pickup_lat'].toString()),
+      double.parse(req['pickup_lng'].toString()),
+    );
+    final dest = LatLng(
+      double.parse(req['destination_lat'].toString()),
+      double.parse(req['destination_lng'].toString()),
+    );
+    final bounds = LatLngBounds.fromPoints([pickup, dest]);
+    final passenger = req['users']?['name'] as String? ?? 'Unknown';
+    final status = ride!['status'] as String;
+
     return Scaffold(
-      appBar: AppBar(title: const Text("Ride Status")),
-      body:
-          loading
-              ? const Center(child: CircularProgressIndicator())
-              : Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (driverName != null)
-                      Text(
-                        "Driver: $driverName",
-                        style: Theme.of(context).textTheme.titleMedium,
+      appBar: AppBar(title: const Text('Ride Status')),
+      body: Column(
+        children: [
+          Expanded(
+            child: FlutterMap(
+              options: MapOptions(
+                bounds: bounds,
+                boundsOptions: const FitBoundsOptions(
+                  padding: EdgeInsets.all(32),
+                ),
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.example.godavao',
+                ),
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: pickup,
+                      width: 40,
+                      height: 40,
+                      child: const Icon(
+                        Icons.location_pin,
+                        color: Colors.green,
                       ),
-                    const SizedBox(height: 12),
-                    Text("Pickup: $pickupAddress"),
-                    Text("Destination: $destinationAddress"),
-                    const SizedBox(height: 24),
-                    Stepper(
-                      currentStep: getCurrentStep(),
-                      steps:
-                          statusStages
-                              .map(
-                                (s) => Step(
-                                  title: Text(s.toUpperCase()),
-                                  content: const SizedBox.shrink(),
-                                  isActive:
-                                      statusStages.indexOf(s) <=
-                                      getCurrentStep(),
-                                ),
-                              )
-                              .toList(),
                     ),
-                    const Spacer(),
-                    if (status == 'pending')
-                      Center(
-                        child: ElevatedButton.icon(
-                          icon: const Icon(Icons.cancel),
-                          onPressed: _cancelRide,
-                          label: const Text("Cancel Ride"),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                          ),
+                    Marker(
+                      point: dest,
+                      width: 40,
+                      height: 40,
+                      child: const Icon(Icons.flag, color: Colors.red),
+                    ),
+                    if (_driverPos != null)
+                      Marker(
+                        point: _driverPos!,
+                        width: 40,
+                        height: 40,
+                        child: const Icon(
+                          Icons.directions_car,
+                          color: Colors.blue,
                         ),
                       ),
                   ],
                 ),
-              ),
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: [pickup, dest],
+                      strokeWidth: 4,
+                      color: Colors.blue,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Passenger: $passenger',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text('Status: ${status.toUpperCase()}'),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

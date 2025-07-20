@@ -1,13 +1,16 @@
+// lib/features/ride_status/presentation/driver_rides_page.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'driver_ride_status_page.dart';
 
 class DriverRidesPage extends StatefulWidget {
-  const DriverRidesPage({super.key});
+  const DriverRidesPage({Key? key}) : super(key: key);
 
   @override
   State<DriverRidesPage> createState() => _DriverRidesPageState();
@@ -15,270 +18,177 @@ class DriverRidesPage extends StatefulWidget {
 
 class _DriverRidesPageState extends State<DriverRidesPage> {
   final supabase = Supabase.instance.client;
-  List<Map<String, dynamic>> ongoingRides = [];
-  List<Map<String, dynamic>> completedRides = [];
-  bool loading = true;
+  final _poly = PolylinePoints();
+
+  List<Map<String, dynamic>> _ongoing = [];
+  List<Map<String, dynamic>> _completed = [];
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadDriverMatches();
+    _loadMatches();
   }
 
-  Future<void> _loadDriverMatches() async {
+  Future<void> _loadMatches() async {
     final user = supabase.auth.currentUser;
     if (user == null) return;
 
-    setState(() => loading = true);
+    setState(() => _loading = true);
 
-    try {
-      final response = await supabase
-          .from('ride_matches')
-          .select('''
-            id,
-            status,
-            created_at,
-            ride_requests(
-              pickup_lat,
-              pickup_lng,
-              destination_lat,
-              destination_lng,
-              users(name)
-            )
-          ''')
-          .eq('driver_id', user.id)
-          .order('created_at', ascending: false);
+    // 1) Get this driver's most recent route (with its id)
+    final routeData =
+        await supabase
+            .from('driver_routes')
+            .select('id, route_polyline')
+            .eq('driver_id', user.id)
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
 
-      List<Map<String, dynamic>> ongoing = [];
-      List<Map<String, dynamic>> completed = [];
+    if (routeData == null) {
+      // No route published yet
+      setState(() {
+        _ongoing = [];
+        _completed = [];
+        _loading = false;
+      });
+      return;
+    }
 
-      for (final ride in response) {
-        final request = ride['ride_requests'];
-        final pickupLat = request['pickup_lat'];
-        final pickupLng = request['pickup_lng'];
-        final destinationLat = request['destination_lat'];
-        final destinationLng = request['destination_lng'];
+    final routeId = routeData['id'] as String;
+    final encoded = routeData['route_polyline'] as String;
+    final pts =
+        _poly
+            .decodePolyline(encoded)
+            .map((p) => LatLng(p.latitude, p.longitude))
+            .toList();
 
-        final pickup = await _reverseGeocode(pickupLat, pickupLng);
-        final destination = await _reverseGeocode(
-          destinationLat,
-          destinationLng,
-        );
+    // 2) Fetch all matches on this route
+    final matches = await supabase
+        .from('ride_matches')
+        .select(r'''
+      id,
+      status,
+      ride_requests(pickup_lat, pickup_lng, users(name)),
+      created_at
+    ''')
+        .eq('driver_route_id', routeId)
+        .order('created_at', ascending: true);
 
-        final rideData = {
-          'id': ride['id'],
-          'status': ride['status'],
-          'created_at': ride['created_at'],
-          'passenger': request['users']?['name'] ?? 'Unknown',
-          'pickup_address': pickup,
-          'destination_address': destination,
-          'pickup_latlng': LatLng(pickupLat, pickupLng),
-          'destination_latlng': LatLng(destinationLat, destinationLng),
-        };
+    // 3) Enrich & sort by nearest index along route
+    final dist = Distance();
+    final enriched = <Map<String, dynamic>>[];
+    for (final m in matches) {
+      final req = m['ride_requests'];
+      final lat = double.parse(req['pickup_lat'].toString());
+      final lng = double.parse(req['pickup_lng'].toString());
+      final pick = LatLng(lat, lng);
 
-        if (ride['status'] == 'completed') {
-          completed.add(rideData);
-        } else {
-          ongoing.add(rideData);
+      int bestI = 0;
+      double bestD = double.infinity;
+      for (int i = 0; i < pts.length; i++) {
+        final d = dist(pts[i], pick);
+        if (d < bestD) {
+          bestD = d;
+          bestI = i;
         }
       }
 
-      if (!mounted) return;
-      setState(() {
-        ongoingRides = ongoing;
-        completedRides = completed;
-        loading = false;
+      enriched.add({
+        'id': m['id'],
+        'status': m['status'],
+        'created_at': m['created_at'],
+        'passenger': req['users']?['name'] ?? 'Unknown',
+        'pickup_point': pick,
+        'route_index': bestI,
       });
-    } catch (e) {
-      debugPrint("Error loading driver matches: $e");
-      setState(() => loading = false);
     }
+
+    enriched.sort((a, b) => a['route_index'].compareTo(b['route_index']));
+
+    final ongoing = enriched.where((e) => e['status'] != 'completed').toList();
+    final completed =
+        enriched.where((e) => e['status'] == 'completed').toList();
+
+    if (!mounted) return;
+    setState(() {
+      _ongoing = ongoing;
+      _completed = completed;
+      _loading = false;
+    });
   }
 
-  Future<String> _reverseGeocode(dynamic lat, dynamic lng) async {
-    try {
-      final latDouble = lat is double ? lat : double.tryParse(lat.toString());
-      final lngDouble = lng is double ? lng : double.tryParse(lng.toString());
-
-      if (latDouble == null || lngDouble == null) return 'Unknown location';
-
-      final placemarks = await placemarkFromCoordinates(latDouble, lngDouble);
-      final place = placemarks.first;
-      return "${place.street}, ${place.locality}";
-    } catch (_) {
-      return 'Unknown location';
-    }
-  }
-
-  Color statusColor(String status) {
-    switch (status) {
+  Color _statusColor(String s) {
+    switch (s) {
       case 'pending':
         return Colors.grey;
       case 'accepted':
-        return Colors.amber;
-      case 'en_route':
         return Colors.blue;
+      case 'en_route':
+        return Colors.orange;
       case 'completed':
         return Colors.green;
-      case 'cancelled':
-        return Colors.red;
       default:
         return Colors.black;
     }
   }
 
-  Widget rideCard(Map<String, dynamic> ride) {
-    final status = ride['status'];
-    final date = DateFormat(
+  Widget _card(Map<String, dynamic> m) {
+    final dt = DateFormat(
       'MMM d, y h:mm a',
-    ).format(DateTime.parse(ride['created_at']));
-    final pickupLatLng = ride['pickup_latlng'];
-    final destLatLng = ride['destination_latlng'];
-
-    if (pickupLatLng == null || destLatLng == null) {
-      return const SizedBox.shrink();
-    }
-
-    final mapPreview = SizedBox(
-      height: 120,
-      child: FlutterMap(
-        options: MapOptions(
-          center: LatLng(
-            (pickupLatLng.latitude + destLatLng.latitude) / 2,
-            (pickupLatLng.longitude + destLatLng.longitude) / 2,
+    ).format(DateTime.parse(m['created_at']));
+    return Card(
+      child: ListTile(
+        title: Text("Pickup: ${m['passenger']}"),
+        subtitle: Text(dt),
+        trailing: Text(
+          m['status'].toUpperCase(),
+          style: TextStyle(
+            color: _statusColor(m['status']),
+            fontWeight: FontWeight.bold,
           ),
-          zoom: 13,
-          interactiveFlags: InteractiveFlag.none,
         ),
-        children: [
-          TileLayer(
-            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: 'com.example.godavao',
-          ),
-          MarkerLayer(
-            markers: [
-              Marker(
-                width: 40,
-                height: 40,
-                point: pickupLatLng,
-                child: const Icon(
-                  Icons.location_pin,
-                  color: Colors.green,
-                  size: 30,
-                ),
-              ),
-              Marker(
-                width: 40,
-                height: 40,
-                point: destLatLng,
-                child: const Icon(Icons.flag, color: Colors.red, size: 30),
-              ),
-            ],
-          ),
-          PolylineLayer(
-            polylines: [
-              Polyline(
-                points: [pickupLatLng, destLatLng],
-                color: Colors.blue,
-                strokeWidth: 4,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-
-    return InkWell(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => DriverRideStatusPage(matchId: ride['id']),
-          ),
-        );
-      },
-      child: Card(
-        margin: const EdgeInsets.symmetric(vertical: 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            mapPreview,
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "${ride['pickup_address']} → ${ride['destination_address']}",
-                  ),
-                  const SizedBox(height: 4),
-                  Text("Passenger: ${ride['passenger']}"),
-                  Text(date),
-                  Align(
-                    alignment: Alignment.bottomRight,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: statusColor(status).withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        status.toUpperCase(),
-                        style: TextStyle(
-                          color: statusColor(status),
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+        onTap:
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => DriverRideStatusPage(rideId: m['id']),
               ),
             ),
-          ],
-        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Your Ride Matches')),
-      body:
-          loading
-              ? const Center(child: CircularProgressIndicator())
-              : RefreshIndicator(
-                onRefresh: _loadDriverMatches,
-                child: ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    if (ongoingRides.isNotEmpty) ...[
-                      const Text(
-                        "Ongoing Rides",
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ...ongoingRides.map(rideCard),
-                      const Divider(),
-                    ],
-                    const Text(
-                      "Completed Rides",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    ...completedRides.map(rideCard),
-                  ],
-                ),
-              ),
+      appBar: AppBar(title: const Text('Pickups on My Route')),
+      body: RefreshIndicator(
+        onRefresh: _loadMatches,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const Text(
+              'Upcoming Pickups',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            ..._ongoing.map(_card),
+            const Divider(),
+            const Text(
+              'Completed Pickups',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            ..._completed.map(_card),
+          ],
+        ),
+      ),
     );
   }
 }

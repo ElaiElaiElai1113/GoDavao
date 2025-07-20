@@ -59,8 +59,36 @@ class _DashboardPageState extends State<DashboardPage> {
     }
 
     if (userInfo == null) {
-      return const Scaffold(
-        body: Center(child: Text("Failed to load user info.")),
+      return Scaffold(
+        appBar: AppBar(title: const Text("GoDavao")),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, color: Colors.red, size: 64),
+                const SizedBox(height: 12),
+                const Text(
+                  "Failed to load user info.",
+                  style: TextStyle(fontSize: 18),
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton.icon(
+                  onPressed: fetchUserInfo,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text("Retry"),
+                ),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: _logout,
+                  icon: const Icon(Icons.logout),
+                  label: const Text("Logout and Re-authenticate"),
+                ),
+              ],
+            ),
+          ),
+        ),
       );
     }
 

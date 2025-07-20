@@ -1,182 +1,187 @@
 import 'package:flutter/material.dart';
-import 'package:geocoding/geocoding.dart';
-import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:godavao/features/ride_status/presentation/passenger_ride_status_page.dart';
+import 'package:geocoding/geocoding.dart';
+import 'driver_ride_status_page.dart';
 
 class PassengerRidesPage extends StatefulWidget {
-  const PassengerRidesPage({super.key});
+  const PassengerRidesPage({Key? key}) : super(key: key);
 
   @override
-  State<PassengerRidesPage> createState() => _PassengerRidesPageState();
+  _PassengerRidesPageState createState() => _PassengerRidesPageState();
 }
 
 class _PassengerRidesPageState extends State<PassengerRidesPage> {
-  final supabase = Supabase.instance.client;
-  List<Map<String, dynamic>> ongoingRides = [];
-  List<Map<String, dynamic>> pastRides = [];
-  bool loading = true;
+  final _supabase = Supabase.instance.client;
+  RealtimeChannel? _rideChannel;
+
+  List<Map<String, dynamic>> _rides = [];
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    fetchRides();
+    _loadRides();
+    _setupRealtimeSubscription();
   }
 
-  Future<void> fetchRides() async {
-    final user = supabase.auth.currentUser;
+  Future<void> _loadRides() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) {
+      setState(() => _loading = false);
+      return;
+    }
+
+    try {
+      final data = await _supabase
+          .from('ride_requests')
+          .select('''
+            id,
+            pickup_lat,
+            pickup_lng,
+            destination_lat,
+            destination_lng,
+            status,
+            created_at
+          ''')
+          .eq('passenger_id', user.id)
+          .order('created_at', ascending: false);
+
+      // Cast raw results
+      final raw =
+          (data as List<dynamic>)
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
+
+      // Reverse‑geocode each ride
+      final enriched = await Future.wait(
+        raw.map((ride) async {
+          final pLat = ride['pickup_lat'] as double;
+          final pLng = ride['pickup_lng'] as double;
+          final dLat = ride['destination_lat'] as double;
+          final dLng = ride['destination_lng'] as double;
+
+          // get the first Placemark (most accurate)
+          final pMarks = await placemarkFromCoordinates(pLat, pLng);
+          final dMarks = await placemarkFromCoordinates(dLat, dLng);
+
+          String fmt(Placemark m) => [
+            m.thoroughfare,
+            m.subLocality,
+            m.locality,
+          ].where((s) => s != null && s.isNotEmpty).join(', ');
+
+          return {
+            ...ride,
+            'pickup_address': fmt(pMarks.first),
+            'destination_address': fmt(dMarks.first),
+          };
+        }),
+      );
+
+      setState(() {
+        _rides = enriched;
+      });
+    } catch (e) {
+      debugPrint('Error loading or geocoding rides: $e');
+    } finally {
+      setState(() => _loading = false);
+    }
+  }
+
+  void _setupRealtimeSubscription() {
+    final user = _supabase.auth.currentUser;
     if (user == null) return;
 
-    final data = await supabase
-        .from('ride_requests')
-        .select()
-        .eq('passenger_id', user.id)
-        .order('created_at', ascending: false);
-
-    List<Map<String, dynamic>> ongoing = [];
-    List<Map<String, dynamic>> past = [];
-
-    for (final ride in data) {
-      final status = ride['status'];
-      final pickup = await reverseGeocode(
-        ride['pickup_lat'],
-        ride['pickup_lng'],
-      );
-      final destination = await reverseGeocode(
-        ride['destination_lat'],
-        ride['destination_lng'],
-      );
-
-      final enriched = {
-        ...ride,
-        'pickup_address': pickup,
-        'destination_address': destination,
-      };
-
-      if (status == 'completed' || status == 'cancelled') {
-        past.add(enriched);
-      } else {
-        ongoing.add(enriched);
-      }
-    }
-
-    if (!mounted) return;
-    setState(() {
-      ongoingRides = ongoing;
-      pastRides = past;
-      loading = false;
-    });
-  }
-
-  Future<String> reverseGeocode(double lat, double lng) async {
-    try {
-      final placemarks = await placemarkFromCoordinates(lat, lng);
-      final place = placemarks.first;
-      return '${place.street}, ${place.locality}';
-    } catch (_) {
-      return 'Unknown location';
-    }
-  }
-
-  Color statusColor(String status) {
-    switch (status) {
-      case 'pending':
-        return Colors.grey;
-      case 'accepted':
-        return Colors.blue;
-      case 'en_route':
-        return Colors.orange;
-      case 'completed':
-        return Colors.green;
-      case 'cancelled':
-        return Colors.red;
-      default:
-        return Colors.black;
-    }
-  }
-
-  Widget rideCard(Map<String, dynamic> ride) {
-    final status = ride['status'];
-    final createdAt = DateTime.parse(ride['created_at']);
-    final date = DateFormat('MMM d, y h:mm a').format(createdAt);
-
-    final card = Card(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      child: ListTile(
-        title: Text(
-          '${ride['pickup_address']} → ${ride['destination_address']}',
-        ),
-        subtitle: Text(date),
-        trailing: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: statusColor(status).withOpacity(0.15),
-            borderRadius: BorderRadius.circular(8),
+    _rideChannel = _supabase.channel('ride_requests:${user.id}');
+    _rideChannel!
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'ride_requests',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'passenger_id',
+            value: user.id,
           ),
-          child: Text(
-            status.toUpperCase(),
-            style: TextStyle(
-              color: statusColor(status),
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-      ),
-    );
+          callback: (payload) async {
+            final updated = Map<String, dynamic>.from(payload.newRecord!);
 
-    // Make card tappable only for ongoing rides
-    if (status == 'pending' || status == 'accepted' || status == 'en_route') {
-      return InkWell(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder:
-                  (_) => PassengerRideStatusPage(rideRequestId: ride['id']),
-            ),
-          );
-        },
-        child: card,
-      );
-    } else {
-      return card;
+            // also geocode the updated record:
+            final pMarks = await placemarkFromCoordinates(
+              updated['pickup_lat'] as double,
+              updated['pickup_lng'] as double,
+            );
+            final dMarks = await placemarkFromCoordinates(
+              updated['destination_lat'] as double,
+              updated['destination_lng'] as double,
+            );
+
+            String fmt(Placemark m) => [
+              m.thoroughfare,
+              m.subLocality,
+              m.locality,
+            ].where((s) => s != null && s.isNotEmpty).join(', ');
+
+            updated['pickup_address'] = fmt(pMarks.first);
+            updated['destination_address'] = fmt(dMarks.first);
+
+            setState(() {
+              _rides =
+                  _rides
+                      .map((r) => r['id'] == updated['id'] ? updated : r)
+                      .toList();
+            });
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Ride status: ${updated['status']}'),
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          },
+        )
+        .subscribe();
+  }
+
+  @override
+  void dispose() {
+    if (_rideChannel != null) {
+      _supabase.removeChannel(_rideChannel!);
     }
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("My Rides")),
+      appBar: AppBar(title: const Text('My Rides')),
       body:
-          loading
+          _loading
               ? const Center(child: CircularProgressIndicator())
               : RefreshIndicator(
-                onRefresh: fetchRides,
-                child: ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    if (ongoingRides.isNotEmpty) ...[
-                      const Text(
-                        "Ongoing Rides",
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
+                onRefresh: _loadRides,
+                child: ListView.builder(
+                  itemCount: _rides.length,
+                  itemBuilder: (context, i) {
+                    final ride = _rides[i];
+                    return ListTile(
+                      title: Text(
+                        '${ride['pickup_address']}\n'
+                        '→ ${ride['destination_address']}',
                       ),
-                      const SizedBox(height: 8),
-                      ...ongoingRides.map(rideCard),
-                      const Divider(),
-                    ],
-                    const Text(
-                      "Ride History",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    ...pastRides.map(rideCard),
-                  ],
+                      subtitle: Text('Status: ${ride['status']}'),
+                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                      onTap:
+                          () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder:
+                                  (_) =>
+                                      DriverRideStatusPage(rideId: ride['id']),
+                            ),
+                          ),
+                    );
+                  },
                 ),
               ),
     );

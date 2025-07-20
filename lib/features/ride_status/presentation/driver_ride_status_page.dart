@@ -1,210 +1,156 @@
+// lib/features/ride_status/presentation/driver_ride_status_page.dart
+
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:geocoding/geocoding.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:flutter_map/flutter_map.dart';
 
 class DriverRideStatusPage extends StatefulWidget {
-  final String matchId;
-  const DriverRideStatusPage({super.key, required this.matchId});
+  final String rideId;
+  const DriverRideStatusPage({required this.rideId, Key? key})
+    : super(key: key);
 
   @override
-  State<DriverRideStatusPage> createState() => _DriverRideStatusPageState();
+  _DriverRideStatusPageState createState() => _DriverRideStatusPageState();
 }
 
 class _DriverRideStatusPageState extends State<DriverRideStatusPage> {
-  final supabase = Supabase.instance.client;
-  Map<String, dynamic>? ride;
-  bool loading = true;
-  String? errorMessage;
+  final _supabase = Supabase.instance.client;
+
+  Map<String, dynamic>? _ride;
+  bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _loadRide();
+    _loadRideDetails();
   }
 
-  Future<void> _loadRide() async {
+  Future<void> _loadRideDetails() async {
     setState(() {
-      loading = true;
-      errorMessage = null;
+      _loading = true;
+      _error = null;
     });
 
     try {
-      final response =
-          await supabase
-              .from('ride_matches')
+      final data =
+          await _supabase
+              .from('ride_requests')
               .select('''
             id,
+            pickup_lat,
+            pickup_lng,
+            destination_lat,
+            destination_lng,
             status,
-            ride_requests(
-              pickup_lat,
-              pickup_lng,
-              destination_lat,
-              destination_lng,
-              users(name)
-            )
+            driver_route_id
           ''')
-              .eq('id', widget.matchId)
-              .maybeSingle();
+              .eq('id', widget.rideId)
+              .single();
 
-      if (response == null) {
-        throw Exception('Ride not found');
+      if (data == null) {
+        throw Exception('Ride not found or missing request info');
       }
 
       setState(() {
-        ride = response;
-        loading = false;
+        _ride = Map<String, dynamic>.from(data as Map);
+      });
+    } on PostgrestException catch (e) {
+      setState(() {
+        _error = 'Supabase error: ${e.message}';
       });
     } catch (e) {
       setState(() {
-        errorMessage = 'Error loading ride details: $e';
-        loading = false;
+        _error = e.toString();
       });
-    }
-  }
-
-  Future<String> _reverseGeocode(dynamic lat, dynamic lng) async {
-    try {
-      final latDouble = double.tryParse(lat.toString());
-      final lngDouble = double.tryParse(lng.toString());
-
-      if (latDouble == null || lngDouble == null) return 'Unknown location';
-
-      final placemarks = await placemarkFromCoordinates(latDouble, lngDouble);
-      if (placemarks.isNotEmpty) {
-        final place = placemarks.first;
-        return '${place.street}, ${place.locality}, ${place.country}';
-      }
-    } catch (e) {
-      debugPrint("Reverse geocoding failed: $e");
-    }
-    return 'Unknown location';
-  }
-
-  Future<void> _updateStatus(String newStatus) async {
-    try {
-      await supabase
-          .from('ride_matches')
-          .update({'status': newStatus})
-          .eq('id', widget.matchId);
-
-      _loadRide();
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to update status: $e')));
-    }
-  }
-
-  Widget _buildStatusControls(String currentStatus) {
-    if (currentStatus == 'pending') {
-      return ElevatedButton(
-        onPressed: () => _updateStatus('accepted'),
-        child: const Text('Accept Ride'),
-      );
-    } else if (currentStatus == 'accepted') {
-      return ElevatedButton(
-        onPressed: () => _updateStatus('en_route'),
-        child: const Text('Start Ride'),
-      );
-    } else if (currentStatus == 'en_route') {
-      return ElevatedButton(
-        onPressed: () => _updateStatus('completed'),
-        child: const Text('Complete Ride'),
-      );
-    } else {
-      return const SizedBox.shrink();
+    } finally {
+      setState(() {
+        _loading = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    if (errorMessage != null) {
-      return Scaffold(body: Center(child: Text(errorMessage!)));
-    }
-
-    final request = ride!['ride_requests'];
-    final pickup = LatLng(
-      double.parse(request['pickup_lat'].toString()),
-      double.parse(request['pickup_lng'].toString()),
-    );
-    final destination = LatLng(
-      double.parse(request['destination_lat'].toString()),
-      double.parse(request['destination_lng'].toString()),
-    );
-    final bounds = LatLngBounds.fromPoints([pickup, destination]);
-
     return Scaffold(
       appBar: AppBar(title: const Text('Ride Details')),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            height: 300,
-            child: FlutterMap(
-              options: MapOptions(
-                bounds: bounds,
-                boundsOptions: FitBoundsOptions(padding: EdgeInsets.all(32)),
+      body:
+          _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+              ? Center(child: Text('Error: $_error'))
+              : _ride == null
+              ? const Center(child: Text('No ride data'))
+              : _buildRideView(),
+    );
+  }
+
+  Widget _buildRideView() {
+    final r = _ride!;
+    final pickup = LatLng(r['pickup_lat'], r['pickup_lng']);
+    final dest = LatLng(r['destination_lat'], r['destination_lng']);
+
+    return Column(
+      children: [
+        ListTile(
+          title: Text('Status: ${r['status']}'),
+          subtitle: Text(
+            'Driver route: ${r['driver_route_id'] ?? 'unassigned'}',
+          ),
+        ),
+        Expanded(
+          child: FlutterMap(
+            options: MapOptions(center: pickup, zoom: 13),
+            children: [
+              // base map tiles
+              TileLayer(
+                urlTemplate:
+                    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                subdomains: const ['a', 'b', 'c'],
               ),
-              children: [
-                TileLayer(
-                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.example.godavao',
-                ),
-                MarkerLayer(
-                  markers: [
-                    Marker(
-                      width: 40,
-                      height: 40,
-                      point: pickup,
-                      child: const Icon(
-                        Icons.location_pin,
-                        color: Colors.green,
-                      ),
+
+              // route polyline
+              PolylineLayer(
+                polylines: [
+                  Polyline(
+                    points: [pickup, dest],
+                    strokeWidth: 4,
+                    // omit color to use default or let the theme pick it
+                    color: Theme.of(context).primaryColor,
+                  ),
+                ],
+              ),
+
+              // pickup & destination markers
+              MarkerLayer(
+                markers: [
+                  Marker(
+                    point: pickup,
+                    width: 40,
+                    height: 40,
+                    child: const Icon(
+                      Icons.location_pin,
+                      size: 40,
+                      color: Colors.green,
                     ),
-                    Marker(
-                      width: 40,
-                      height: 40,
-                      point: destination,
-                      child: const Icon(Icons.flag, color: Colors.red),
+                  ),
+                  Marker(
+                    point: dest,
+                    width: 40,
+                    height: 40,
+                    child: const Icon(
+                      Icons.location_pin,
+                      size: 40,
+                      color: Colors.red,
                     ),
-                  ],
-                ),
-                PolylineLayer(
-                  polylines: [
-                    Polyline(
-                      points: [pickup, destination],
-                      strokeWidth: 4.0,
-                      color: Colors.blue,
-                    ),
-                  ],
-                ),
-              ],
-            ),
+                  ),
+                ],
+              ),
+            ],
           ),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Passenger: ${request['users']['name'] ?? 'Unknown'}',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                Text('Status: ${ride!['status']}'),
-                const SizedBox(height: 16),
-                _buildStatusControls(ride!['status']),
-              ],
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

@@ -1,170 +1,317 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:godavao/features/ride_matching/data/ride_matching_service.dart';
-import 'package:godavao/features/ride_requests/data/ride_request_service.dart';
-import 'package:godavao/features/ride_requests/models/ride_request_model.dart';
-import 'package:godavao/features/ride_status/presentation/passenger_ride_status_page.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:godavao/features/ride_status/presentation/passenger_ride_status_page.dart';
+
+class DriverRoute {
+  final String id;
+  final String driverId;
+  final String polyline;
+  DriverRoute.fromMap(Map<String, dynamic> m)
+    : id = m['id'] as String,
+      driverId = m['driver_id'] as String,
+      polyline = m['route_polyline'] as String;
+}
 
 class PassengerMapPage extends StatefulWidget {
   const PassengerMapPage({super.key});
-
   @override
   State<PassengerMapPage> createState() => _PassengerMapPageState();
 }
 
 class _PassengerMapPageState extends State<PassengerMapPage> {
-  final LatLng _davaoCenter = LatLng(7.1907, 125.4553);
+  final supabase = Supabase.instance.client;
+  final polylinePoints = PolylinePoints();
+
+  bool loading = true;
+  String? errorMessage;
+
+  List<DriverRoute> _routes = [];
+  DriverRoute? _selectedRoute;
+  List<LatLng> _routePoints = [];
+
   LatLng? _pickupLocation;
-  LatLng? _destinationLocation;
-
   String? _pickupAddress;
-  String? _destinationAddress;
 
-  void _onMapTap(TapPosition tapPosition, LatLng latlng) async {
-    final address = await _getAddressFromLatLng(latlng);
+  LatLng? _dropoffLocation;
+  String? _dropoffAddress;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRoutes();
+  }
+
+  Future<void> _loadRoutes() async {
     setState(() {
-      if (_pickupLocation == null) {
-        _pickupLocation = latlng;
-        _pickupAddress = address;
-      } else if (_destinationLocation == null) {
-        _destinationLocation = latlng;
-        _destinationAddress = address;
-      } else {
-        _pickupLocation = latlng;
-        _pickupAddress = address;
-        _destinationLocation = null;
-        _destinationAddress = null;
+      loading = true;
+      errorMessage = null;
+    });
+    try {
+      final data = await supabase
+          .from('driver_routes')
+          .select('id, driver_id, route_polyline');
+      _routes =
+          (data as List)
+              .map((m) => DriverRoute.fromMap(m as Map<String, dynamic>))
+              .toList();
+
+      if (_routes.isEmpty) {
+        throw Exception('No driver routes available');
       }
+
+      // auto‑select first
+      _selectRoute(_routes.first);
+    } catch (e) {
+      errorMessage = 'Failed to load routes: $e';
+    } finally {
+      setState(() => loading = false);
+    }
+  }
+
+  void _selectRoute(DriverRoute r) {
+    final pts = polylinePoints.decodePolyline(r.polyline);
+    _routePoints = pts.map((p) => LatLng(p.latitude, p.longitude)).toList();
+    setState(() {
+      _selectedRoute = r;
+      _pickupLocation = null;
+      _pickupAddress = null;
+      _dropoffLocation = null;
+      _dropoffAddress = null;
     });
   }
 
-  Future<String> _getAddressFromLatLng(LatLng location) async {
+  Future<String> _reverseGeocode(LatLng loc) async {
     try {
-      final placemarks = await placemarkFromCoordinates(
-        location.latitude,
-        location.longitude,
-      );
-      final place = placemarks.first;
-      return '${place.street}, ${place.locality}, ${place.administrativeArea}';
-    } catch (e) {
+      final pm = await placemarkFromCoordinates(loc.latitude, loc.longitude);
+      final p = pm.first;
+      return '${p.street}, ${p.locality}';
+    } catch (_) {
       return 'Unknown location';
     }
   }
 
-  void _confirmRideRequest() async {
-    if (_pickupLocation != null && _destinationLocation != null) {
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) return;
+  LatLng _snapToRoute(LatLng tap, List<LatLng> route) {
+    final dist = Distance();
+    LatLng best = route.first;
+    double bestD = double.infinity;
 
-      final ride = RideRequest(
-        passengerId: user.id,
-        pickupLat: _pickupLocation!.latitude,
-        pickupLng: _pickupLocation!.longitude,
-        destinationLat: _destinationLocation!.latitude,
-        destinationLng: _destinationLocation!.longitude,
-      );
+    for (int i = 0; i < route.length - 1; i++) {
+      final a = route[i], b = route[i + 1];
+      final dx = b.longitude - a.longitude;
+      final dy = b.latitude - a.latitude;
+      final len2 = dx * dx + dy * dy;
+      if (len2 == 0) continue;
 
-      try {
-        // 1. Save ride request
-        final rideId = await RideRequestService().saveRideRequest(ride);
-
-        // 2. Attempt match
-        await RideMatchService().matchRideRequest(
-          rideRequestId: rideId,
-          pickup: _pickupLocation!,
-          destination: _destinationLocation!,
-        );
-
-        // 3. Fetch matched driver
-        final match =
-            await Supabase.instance.client
-                .from('ride_matches')
-                .select('id, driver_routes(driver_id, users(name))')
-                .eq('ride_request_id', rideId)
-                .limit(1)
-                .maybeSingle();
-
-        if (!mounted) return;
-
-        if (match != null && match['id'] != null) {
-          final matchId = match['id'] as String;
-
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (_) => PassengerRideStatusPage(rideRequestId: rideId),
-            ),
-          );
-        } else {
-          showDialog(
-            context: context,
-            builder:
-                (_) => AlertDialog(
-                  title: const Text('Ride Confirmed'),
-                  content: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("Pickup Address: $_pickupAddress"),
-                      Text("Destination Address: $_destinationAddress"),
-                      const SizedBox(height: 10),
-                      Text("Ride saved, but no match found yet."),
-                    ],
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text("OK"),
-                    ),
-                  ],
-                ),
-          );
-        }
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error: $e")));
+      final t =
+          ((tap.longitude - a.longitude) * dx +
+              (tap.latitude - a.latitude) * dy) /
+          len2;
+      final ct = t.clamp(0.0, 1.0);
+      final proj = LatLng(a.latitude + ct * dy, a.longitude + ct * dx);
+      final d = dist(proj, tap);
+      if (d < bestD) {
+        bestD = d;
+        best = proj;
       }
     }
+    return best;
+  }
+
+  void _onMapTap(TapPosition _, LatLng latlng) async {
+    if (_routePoints.isEmpty) return;
+
+    if (_pickupLocation == null) {
+      // first tap = pickup
+      final snapped = _snapToRoute(latlng, _routePoints);
+      final addr = await _reverseGeocode(snapped);
+      setState(() {
+        _pickupLocation = snapped;
+        _pickupAddress = addr;
+      });
+    } else if (_dropoffLocation == null) {
+      // second tap = dropoff
+      final addr = await _reverseGeocode(latlng);
+      setState(() {
+        _dropoffLocation = latlng;
+        _dropoffAddress = addr;
+      });
+    } else {
+      // third tap resets pickup & dropoff
+      final snapped = _snapToRoute(latlng, _routePoints);
+      final addr = await _reverseGeocode(snapped);
+      setState(() {
+        _pickupLocation = snapped;
+        _pickupAddress = addr;
+        _dropoffLocation = null;
+        _dropoffAddress = null;
+      });
+    }
+  }
+
+  Future<void> _confirmRide() async {
+    final user = supabase.auth.currentUser;
+    final route = _selectedRoute;
+    final pickup = _pickupLocation;
+    if (user == null || route == null || pickup == null) return;
+
+    // 1) Create the ride_request
+    final rideReq =
+        await supabase
+            .from('ride_requests')
+            .insert({
+              'passenger_id': user.id,
+              'pickup_lat': pickup.latitude,
+              'pickup_lng': pickup.longitude,
+              'destination_lat':
+                  (_dropoffLocation ?? _routePoints.last).latitude,
+              'destination_lng':
+                  (_dropoffLocation ?? _routePoints.last).longitude,
+              'driver_route_id': route.id,
+            })
+            .select('id')
+            .maybeSingle();
+
+    final rideRequestId = rideReq?['id'] as String?;
+    if (rideRequestId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to create ride request')),
+      );
+      return;
+    }
+
+    // 2) Create the ride_match
+    final match =
+        await supabase
+            .from('ride_matches')
+            .insert({
+              'ride_request_id': rideRequestId,
+              'driver_route_id': route.id,
+              'driver_id': route.driverId,
+              'status': 'pending',
+            })
+            .select('id')
+            .maybeSingle();
+
+    final matchId = match?['id'] as String?;
+    if (matchId == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Failed to match ride')));
+      return;
+    }
+
+    // 3) Navigate to status page with the ride_match ID
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PassengerRideStatusPage(matchId: matchId),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (errorMessage != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Join a Driver Route')),
+        body: Center(child: Text(errorMessage!)),
+      );
+    }
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Select Pickup and Destination')),
-      body: Stack(
+      appBar: AppBar(title: const Text('Join a Driver Route')),
+      body: Column(
         children: [
-          FlutterMap(
-            options: MapOptions(
-              center: _davaoCenter,
-              zoom: 13.0,
-              onTap: _onMapTap,
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.godavao',
-              ),
-              if (_pickupLocation != null)
-                MarkerLayer(
-                  markers: [
-                    Marker(
-                      point: _pickupLocation!,
-                      width: 40,
-                      height: 40,
-                      child: const Icon(
-                        Icons.location_pin,
-                        color: Colors.green,
-                        size: 40,
+          // Route selector
+          SizedBox(
+            height: 80,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: _routes.length,
+              itemBuilder: (_, i) {
+                final r = _routes[i];
+                final sel = r.id == _selectedRoute?.id;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 12,
+                  ),
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: sel ? Colors.blue : Colors.grey.shade200,
+                    ),
+                    onPressed: () => _selectRoute(r),
+                    child: Text(
+                      'Route ${i + 1}',
+                      style: TextStyle(
+                        color: sel ? Colors.white : Colors.black,
                       ),
                     ),
-                    if (_destinationLocation != null)
+                  ),
+                );
+              },
+            ),
+          ),
+
+          // Map
+          Expanded(
+            child: FlutterMap(
+              options: MapOptions(
+                center:
+                    _routePoints.isNotEmpty
+                        ? _routePoints.first
+                        : LatLng(7.1907, 125.4553),
+                zoom: 13,
+                onTap: _onMapTap,
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.example.godavao',
+                ),
+
+                // route polyline
+                if (_routePoints.isNotEmpty)
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(
+                        points: _routePoints,
+                        strokeWidth: 4,
+                        color: Colors.blue,
+                      ),
+                    ],
+                  ),
+
+                // pickup marker
+                if (_pickupLocation != null)
+                  MarkerLayer(
+                    markers: [
                       Marker(
-                        point: _destinationLocation!,
+                        point: _pickupLocation!,
+                        width: 40,
+                        height: 40,
+                        child: const Icon(
+                          Icons.location_pin,
+                          color: Colors.green,
+                          size: 40,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                // dropoff marker
+                if (_dropoffLocation != null)
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: _dropoffLocation!,
                         width: 40,
                         height: 40,
                         child: const Icon(
@@ -173,30 +320,20 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                           size: 40,
                         ),
                       ),
-                  ],
-                ),
-              if (_pickupLocation != null && _destinationLocation != null)
-                PolylineLayer(
-                  polylines: [
-                    Polyline(
-                      points: [_pickupLocation!, _destinationLocation!],
-                      strokeWidth: 4.0,
-                      color: Colors.blue,
-                    ),
-                  ],
-                ),
-            ],
-          ),
-          if (_pickupLocation != null && _destinationLocation != null)
-            Positioned(
-              bottom: 20,
-              left: 20,
-              right: 20,
-              child: ElevatedButton(
-                onPressed: _confirmRideRequest,
-                child: const Text("Confirm Ride Request"),
-              ),
+                    ],
+                  ),
+              ],
             ),
+          ),
+
+          // confirm button
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: ElevatedButton(
+              onPressed: _pickupLocation == null ? null : _confirmRide,
+              child: const Text('Request Ride'),
+            ),
+          ),
         ],
       ),
     );

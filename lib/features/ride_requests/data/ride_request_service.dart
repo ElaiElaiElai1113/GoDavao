@@ -1,55 +1,42 @@
-import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../models/ride_request_model.dart';
+import 'package:godavao/features/ride_requests/models/ride_request_model.dart';
 
 class RideRequestService {
-  final supabase = Supabase.instance.client;
+  final _supabase = Supabase.instance.client;
 
-  Future<String> saveRideRequest(RideRequest ride) async {
-    final response =
-        await supabase
+  Future<String> saveRideRequest(RideRequest r) async {
+    final resp =
+        await _supabase
             .from('ride_requests')
-            .insert({
-              'passenger_id': ride.passengerId,
-              'pickup_lat': ride.pickupLat,
-              'pickup_lng': ride.pickupLng,
-              'destination_lat': ride.destinationLat,
-              'destination_lng': ride.destinationLng,
-              'status': 'pending',
-            })
+            .insert(r.toMap())
             .select('id')
             .single();
-
-    return response['id'] as String;
+    return resp['id'] as String;
   }
 
-  Future<void> matchWithDriver(
-    int rideRequestId,
-    LatLng pickup,
-    LatLng destination,
-  ) async {
-    final driverRoutes = await supabase.from('driver_routes').select();
+  /// Existing matching logic updated to use driver_route_id
+  Future<void> matchRideRequest({required String rideRequestId}) async {
+    final r =
+        await _supabase
+            .from('ride_requests')
+            .select('driver_route_id')
+            .eq('id', rideRequestId)
+            .single();
+    final routeId = r['driver_route_id'] as String;
 
-    for (final route in driverRoutes) {
-      final startLat = route['start_lat'] as double;
-      final startLng = route['start_lng'] as double;
-      final endLat = route['end_lat'] as double;
-      final endLng = route['end_lng'] as double;
+    final route =
+        await _supabase
+            .from('driver_routes')
+            .select('driver_id')
+            .eq('id', routeId)
+            .single();
+    final driverId = route['driver_id'] as String;
 
-      final isStartNearby =
-          (pickup.latitude - startLat).abs() < 0.05 &&
-          (pickup.longitude - startLng).abs() < 0.05;
-      final isEndNearby =
-          (destination.latitude - endLat).abs() < 0.05 &&
-          (destination.longitude - endLng).abs() < 0.05;
-
-      if (isStartNearby && isEndNearby) {
-        await supabase.from('ride_matches').insert({
-          'ride_request_id': rideRequestId,
-          'driver_id': route['driver_id'],
-        });
-        break;
-      }
-    }
+    await _supabase.from('ride_matches').insert({
+      'ride_request_id': rideRequestId,
+      'driver_route_id': routeId,
+      'driver_id': driverId,
+      'status': 'pending',
+    });
   }
 }
