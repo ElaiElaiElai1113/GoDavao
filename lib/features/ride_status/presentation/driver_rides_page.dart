@@ -1,5 +1,3 @@
-// lib/features/ride_status/presentation/driver_rides_page.dart
-
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geocoding/geocoding.dart';
@@ -7,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
+
 import 'driver_ride_status_page.dart';
 
 class DriverRidesPage extends StatefulWidget {
@@ -36,7 +35,7 @@ class _DriverRidesPageState extends State<DriverRidesPage> {
 
     setState(() => _loading = true);
 
-    // 1) Get this driver's most recent route (with its id)
+    // 1) get latest driver_route for this driver
     final routeData =
         await supabase
             .from('driver_routes')
@@ -47,48 +46,56 @@ class _DriverRidesPageState extends State<DriverRidesPage> {
             .maybeSingle();
 
     if (routeData == null) {
-      // No route published yet
-      setState(() {
-        _ongoing = [];
-        _completed = [];
-        _loading = false;
-      });
+      _ongoing = [];
+      _completed = [];
+      setState(() => _loading = false);
       return;
     }
 
     final routeId = routeData['id'] as String;
-    final encoded = routeData['route_polyline'] as String;
     final pts =
         _poly
-            .decodePolyline(encoded)
+            .decodePolyline(routeData['route_polyline'] as String)
             .map((p) => LatLng(p.latitude, p.longitude))
             .toList();
 
-    // 2) Fetch all matches on this route
-    final matches = await supabase
+    // 2) fetch all ride_matches on that route, include ride_request_id
+    final raw = await supabase
         .from('ride_matches')
         .select(r'''
-      id,
-      status,
-      ride_requests(pickup_lat, pickup_lng, users(name)),
-      created_at
-    ''')
+          id,
+          ride_request_id,
+          status,
+          created_at,
+          ride_requests (
+            pickup_lat,
+            pickup_lng,
+            destination_lat,
+            destination_lng
+          ),
+          users!ride_matches_driver_id_fkey(name)
+        ''')
         .eq('driver_route_id', routeId)
         .order('created_at', ascending: true);
 
-    // 3) Enrich & sort by nearest index along route
+    // 3) enrich & drop any with null ride_request_id
     final dist = Distance();
     final enriched = <Map<String, dynamic>>[];
-    for (final m in matches) {
-      final req = m['ride_requests'];
-      final lat = double.parse(req['pickup_lat'].toString());
-      final lng = double.parse(req['pickup_lng'].toString());
-      final pick = LatLng(lat, lng);
+    for (var m in raw as List) {
+      final reqId = m['ride_request_id'] as String?;
+      if (reqId == null) continue; // skip null!
 
+      final rideReq = m['ride_requests'] as Map<String, dynamic>;
+      final pickPt = LatLng(
+        rideReq['pickup_lat'] as double,
+        rideReq['pickup_lng'] as double,
+      );
+
+      // nearest index on route
       int bestI = 0;
       double bestD = double.infinity;
-      for (int i = 0; i < pts.length; i++) {
-        final d = dist(pts[i], pick);
+      for (var i = 0; i < pts.length; i++) {
+        final d = dist(pts[i], pickPt);
         if (d < bestD) {
           bestD = d;
           bestI = i;
@@ -96,27 +103,19 @@ class _DriverRidesPageState extends State<DriverRidesPage> {
       }
 
       enriched.add({
-        'id': m['id'],
+        'route_index': bestI,
+        'ride_request_id': reqId, // safe now
         'status': m['status'],
         'created_at': m['created_at'],
-        'passenger': req['users']?['name'] ?? 'Unknown',
-        'pickup_point': pick,
-        'route_index': bestI,
+        'passenger': (m['users'] as Map)['name'] ?? 'Unknown',
       });
     }
 
     enriched.sort((a, b) => a['route_index'].compareTo(b['route_index']));
+    _ongoing = enriched.where((e) => e['status'] != 'completed').toList();
+    _completed = enriched.where((e) => e['status'] == 'completed').toList();
 
-    final ongoing = enriched.where((e) => e['status'] != 'completed').toList();
-    final completed =
-        enriched.where((e) => e['status'] == 'completed').toList();
-
-    if (!mounted) return;
-    setState(() {
-      _ongoing = ongoing;
-      _completed = completed;
-      _loading = false;
-    });
+    setState(() => _loading = false);
   }
 
   Color _statusColor(String s) {
@@ -137,25 +136,29 @@ class _DriverRidesPageState extends State<DriverRidesPage> {
   Widget _card(Map<String, dynamic> m) {
     final dt = DateFormat(
       'MMM d, y h:mm a',
-    ).format(DateTime.parse(m['created_at']));
+    ).format(DateTime.parse(m['created_at'] as String));
     return Card(
       child: ListTile(
         title: Text("Pickup: ${m['passenger']}"),
         subtitle: Text(dt),
         trailing: Text(
-          m['status'].toUpperCase(),
+          (m['status'] as String).toUpperCase(),
           style: TextStyle(
-            color: _statusColor(m['status']),
+            color: _statusColor(m['status'] as String),
             fontWeight: FontWeight.bold,
           ),
         ),
-        onTap:
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => DriverRideStatusPage(rideId: m['id']),
-              ),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder:
+                  (_) => DriverRideStatusPage(
+                    rideId: m['ride_request_id'] as String,
+                  ),
             ),
+          );
+        },
       ),
     );
   }
@@ -165,7 +168,6 @@ class _DriverRidesPageState extends State<DriverRidesPage> {
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-
     return Scaffold(
       appBar: AppBar(title: const Text('Pickups on My Route')),
       body: RefreshIndicator(

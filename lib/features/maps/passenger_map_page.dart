@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/features/ride_status/presentation/passenger_ride_status_page.dart';
+import '../ride/presentation/confirm_ride_page.dart';
 
 class DriverRoute {
   final String id;
@@ -152,67 +153,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     }
   }
 
-  Future<void> _confirmRide() async {
-    final user = supabase.auth.currentUser;
-    final route = _selectedRoute;
-    final pickup = _pickupLocation;
-    if (user == null || route == null || pickup == null) return;
-
-    // 1) Create the ride_request
-    final rideReq =
-        await supabase
-            .from('ride_requests')
-            .insert({
-              'passenger_id': user.id,
-              'pickup_lat': pickup.latitude,
-              'pickup_lng': pickup.longitude,
-              'destination_lat':
-                  (_dropoffLocation ?? _routePoints.last).latitude,
-              'destination_lng':
-                  (_dropoffLocation ?? _routePoints.last).longitude,
-              'driver_route_id': route.id,
-            })
-            .select('id')
-            .maybeSingle();
-
-    final rideRequestId = rideReq?['id'] as String?;
-    if (rideRequestId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to create ride request')),
-      );
-      return;
-    }
-
-    // 2) Create the ride_match
-    final match =
-        await supabase
-            .from('ride_matches')
-            .insert({
-              'ride_request_id': rideRequestId,
-              'driver_route_id': route.id,
-              'driver_id': route.driverId,
-              'status': 'pending',
-            })
-            .select('id')
-            .maybeSingle();
-
-    final matchId = match?['id'] as String?;
-    if (matchId == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Failed to match ride')));
-      return;
-    }
-
-    // 3) Navigate to status page with the ride_match ID
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => PassengerRideStatusPage(matchId: matchId),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (loading) {
@@ -330,7 +270,26 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: ElevatedButton(
-              onPressed: _pickupLocation == null ? null : _confirmRide,
+              onPressed:
+                  _pickupLocation == null
+                      ? null
+                      : () {
+                        final pickup = _pickupLocation!;
+                        // if user never tapped a dropoff, use end of route
+                        final destination =
+                            _dropoffLocation ?? _routePoints.last;
+
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder:
+                                (_) => ConfirmRidePage(
+                                  pickup: pickup,
+                                  destination: destination,
+                                ),
+                          ),
+                        );
+                      },
               child: const Text('Request Ride'),
             ),
           ),

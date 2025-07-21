@@ -11,7 +11,7 @@ class DriverRideStatusPage extends StatefulWidget {
     : super(key: key);
 
   @override
-  _DriverRideStatusPageState createState() => _DriverRideStatusPageState();
+  State<DriverRideStatusPage> createState() => _DriverRideStatusPageState();
 }
 
 class _DriverRideStatusPageState extends State<DriverRideStatusPage> {
@@ -28,13 +28,10 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage> {
   }
 
   Future<void> _loadRideDetails() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() => _loading = true);
 
     try {
-      final data =
+      final resp =
           await _supabase
               .from('ride_requests')
               .select('''
@@ -47,25 +44,28 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage> {
             driver_route_id
           ''')
               .eq('id', widget.rideId)
-              .single();
+              .maybeSingle();
 
-      if (data == null) {
-        throw Exception('Ride not found or missing request info');
+      if (resp == null) {
+        setState(() {
+          _error = 'Ride not found for id: ${widget.rideId}';
+          _loading = false;
+        });
+        return;
       }
 
       setState(() {
-        _ride = Map<String, dynamic>.from(data as Map);
+        _ride = Map<String, dynamic>.from(resp as Map);
+        _loading = false;
       });
     } on PostgrestException catch (e) {
       setState(() {
         _error = 'Supabase error: ${e.message}';
+        _loading = false;
       });
     } catch (e) {
       setState(() {
         _error = e.toString();
-      });
-    } finally {
-      setState(() {
         _loading = false;
       });
     }
@@ -73,84 +73,86 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Ride Details')),
-      body:
-          _loading
-              ? const Center(child: CircularProgressIndicator())
-              : _error != null
-              ? Center(child: Text('Error: $_error'))
-              : _ride == null
-              ? const Center(child: Text('No ride data'))
-              : _buildRideView(),
-    );
-  }
+    if (_loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (_error != null) {
+      return Scaffold(body: Center(child: Text('Error: $_error')));
+    }
+    if (_ride == null) {
+      return const Scaffold(body: Center(child: Text('No ride data')));
+    }
 
-  Widget _buildRideView() {
     final r = _ride!;
     final pickup = LatLng(r['pickup_lat'], r['pickup_lng']);
     final dest = LatLng(r['destination_lat'], r['destination_lng']);
 
-    return Column(
-      children: [
-        ListTile(
-          title: Text('Status: ${r['status']}'),
-          subtitle: Text(
-            'Driver route: ${r['driver_route_id'] ?? 'unassigned'}',
+    return Scaffold(
+      appBar: AppBar(title: const Text('Ride Details')),
+      body: Column(
+        children: [
+          ListTile(
+            title: Text('Status: ${r['status']}'),
+            subtitle: Text(
+              'Driver route: ${r['driver_route_id'] ?? 'unassigned'}',
+            ),
           ),
-        ),
-        Expanded(
-          child: FlutterMap(
-            options: MapOptions(center: pickup, zoom: 13),
-            children: [
-              // base map tiles
-              TileLayer(
-                urlTemplate:
-                    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                subdomains: const ['a', 'b', 'c'],
-              ),
-
-              // route polyline
-              PolylineLayer(
-                polylines: [
-                  Polyline(
-                    points: [pickup, dest],
-                    strokeWidth: 4,
-                    // omit color to use default or let the theme pick it
-                    color: Theme.of(context).primaryColor,
-                  ),
-                ],
-              ),
-
-              // pickup & destination markers
-              MarkerLayer(
-                markers: [
-                  Marker(
-                    point: pickup,
-                    width: 40,
-                    height: 40,
-                    child: const Icon(
-                      Icons.location_pin,
-                      size: 40,
-                      color: Colors.green,
+          Expanded(
+            child: FlutterMap(
+              options: MapOptions(center: pickup, zoom: 13),
+              // If you want to include attribution you can uncomment and use:
+              // nonRotatedChildren: [
+              //   RichAttributionWidget(
+              //     attributions: [
+              //       TextSourceAttribution('© OpenStreetMap contributors'),
+              //     ],
+              //   ),
+              // ],
+              children: [
+                TileLayer(
+                  urlTemplate:
+                      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  subdomains: const ['a', 'b', 'c'],
+                  userAgentPackageName: 'com.example.godavao',
+                ),
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: [pickup, dest],
+                      strokeWidth: 4,
+                      color: Theme.of(context).primaryColor,
                     ),
-                  ),
-                  Marker(
-                    point: dest,
-                    width: 40,
-                    height: 40,
-                    child: const Icon(
-                      Icons.location_pin,
-                      size: 40,
-                      color: Colors.red,
+                  ],
+                ),
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: pickup,
+                      width: 40,
+                      height: 40,
+                      child: const Icon(
+                        Icons.location_pin,
+                        size: 40,
+                        color: Colors.green,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                    Marker(
+                      point: dest,
+                      width: 40,
+                      height: 40,
+                      child: const Icon(
+                        Icons.location_pin,
+                        size: 40,
+                        color: Colors.red,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
