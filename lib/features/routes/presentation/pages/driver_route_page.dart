@@ -7,7 +7,7 @@ import 'package:google_polyline_algorithm/google_polyline_algorithm.dart'
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class DriverRoutePage extends StatefulWidget {
-  const DriverRoutePage({Key? key}) : super(key: key);
+  const DriverRoutePage({super.key});
 
   @override
   State<DriverRoutePage> createState() => _DriverRoutePageState();
@@ -58,7 +58,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
         const SnackBar(content: Text('Route published successfully!')),
       );
 
-      // Optionally clear the drawn points:
+      // Clear drawn points if needed
       setState(() => _routePoints.clear());
     } catch (e) {
       ScaffoldMessenger.of(

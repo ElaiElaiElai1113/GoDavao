@@ -9,7 +9,7 @@ import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'driver_ride_status_page.dart';
 
 class DriverRidesPage extends StatefulWidget {
-  const DriverRidesPage({Key? key}) : super(key: key);
+  const DriverRidesPage({super.key});
 
   @override
   State<DriverRidesPage> createState() => _DriverRidesPageState();

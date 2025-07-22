@@ -1,5 +1,3 @@
-// lib/features/ride_status/presentation/driver_ride_status_page.dart
-
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:latlong2/latlong.dart';
@@ -7,8 +5,7 @@ import 'package:flutter_map/flutter_map.dart';
 
 class DriverRideStatusPage extends StatefulWidget {
   final String rideId;
-  const DriverRideStatusPage({required this.rideId, Key? key})
-    : super(key: key);
+  const DriverRideStatusPage({required this.rideId, super.key});
 
   @override
   State<DriverRideStatusPage> createState() => _DriverRideStatusPageState();
@@ -100,14 +97,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage> {
           Expanded(
             child: FlutterMap(
               options: MapOptions(center: pickup, zoom: 13),
-              // If you want to include attribution you can uncomment and use:
-              // nonRotatedChildren: [
-              //   RichAttributionWidget(
-              //     attributions: [
-              //       TextSourceAttribution('© OpenStreetMap contributors'),
-              //     ],
-              //   ),
-              // ],
+
               children: [
                 TileLayer(
                   urlTemplate:

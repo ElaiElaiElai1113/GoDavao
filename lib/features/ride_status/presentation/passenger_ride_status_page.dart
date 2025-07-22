@@ -7,8 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class PassengerRideStatusPage extends StatefulWidget {
   final String matchId;
-  const PassengerRideStatusPage({Key? key, required this.matchId})
-    : super(key: key);
+  const PassengerRideStatusPage({super.key, required this.matchId});
 
   @override
   State<PassengerRideStatusPage> createState() =>
@@ -107,10 +106,12 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (loading)
+    if (loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    if (errorMessage != null)
+    }
+    if (errorMessage != null) {
       return Scaffold(body: Center(child: Text(errorMessage!)));
+    }
 
     final req = ride!['ride_requests'];
     final pickup = LatLng(
