@@ -1,59 +1,58 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'driver_ride_status_page.dart';
-
-// import the global plugin instance
-import 'package:godavao/main.dart' show localNotify;
+import 'package:godavao/features/ride_status/presentation/driver_ride_status_page.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class PassengerRidesPage extends StatefulWidget {
-  const PassengerRidesPage({super.key});
+  const PassengerRidesPage({Key? key}) : super(key: key);
 
   @override
-  _PassengerRidesPageState createState() => _PassengerRidesPageState();
+  State<PassengerRidesPage> createState() => _PassengerRidesPageState();
 }
 
-class _PassengerRidesPageState extends State<PassengerRidesPage> {
-  final _supabase = Supabase.instance.client;
-  RealtimeChannel? _rideChannel;
-
-  List<Map<String, dynamic>> _rides = [];
+class _PassengerRidesPageState extends State<PassengerRidesPage>
+    with SingleTickerProviderStateMixin {
+  final supabase = Supabase.instance.client;
+  late TabController _tabController;
   bool _loading = true;
+
+  List<Map<String, dynamic>> _upcoming = [];
+  List<Map<String, dynamic>> _history = [];
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _loadRides();
-    _setupRealtimeSubscription();
   }
 
-  Future<void> _showNotification(String title, String body) async {
-    const android = AndroidNotificationDetails(
-      'rides_channel',
-      'Ride Updates',
-      channelDescription: 'Alerts when ride status changes',
-      importance: Importance.max,
-      priority: Priority.high,
-    );
-    const ios = DarwinNotificationDetails();
-    await localNotify.show(
-      0,
-      title,
-      body,
-      const NotificationDetails(android: android, iOS: ios),
-    );
+  Future<String> _formatAddress(double lat, double lng) async {
+    try {
+      final pm = await placemarkFromCoordinates(lat, lng);
+      final m = pm.first;
+      final parts = <String?>[m.thoroughfare, m.subLocality, m.locality];
+      return parts
+          .where((s) => s != null && s.isNotEmpty)
+          .cast<String>()
+          .join(', ');
+    } catch (_) {
+      return 'Unknown';
+    }
   }
 
   Future<void> _loadRides() async {
-    final user = _supabase.auth.currentUser;
+    setState(() => _loading = true);
+    final user = supabase.auth.currentUser;
     if (user == null) {
       setState(() => _loading = false);
       return;
     }
 
     try {
-      final data = await _supabase
+      final data = await supabase
           .from('ride_requests')
           .select('''
             id,
@@ -61,6 +60,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
             pickup_lng,
             destination_lat,
             destination_lng,
+            fare,
             status,
             created_at
           ''')
@@ -74,130 +74,267 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
 
       final enriched = await Future.wait(
         raw.map((ride) async {
-          final pLat = ride['pickup_lat'] as double;
-          final pLng = ride['pickup_lng'] as double;
-          final dLat = ride['destination_lat'] as double;
-          final dLng = ride['destination_lng'] as double;
-
-          final pMarks = await placemarkFromCoordinates(pLat, pLng);
-          final dMarks = await placemarkFromCoordinates(dLat, dLng);
-
-          String fmt(Placemark m) => [
-            m.thoroughfare,
-            m.subLocality,
-            m.locality,
-          ].where((s) => s!.isNotEmpty).join(', ');
-
+          final pLat = (ride['pickup_lat'] as num).toDouble();
+          final pLng = (ride['pickup_lng'] as num).toDouble();
+          final dLat = (ride['destination_lat'] as num).toDouble();
+          final dLng = (ride['destination_lng'] as num).toDouble();
           return {
             ...ride,
-            'pickup_address': fmt(pMarks.first),
-            'destination_address': fmt(dMarks.first),
+            'pickup_address': await _formatAddress(pLat, pLng),
+            'destination_address': await _formatAddress(dLat, dLng),
           };
         }),
       );
 
-      setState(() => _rides = enriched);
+      setState(() {
+        _upcoming =
+            enriched.where((r) {
+              final st = r['status'] as String;
+              return ['pending', 'accepted', 'en_route'].contains(st);
+            }).toList();
+
+        // Everything else goes to history
+        _history =
+            enriched.where((r) {
+              final st = r['status'] as String;
+              return ['completed', 'declined', 'cancelled'].contains(st);
+            }).toList();
+      });
     } catch (e) {
-      debugPrint('Error loading or geocoding rides: $e');
+      debugPrint('Error loading rides: $e');
     } finally {
       setState(() => _loading = false);
     }
   }
 
-  void _setupRealtimeSubscription() {
-    final user = _supabase.auth.currentUser;
-    if (user == null) return;
-
-    _rideChannel = _supabase.channel('ride_requests:${user.id}');
-    _rideChannel!
-        .onPostgresChanges(
-          event: PostgresChangeEvent.update,
-          schema: 'public',
-          table: 'ride_requests',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'passenger_id',
-            value: user.id,
-          ),
-          callback: (payload) async {
-            final updated = Map<String, dynamic>.from(payload.newRecord!);
-            // reverse‑geocode:
-            final pMarks = await placemarkFromCoordinates(
-              updated['pickup_lat'] as double,
-              updated['pickup_lng'] as double,
-            );
-            final dMarks = await placemarkFromCoordinates(
-              updated['destination_lat'] as double,
-              updated['destination_lng'] as double,
-            );
-            String fmt(Placemark m) => [
-              m.thoroughfare,
-              m.subLocality,
-              m.locality,
-            ].where((s) => s!.isNotEmpty).join(', ');
-            updated['pickup_address'] = fmt(pMarks.first);
-            updated['destination_address'] = fmt(dMarks.first);
-
-            setState(() {
-              _rides =
-                  _rides
-                      .map((r) => r['id'] == updated['id'] ? updated : r)
-                      .toList();
-            });
-
-            // both snack bar & local notification:
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Ride status: ${updated['status']}')),
-            );
-            _showNotification(
-              'Ride Update',
-              'Your ride status is now ${updated['status']}',
-            );
-          },
-        )
-        .subscribe();
+  Color _statusColor(String s) {
+    switch (s) {
+      case 'pending':
+        return Colors.grey;
+      case 'accepted':
+        return Colors.blue;
+      case 'en_route':
+        return Colors.orange;
+      case 'completed':
+        return Colors.green;
+      case 'declined':
+        return Colors.red;
+      default:
+        return Colors.black;
+    }
   }
 
-  @override
-  void dispose() {
-    if (_rideChannel != null) {
-      _supabase.removeChannel(_rideChannel!);
-    }
-    super.dispose();
+  Widget _buildCard(Map<String, dynamic> ride, {required bool upcoming}) {
+    final dt = DateFormat(
+      'MMM d, y h:mm a',
+    ).format(DateTime.parse(ride['created_at'] as String));
+    final status = (ride['status'] as String);
+    final fare = (ride['fare'] as num?)?.toDouble() ?? 0.0;
+
+    final pLat = (ride['pickup_lat'] as num).toDouble();
+    final pLng = (ride['pickup_lng'] as num).toDouble();
+    final dLat = (ride['destination_lat'] as num).toDouble();
+    final dLng = (ride['destination_lng'] as num).toDouble();
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // mini map preview
+            SizedBox(
+              height: 120,
+              child: FlutterMap(
+                options: MapOptions(
+                  center: LatLng((pLat + dLat) / 2, (pLng + dLng) / 2),
+                  zoom: 13,
+                  interactiveFlags: InteractiveFlag.none,
+                ),
+                children: [
+                  TileLayer(
+                    urlTemplate:
+                        'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    subdomains: const ['a', 'b', 'c'],
+                    userAgentPackageName: 'com.example.godavao',
+                  ),
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(
+                        points: [LatLng(pLat, pLng), LatLng(dLat, dLng)],
+                        strokeWidth: 3,
+                        color: Colors.green.shade700,
+                      ),
+                    ],
+                  ),
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: LatLng(pLat, pLng),
+                        width: 30,
+                        height: 30,
+                        child: const Icon(
+                          Icons.location_on,
+                          color: Colors.green,
+                        ),
+                      ),
+                      Marker(
+                        point: LatLng(dLat, dLng),
+                        width: 30,
+                        height: 30,
+                        child: const Icon(Icons.flag, color: Colors.red),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 8),
+            // addresses & fare
+            Text(
+              '${ride['pickup_address']} → ${ride['destination_address']}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text('Fare: ₱${fare.toStringAsFixed(2)}'),
+            Text('Requested: $dt'),
+            const SizedBox(height: 4),
+            // status pill
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                decoration: BoxDecoration(
+                  color: _statusColor(status).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  status.toUpperCase(),
+                  style: TextStyle(
+                    color: _statusColor(status),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 8),
+            // action buttons (only for upcoming)
+            if (upcoming)
+              Row(
+                children: [
+                  if (status == 'pending')
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          // cancel ride
+                          await supabase
+                              .from('ride_requests')
+                              .update({'status': 'cancelled'})
+                              .eq('id', ride['id']);
+                          _loadRides();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                        ),
+                        child: const Text('Cancel Ride'),
+                      ),
+                    ),
+                  if (status == 'accepted' || status == 'en_route') ...[
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Contacting driver…')),
+                          );
+                        },
+                        icon: const Icon(Icons.phone),
+                        label: const Text('Contact Driver'),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+
+            // view details arrow
+            Align(
+              alignment: Alignment.centerRight,
+              child: IconButton(
+                icon: const Icon(Icons.arrow_forward_ios, size: 16),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder:
+                          (_) => DriverRideStatusPage(
+                            rideId: ride['id'] as String,
+                          ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('My Rides')),
-      body:
-          _loading
-              ? const Center(child: CircularProgressIndicator())
-              : RefreshIndicator(
-                onRefresh: _loadRides,
-                child: ListView.builder(
-                  itemCount: _rides.length,
-                  itemBuilder: (context, i) {
-                    final ride = _rides[i];
-                    return ListTile(
-                      title: Text(
-                        '${ride['pickup_address']}\n→ ${ride['destination_address']}',
-                      ),
-                      subtitle: Text('Status: ${ride['status']}'),
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                      onTap:
-                          () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder:
-                                  (_) =>
-                                      DriverRideStatusPage(rideId: ride['id']),
-                            ),
-                          ),
-                    );
-                  },
-                ),
+    if (_loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('My Rides'),
+          bottom: TabBar(
+            controller: _tabController,
+            tabs: const [Tab(text: 'Upcoming'), Tab(text: 'History')],
+          ),
+        ),
+        body: TabBarView(
+          controller: _tabController,
+          children: [
+            // Upcoming
+            RefreshIndicator(
+              onRefresh: _loadRides,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children:
+                    _upcoming
+                        .map((r) => _buildCard(r, upcoming: true))
+                        .toList(),
               ),
+            ),
+
+            // History
+            RefreshIndicator(
+              onRefresh: _loadRides,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children:
+                    _history
+                        .map((r) => _buildCard(r, upcoming: false))
+                        .toList(),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 }

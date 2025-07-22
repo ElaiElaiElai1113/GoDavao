@@ -20,6 +20,9 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+
+        // Enable JAVA8+ APIS
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -40,6 +43,7 @@ android {
 
 dependencies {
     implementation(files("libs/maps-sdk-android-1.0.0.aar.opdownload"))
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:1.1.5")
 }
 
 flutter {

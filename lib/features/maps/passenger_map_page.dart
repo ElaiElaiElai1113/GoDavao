@@ -1,10 +1,16 @@
+// lib/features/maps/passenger_map_page.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:godavao/features/ride_status/presentation/passenger_ride_status_page.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+// import your global notifications instance
+import 'package:godavao/main.dart' show localNotify;
+
 import '../ride/presentation/confirm_ride_page.dart';
 
 class DriverRoute {
@@ -60,11 +66,8 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
               .map((m) => DriverRoute.fromMap(m as Map<String, dynamic>))
               .toList();
 
-      if (_routes.isEmpty) {
-        throw Exception('No driver routes available');
-      }
+      if (_routes.isEmpty) throw Exception('No driver routes available');
 
-      // auto‑select first
       _selectRoute(_routes.first);
     } catch (e) {
       errorMessage = 'Failed to load routes: $e';
@@ -106,7 +109,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
       final dy = b.latitude - a.latitude;
       final len2 = dx * dx + dy * dy;
       if (len2 == 0) continue;
-
       final t =
           ((tap.longitude - a.longitude) * dx +
               (tap.latitude - a.latitude) * dy) /
@@ -126,7 +128,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     if (_routePoints.isEmpty) return;
 
     if (_pickupLocation == null) {
-      // first tap = pickup
       final snapped = _snapToRoute(latlng, _routePoints);
       final addr = await _reverseGeocode(snapped);
       setState(() {
@@ -134,14 +135,13 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
         _pickupAddress = addr;
       });
     } else if (_dropoffLocation == null) {
-      // second tap = dropoff
-      final addr = await _reverseGeocode(latlng);
+      final snapped = _snapToRoute(latlng, _routePoints);
+      final addr = await _reverseGeocode(snapped);
       setState(() {
-        _dropoffLocation = latlng;
+        _dropoffLocation = snapped;
         _dropoffAddress = addr;
       });
     } else {
-      // third tap resets pickup & dropoff
       final snapped = _snapToRoute(latlng, _routePoints);
       final addr = await _reverseGeocode(snapped);
       setState(() {
@@ -216,8 +216,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'com.example.godavao',
                 ),
-
-                // route polyline
                 if (_routePoints.isNotEmpty)
                   PolylineLayer(
                     polylines: [
@@ -228,8 +226,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                       ),
                     ],
                   ),
-
-                // pickup marker
                 if (_pickupLocation != null)
                   MarkerLayer(
                     markers: [
@@ -245,8 +241,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                       ),
                     ],
                   ),
-
-                // dropoff marker
                 if (_dropoffLocation != null)
                   MarkerLayer(
                     markers: [
@@ -266,19 +260,37 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
             ),
           ),
 
-          // confirm button
+          // Confirm button with local notification
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: ElevatedButton(
               onPressed:
                   _pickupLocation == null
                       ? null
-                      : () {
+                      : () async {
+                        // Fire local notification
+                        final destText = _dropoffAddress ?? 'end of the route';
+                        await localNotify.show(
+                          0,
+                          'Ride Requested',
+                          'Pickup at ${_pickupAddress ?? 'route'} → $destText',
+                          const NotificationDetails(
+                            android: AndroidNotificationDetails(
+                              'rides_channel',
+                              'Ride Updates',
+                              channelDescription:
+                                  'Alerts when you confirm a ride',
+                              importance: Importance.max,
+                              priority: Priority.high,
+                            ),
+                            iOS: DarwinNotificationDetails(),
+                          ),
+                        );
+
+                        // Navigate to confirmation
                         final pickup = _pickupLocation!;
-                        // if user never tapped a dropoff, use end of route
                         final destination =
                             _dropoffLocation ?? _routePoints.last;
-
                         Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -286,6 +298,8 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                                 (_) => ConfirmRidePage(
                                   pickup: pickup,
                                   destination: destination,
+                                  routeId: _selectedRoute!.id,
+                                  driverId: _selectedRoute!.driverId,
                                 ),
                           ),
                         );

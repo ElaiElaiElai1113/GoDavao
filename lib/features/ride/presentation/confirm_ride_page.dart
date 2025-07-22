@@ -1,21 +1,22 @@
-// lib/features/ride/presentation/confirm_ride_page.dart
-
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-// import your global plugin instance
 import 'package:godavao/main.dart' show localNotify;
 
 class ConfirmRidePage extends StatefulWidget {
   final LatLng pickup;
   final LatLng destination;
+  final String routeId;
+  final String driverId;
 
   const ConfirmRidePage({
     required this.pickup,
     required this.destination,
+    required this.routeId,
+    required this.driverId,
     super.key,
   });
 
@@ -25,15 +26,27 @@ class ConfirmRidePage extends StatefulWidget {
 
 class _ConfirmRidePageState extends State<ConfirmRidePage> {
   bool _loading = true;
-  double _distanceKm = 0.0;
-  double _fare = 0.0;
-
-  final Distance _distance = const Distance();
+  double _distanceKm = 0;
+  double _fare = 0;
+  final Distance _dist = const Distance();
 
   @override
   void initState() {
     super.initState();
     _calculateFare();
+  }
+
+  void _calculateFare() {
+    final meters = _dist(widget.pickup, widget.destination);
+    final km = meters / 1000;
+    final mins = km / 40 * 60;
+    const base = 50.0, perKm = 10.0, perMin = 2.0;
+    final fare = base + perKm * km + perMin * mins;
+    setState(() {
+      _distanceKm = km;
+      _fare = fare;
+      _loading = false;
+    });
   }
 
   Future<void> _showNotification(String title, String body) async {
@@ -53,24 +66,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     );
   }
 
-  void _calculateFare() {
-    final meters = _distance(widget.pickup, widget.destination);
-    final km = meters / 1000;
-    final mins = (km / 40) * 60;
-
-    const baseFare = 50.0;
-    const perKmRate = 10.0;
-    const perMinuteRate = 2.0;
-
-    final fare = baseFare + (perKmRate * km) + (perMinuteRate * mins);
-
-    setState(() {
-      _distanceKm = km;
-      _fare = fare;
-      _loading = false;
-    });
-  }
-
   Future<void> _confirmRide() async {
     setState(() => _loading = true);
     final supabase = Supabase.instance.client;
@@ -79,35 +74,50 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Not logged in')));
-      setState(() => _loading = false);
-      return;
+      return setState(() => _loading = false);
     }
 
     try {
-      await supabase.from('ride_requests').insert({
-        'passenger_id': user.id,
-        'pickup_lat': widget.pickup.latitude,
-        'pickup_lng': widget.pickup.longitude,
-        'destination_lat': widget.destination.latitude,
-        'destination_lng': widget.destination.longitude,
-        'fare': _fare,
+      // 1) create ride_request, stamping driver_route_id
+      final req =
+          await supabase
+              .from('ride_requests')
+              .insert({
+                'passenger_id': user.id,
+                'pickup_lat': widget.pickup.latitude,
+                'pickup_lng': widget.pickup.longitude,
+                'destination_lat': widget.destination.latitude,
+                'destination_lng': widget.destination.longitude,
+                'fare': _fare,
+                'driver_route_id': widget.routeId,
+                'status': 'pending',
+              })
+              .select('id')
+              .maybeSingle();
+      final rideReqId = req?['id'] as String?;
+
+      if (rideReqId == null) throw 'Failed to create ride request';
+
+      // 2) create ride_match
+      await supabase.from('ride_matches').insert({
+        'ride_request_id': rideReqId,
+        'driver_route_id': widget.routeId,
+        'driver_id': widget.driverId,
+        'status': 'pending',
       });
 
-      // notify user
       _showNotification(
         'Ride Requested',
-        'Your ride has been requested at ₱${_fare.toStringAsFixed(2)}',
+        'Your ride (₱${_fare.toStringAsFixed(2)}) has been requested',
       );
 
       Navigator.pushReplacementNamed(context, '/passenger_rides');
     } catch (e) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error creating ride: $e')));
-      _showNotification(
-        'Request Failed',
-        'Failed to create ride: ${e.toString()}',
-      );
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      _showNotification('Request Failed', e.toString());
+    } finally {
       setState(() => _loading = false);
     }
   }
@@ -145,8 +155,8 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                       height: 40,
                       child: const Icon(
                         Icons.location_pin,
-                        size: 40,
                         color: Colors.green,
+                        size: 40,
                       ),
                     ),
                     Marker(
@@ -155,8 +165,8 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                       height: 40,
                       child: const Icon(
                         Icons.location_pin,
-                        size: 40,
                         color: Colors.red,
+                        size: 40,
                       ),
                     ),
                   ],
@@ -164,8 +174,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
               ],
             ),
           ),
-
-          // Fare details & confirm button
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
