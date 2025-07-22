@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'driver_ride_status_page.dart';
 
+// import the global plugin instance
+import 'package:godavao/main.dart' show localNotify;
+
 class PassengerRidesPage extends StatefulWidget {
-  const PassengerRidesPage({Key? key}) : super(key: key);
+  const PassengerRidesPage({super.key});
 
   @override
   _PassengerRidesPageState createState() => _PassengerRidesPageState();
@@ -22,6 +26,23 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
     super.initState();
     _loadRides();
     _setupRealtimeSubscription();
+  }
+
+  Future<void> _showNotification(String title, String body) async {
+    const android = AndroidNotificationDetails(
+      'rides_channel',
+      'Ride Updates',
+      channelDescription: 'Alerts when ride status changes',
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+    const ios = DarwinNotificationDetails();
+    await localNotify.show(
+      0,
+      title,
+      body,
+      const NotificationDetails(android: android, iOS: ios),
+    );
   }
 
   Future<void> _loadRides() async {
@@ -46,13 +67,11 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
           .eq('passenger_id', user.id)
           .order('created_at', ascending: false);
 
-      // Cast raw results
       final raw =
-          (data as List<dynamic>)
+          (data as List)
               .map((e) => Map<String, dynamic>.from(e as Map))
               .toList();
 
-      // Reverse‑geocode each ride
       final enriched = await Future.wait(
         raw.map((ride) async {
           final pLat = ride['pickup_lat'] as double;
@@ -60,7 +79,6 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
           final dLat = ride['destination_lat'] as double;
           final dLng = ride['destination_lng'] as double;
 
-          // get the first Placemark (most accurate)
           final pMarks = await placemarkFromCoordinates(pLat, pLng);
           final dMarks = await placemarkFromCoordinates(dLat, dLng);
 
@@ -68,7 +86,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
             m.thoroughfare,
             m.subLocality,
             m.locality,
-          ].where((s) => s != null && s.isNotEmpty).join(', ');
+          ].where((s) => s!.isNotEmpty).join(', ');
 
           return {
             ...ride,
@@ -78,9 +96,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
         }),
       );
 
-      setState(() {
-        _rides = enriched;
-      });
+      setState(() => _rides = enriched);
     } catch (e) {
       debugPrint('Error loading or geocoding rides: $e');
     } finally {
@@ -105,8 +121,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
           ),
           callback: (payload) async {
             final updated = Map<String, dynamic>.from(payload.newRecord!);
-
-            // also geocode the updated record:
+            // reverse‑geocode:
             final pMarks = await placemarkFromCoordinates(
               updated['pickup_lat'] as double,
               updated['pickup_lng'] as double,
@@ -115,13 +130,11 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
               updated['destination_lat'] as double,
               updated['destination_lng'] as double,
             );
-
             String fmt(Placemark m) => [
               m.thoroughfare,
               m.subLocality,
               m.locality,
-            ].where((s) => s != null && s.isNotEmpty).join(', ');
-
+            ].where((s) => s!.isNotEmpty).join(', ');
             updated['pickup_address'] = fmt(pMarks.first);
             updated['destination_address'] = fmt(dMarks.first);
 
@@ -132,11 +145,13 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                       .toList();
             });
 
+            // both snack bar & local notification:
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Ride status: ${updated['status']}'),
-                duration: const Duration(seconds: 3),
-              ),
+              SnackBar(content: Text('Ride status: ${updated['status']}')),
+            );
+            _showNotification(
+              'Ride Update',
+              'Your ride status is now ${updated['status']}',
             );
           },
         )
@@ -166,8 +181,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                     final ride = _rides[i];
                     return ListTile(
                       title: Text(
-                        '${ride['pickup_address']}\n'
-                        '→ ${ride['destination_address']}',
+                        '${ride['pickup_address']}\n→ ${ride['destination_address']}',
                       ),
                       subtitle: Text('Status: ${ride['status']}'),
                       trailing: const Icon(Icons.arrow_forward_ios, size: 16),

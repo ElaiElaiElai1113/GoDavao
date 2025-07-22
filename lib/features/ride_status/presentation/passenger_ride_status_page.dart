@@ -1,13 +1,18 @@
-import 'dart:async';
+// lib/features/ride_status/presentation/passenger_ride_status_page.dart
+
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:geocoding/geocoding.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+// import your global instance:
+import 'package:godavao/main.dart' show localNotify;
 
 class PassengerRideStatusPage extends StatefulWidget {
-  final String matchId;
-  const PassengerRideStatusPage({super.key, required this.matchId});
+  final String rideId;
+  const PassengerRideStatusPage({required this.rideId, Key? key})
+    : super(key: key);
 
   @override
   State<PassengerRideStatusPage> createState() =>
@@ -16,132 +21,135 @@ class PassengerRideStatusPage extends StatefulWidget {
 
 class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
   final supabase = Supabase.instance.client;
+  RealtimeChannel? _channel;
 
-  Map<String, dynamic>? ride;
-  LatLng? _driverPos;
-  bool loading = true;
-  String? errorMessage;
-  StreamSubscription<List<Map<String, dynamic>>>? _rideSub;
-  StreamSubscription<List<Map<String, dynamic>>>? _locSub;
+  Map<String, dynamic>? _ride;
+  bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
     _loadRide();
-    _rideSub = supabase
-        .from('ride_matches')
-        .stream(primaryKey: ['id'])
-        .eq('id', widget.matchId)
-        .listen((_) => _loadRide());
-    _locSub = supabase
-        .from('driver_locations')
-        .stream(primaryKey: ['ride_match_id'])
-        .eq('ride_match_id', widget.matchId)
-        .listen((rows) {
-          if (rows.isNotEmpty) {
-            final r = rows.first;
-            final lat = r['lat'] as double?;
-            final lng = r['lng'] as double?;
-            if (lat != null && lng != null) {
-              setState(() => _driverPos = LatLng(lat, lng));
-            }
-          }
-        });
+    _subscribeToUpdates();
+  }
+
+  Future<void> _showNotification(String title, String body) async {
+    const android = AndroidNotificationDetails(
+      'rides_channel',
+      'Ride Updates',
+      channelDescription: 'Notifications for ride status changes',
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+    const ios = DarwinNotificationDetails();
+    await localNotify.show(
+      0,
+      title,
+      body,
+      const NotificationDetails(android: android, iOS: ios),
+    );
+  }
+
+  Future<void> _loadRide() async {
+    setState(() => _loading = true);
+    try {
+      final r =
+          await supabase
+              .from('ride_requests')
+              .select('''
+            id,
+            pickup_lat,
+            pickup_lng,
+            destination_lat,
+            destination_lng,
+            status,
+            driver_route_id
+          ''')
+              .eq('id', widget.rideId)
+              .maybeSingle();
+
+      if (r == null) throw Exception('Ride not found');
+      setState(() => _ride = Map<String, dynamic>.from(r as Map));
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      setState(() => _loading = false);
+    }
+  }
+
+  void _subscribeToUpdates() {
+    _channel =
+        supabase
+            .channel('ride_requests_${widget.rideId}')
+            .onPostgresChanges(
+              schema: 'public',
+              table: 'ride_requests',
+              event: PostgresChangeEvent.update,
+              filter: PostgresChangeFilter(
+                type: PostgresChangeFilterType.eq,
+                column: 'id',
+                value: widget.rideId,
+              ),
+              callback: (payload) {
+                final updated = payload.newRecord! as Map<String, dynamic>;
+                setState(() => _ride = updated);
+                _showNotification(
+                  'Ride Update',
+                  'Your ride is now ${updated['status']}',
+                );
+              },
+            )
+            .subscribe();
   }
 
   @override
   void dispose() {
-    _rideSub?.cancel();
-    _locSub?.cancel();
+    if (_channel != null) supabase.removeChannel(_channel!);
     super.dispose();
-  }
-
-  Future<void> _loadRide() async {
-    setState(() {
-      loading = true;
-      errorMessage = null;
-    });
-    try {
-      final resp =
-          await supabase
-              .from('ride_matches')
-              .select(r'''
-            id,
-            status,
-            ride_requests(
-              pickup_lat,
-              pickup_lng,
-              destination_lat,
-              destination_lng,
-              users(name)
-            )
-          ''')
-              .eq('id', widget.matchId)
-              .maybeSingle();
-
-      if (resp == null || resp['ride_requests'] == null) {
-        throw Exception('Ride not found');
-      }
-      setState(() {
-        ride = resp;
-        loading = false;
-      });
-    } catch (e) {
-      setState(() {
-        errorMessage = e.toString();
-        loading = false;
-      });
-    }
-  }
-
-  Future<String> _rev(double lat, double lng) async {
-    try {
-      final pm = await placemarkFromCoordinates(lat, lng);
-      final p = pm.first;
-      return '${p.street}, ${p.locality}';
-    } catch (_) {
-      return 'Unknown location';
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (loading) {
+    if (_loading)
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-    if (errorMessage != null) {
-      return Scaffold(body: Center(child: Text(errorMessage!)));
-    }
+    if (_error != null)
+      return Scaffold(body: Center(child: Text('Error: $_error')));
+    if (_ride == null)
+      return const Scaffold(body: Center(child: Text('No ride data')));
 
-    final req = ride!['ride_requests'];
-    final pickup = LatLng(
-      double.parse(req['pickup_lat'].toString()),
-      double.parse(req['pickup_lng'].toString()),
-    );
-    final dest = LatLng(
-      double.parse(req['destination_lat'].toString()),
-      double.parse(req['destination_lng'].toString()),
-    );
-    final bounds = LatLngBounds.fromPoints([pickup, dest]);
-    final passenger = req['users']?['name'] as String? ?? 'Unknown';
-    final status = ride!['status'] as String;
+    final r = _ride!;
+    final pickup = LatLng(r['pickup_lat'], r['pickup_lng']);
+    final dest = LatLng(r['destination_lat'], r['destination_lng']);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Ride Status')),
+      appBar: AppBar(title: const Text('Ride Details')),
       body: Column(
         children: [
+          ListTile(
+            title: Text('Status: ${r['status']}'),
+            subtitle: Text(
+              'Driver route: ${r['driver_route_id'] ?? 'unassigned'}',
+            ),
+          ),
           Expanded(
             child: FlutterMap(
-              options: MapOptions(
-                bounds: bounds,
-                boundsOptions: const FitBoundsOptions(
-                  padding: EdgeInsets.all(32),
-                ),
-              ),
+              options: MapOptions(center: pickup, zoom: 13),
               children: [
                 TileLayer(
-                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.example.godavao',
+                  urlTemplate:
+                      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  subdomains: const ['a', 'b', 'c'],
+                  userAgentPackageName: 'com.yourcompany.godavao',
+                ),
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: [pickup, dest],
+                      strokeWidth: 4,
+                      color: Theme.of(context).primaryColor,
+                    ),
+                  ],
                 ),
                 MarkerLayer(
                   markers: [
@@ -151,6 +159,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                       height: 40,
                       child: const Icon(
                         Icons.location_pin,
+                        size: 40,
                         color: Colors.green,
                       ),
                     ),
@@ -158,43 +167,14 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                       point: dest,
                       width: 40,
                       height: 40,
-                      child: const Icon(Icons.flag, color: Colors.red),
-                    ),
-                    if (_driverPos != null)
-                      Marker(
-                        point: _driverPos!,
-                        width: 40,
-                        height: 40,
-                        child: const Icon(
-                          Icons.directions_car,
-                          color: Colors.blue,
-                        ),
+                      child: const Icon(
+                        Icons.location_pin,
+                        size: 40,
+                        color: Colors.red,
                       ),
-                  ],
-                ),
-                PolylineLayer(
-                  polylines: [
-                    Polyline(
-                      points: [pickup, dest],
-                      strokeWidth: 4,
-                      color: Colors.blue,
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Passenger: $passenger',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                Text('Status: ${status.toUpperCase()}'),
               ],
             ),
           ),

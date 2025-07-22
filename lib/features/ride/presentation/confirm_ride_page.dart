@@ -1,7 +1,13 @@
+// lib/features/ride/presentation/confirm_ride_page.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+// import your global plugin instance
+import 'package:godavao/main.dart' show localNotify;
 
 class ConfirmRidePage extends StatefulWidget {
   final LatLng pickup;
@@ -10,8 +16,8 @@ class ConfirmRidePage extends StatefulWidget {
   const ConfirmRidePage({
     required this.pickup,
     required this.destination,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   State<ConfirmRidePage> createState() => _ConfirmRidePageState();
@@ -30,17 +36,31 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     _calculateFare();
   }
 
+  Future<void> _showNotification(String title, String body) async {
+    const android = AndroidNotificationDetails(
+      'rides_channel',
+      'Ride Updates',
+      channelDescription: 'Alerts when you confirm a ride',
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+    const ios = DarwinNotificationDetails();
+    await localNotify.show(
+      0,
+      title,
+      body,
+      const NotificationDetails(android: android, iOS: ios),
+    );
+  }
+
   void _calculateFare() {
-    // straight‑line distance (in meters)
     final meters = _distance(widget.pickup, widget.destination);
     final km = meters / 1000;
+    final mins = (km / 40) * 60;
 
-    // Dynamic pricing (WIP)
     const baseFare = 50.0;
     const perKmRate = 10.0;
     const perMinuteRate = 2.0;
-    // assume avg speed 40 km/h → minutes = (km/40)*60
-    final mins = (km / 40) * 60;
 
     final fare = baseFare + (perKmRate * km) + (perMinuteRate * mins);
 
@@ -53,7 +73,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
 
   Future<void> _confirmRide() async {
     setState(() => _loading = true);
-
     final supabase = Supabase.instance.client;
     final user = supabase.auth.currentUser;
     if (user == null) {
@@ -65,7 +84,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     }
 
     try {
-      // Insert ride request with fare
       await supabase.from('ride_requests').insert({
         'passenger_id': user.id,
         'pickup_lat': widget.pickup.latitude,
@@ -75,11 +93,21 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         'fare': _fare,
       });
 
+      // notify user
+      _showNotification(
+        'Ride Requested',
+        'Your ride has been requested at ₱${_fare.toStringAsFixed(2)}',
+      );
+
       Navigator.pushReplacementNamed(context, '/passenger_rides');
     } catch (e) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Error creating ride: $e')));
+      _showNotification(
+        'Request Failed',
+        'Failed to create ride: ${e.toString()}',
+      );
       setState(() => _loading = false);
     }
   }
@@ -137,7 +165,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
             ),
           ),
 
-          // Fare details
+          // Fare details & confirm button
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(

@@ -5,6 +5,10 @@ import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:google_polyline_algorithm/google_polyline_algorithm.dart'
     as gpa;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+// import the global plugin instance
+import 'package:godavao/main.dart' show localNotify;
 
 class DriverRoutePage extends StatefulWidget {
   const DriverRoutePage({super.key});
@@ -15,15 +19,28 @@ class DriverRoutePage extends StatefulWidget {
 
 class _DriverRoutePageState extends State<DriverRoutePage> {
   final MapController _mapController = MapController();
-  final PolylinePoints _polylinePoints = PolylinePoints();
   final List<LatLng> _routePoints = [];
   bool _publishing = false;
 
-  /// Add a point to the route when the driver long‑presses the map.
   void _onMapLongPress(TapPosition _, LatLng latlng) {
-    setState(() {
-      _routePoints.add(latlng);
-    });
+    setState(() => _routePoints.add(latlng));
+  }
+
+  Future<void> _showNotification(String title, String body) async {
+    const android = AndroidNotificationDetails(
+      'routes_channel',
+      'Route Alerts',
+      channelDescription: 'Notifications for route publishing',
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+    const ios = DarwinNotificationDetails();
+    await localNotify.show(
+      0,
+      title,
+      body,
+      const NotificationDetails(android: android, iOS: ios),
+    );
   }
 
   Future<void> _publishRoute() async {
@@ -36,18 +53,12 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
 
     setState(() => _publishing = true);
     try {
-      // Convert LatLng list → List<List<double>> for encoding
       final coords =
           _routePoints.map((p) => [p.latitude, p.longitude]).toList();
+      final encodedPolyline = gpa.encodePolyline(coords);
 
-      // Encode to polyline string
-      final String encodedPolyline = gpa.encodePolyline(coords);
-
-      // Insert into Supabase
       final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) {
-        throw Exception('Not signed in');
-      }
+      if (user == null) throw Exception('Not signed in');
 
       await Supabase.instance.client.from('driver_routes').insert({
         'driver_id': user.id,
@@ -57,13 +68,17 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Route published successfully!')),
       );
+      _showNotification(
+        'Route Published',
+        'Your driver route has been published.',
+      );
 
-      // Clear drawn points if needed
       setState(() => _routePoints.clear());
     } catch (e) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Failed to publish route: $e')));
+      _showNotification('Publish Failed', 'Could not publish route: $e');
     } finally {
       setState(() => _publishing = false);
     }
@@ -78,14 +93,14 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
-              center: LatLng(7.1907, 125.4553), // Davao center
+              center: LatLng(7.1907, 125.4553),
               zoom: 13,
               onLongPress: _onMapLongPress,
             ),
             children: [
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.godavao',
+                userAgentPackageName: 'com.yourcompany.godavao',
               ),
               if (_routePoints.isNotEmpty)
                 PolylineLayer(
@@ -115,8 +130,6 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
               ),
             ],
           ),
-
-          // Publish button at bottom
           Positioned(
             bottom: 20,
             left: 20,
@@ -129,7 +142,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                       : const Text('Publish Route'),
               onPressed: _publishing ? null : _publishRoute,
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
+                padding: const EdgeInsets.all(16),
               ),
             ),
           ),
