@@ -1,13 +1,9 @@
-// lib/features/ride_status/presentation/passenger_ride_status_page.dart
-
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-// import your global instance:
-import 'package:godavao/main.dart' show localNotify;
+import 'package:godavao/features/chat/presentation/chat_page.dart';
 
 class PassengerRideStatusPage extends StatefulWidget {
   final String rideId;
@@ -20,42 +16,32 @@ class PassengerRideStatusPage extends StatefulWidget {
 }
 
 class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
-  final supabase = Supabase.instance.client;
-  RealtimeChannel? _channel;
+  final _supabase = Supabase.instance.client;
+  RealtimeChannel? _rideChannel;
 
-  Map<String, dynamic>? _ride;
   bool _loading = true;
   String? _error;
+
+  Map<String, dynamic>? _ride;
+  String? _matchId;
 
   @override
   void initState() {
     super.initState();
-    _loadRide();
-    _subscribeToUpdates();
+    _loadRideDetails();
+    _subscribeToRideUpdates();
   }
 
-  Future<void> _showNotification(String title, String body) async {
-    const android = AndroidNotificationDetails(
-      'rides_channel',
-      'Ride Updates',
-      channelDescription: 'Notifications for ride status changes',
-      importance: Importance.max,
-      priority: Priority.high,
-    );
-    const ios = DarwinNotificationDetails();
-    await localNotify.show(
-      0,
-      title,
-      body,
-      const NotificationDetails(android: android, iOS: ios),
-    );
-  }
+  Future<void> _loadRideDetails() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
 
-  Future<void> _loadRide() async {
-    setState(() => _loading = true);
     try {
-      final r =
-          await supabase
+      // 1) load the ride_request
+      final rideResp =
+          await _supabase
               .from('ride_requests')
               .select('''
             id,
@@ -69,19 +55,39 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
               .eq('id', widget.rideId)
               .maybeSingle();
 
-      if (r == null) throw Exception('Ride not found');
-      setState(() => _ride = Map<String, dynamic>.from(r as Map));
+      if (rideResp == null) {
+        throw Exception('Ride not found');
+      }
+      _ride = Map<String, dynamic>.from(rideResp as Map);
+
+      // 2) load the matching ride_matches row
+      final matchResp =
+          await _supabase
+              .from('ride_matches')
+              .select('id')
+              .eq('ride_request_id', widget.rideId)
+              .maybeSingle();
+
+      if (matchResp == null) {
+        throw Exception('No match found for this ride');
+      }
+      _matchId = (matchResp as Map)['id'] as String;
+    } on PostgrestException catch (e) {
+      _error = 'Supabase error: ${e.message}';
     } catch (e) {
-      setState(() => _error = e.toString());
+      _error = e.toString();
     } finally {
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+      });
     }
   }
 
-  void _subscribeToUpdates() {
-    _channel =
-        supabase
-            .channel('ride_requests_${widget.rideId}')
+  void _subscribeToRideUpdates() {
+    // keep subscription alive to auto‑refresh status
+    _rideChannel =
+        _supabase
+            .channel('ride_requests:${widget.rideId}')
             .onPostgresChanges(
               schema: 'public',
               table: 'ride_requests',
@@ -92,11 +98,15 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                 value: widget.rideId,
               ),
               callback: (payload) {
-                final updated = payload.newRecord! as Map<String, dynamic>;
-                setState(() => _ride = updated);
-                _showNotification(
-                  'Ride Update',
-                  'Your ride is now ${updated['status']}',
+                final updated = Map<String, dynamic>.from(payload.newRecord!);
+                setState(() {
+                  _ride = updated;
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Ride status: ${updated['status']}'),
+                    duration: const Duration(seconds: 2),
+                  ),
                 );
               },
             )
@@ -105,19 +115,27 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
 
   @override
   void dispose() {
-    if (_channel != null) supabase.removeChannel(_channel!);
+    if (_rideChannel != null) {
+      _supabase.removeChannel(_rideChannel!);
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading)
+    if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    if (_error != null)
-      return Scaffold(body: Center(child: Text('Error: $_error')));
-    if (_ride == null)
-      return const Scaffold(body: Center(child: Text('No ride data')));
+    }
 
+    if (_error != null) {
+      return Scaffold(body: Center(child: Text('Error: $_error')));
+    }
+
+    if (_ride == null || _matchId == null) {
+      return const Scaffold(body: Center(child: Text('No ride data')));
+    }
+
+    // build map & UI now
     final r = _ride!;
     final pickup = LatLng(r['pickup_lat'], r['pickup_lng']);
     final dest = LatLng(r['destination_lat'], r['destination_lng']);
@@ -132,6 +150,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
               'Driver route: ${r['driver_route_id'] ?? 'unassigned'}',
             ),
           ),
+
+          // map view
           Expanded(
             child: FlutterMap(
               options: MapOptions(center: pickup, zoom: 13),
@@ -140,7 +160,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                   urlTemplate:
                       'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                   subdomains: const ['a', 'b', 'c'],
-                  userAgentPackageName: 'com.yourcompany.godavao',
+                  userAgentPackageName: 'com.example.godavao',
                 ),
                 PolylineLayer(
                   polylines: [
@@ -158,9 +178,9 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                       width: 40,
                       height: 40,
                       child: const Icon(
-                        Icons.location_pin,
-                        size: 40,
+                        Icons.location_on,
                         color: Colors.green,
+                        size: 40,
                       ),
                     ),
                     Marker(
@@ -168,14 +188,34 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                       width: 40,
                       height: 40,
                       child: const Icon(
-                        Icons.location_pin,
-                        size: 40,
+                        Icons.location_on,
                         color: Colors.red,
+                        size: 40,
                       ),
                     ),
                   ],
                 ),
               ],
+            ),
+          ),
+
+          // Chat button uses the ride_match.id
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.message),
+              label: const Text('Chat with Driver'),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ChatPage(matchId: _matchId!),
+                  ),
+                );
+              },
             ),
           ),
         ],

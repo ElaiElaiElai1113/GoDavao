@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:godavao/features/ride_status/presentation/driver_ride_status_page.dart';
+import 'package:godavao/features/ride_status/presentation/passenger_ride_status_page.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -270,7 +271,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
                     context,
                     MaterialPageRoute(
                       builder:
-                          (_) => DriverRideStatusPage(
+                          (_) => PassengerRideStatusPage(
                             rideId: ride['id'] as String,
                           ),
                     ),

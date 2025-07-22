@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
+import 'package:godavao/features/chat/presentation/chat_page.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:intl/intl.dart';
 import 'package:geocoding/geocoding.dart';
@@ -474,6 +475,19 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                             ),
                         child: const Text('Complete Ride'),
                       ),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder:
+                                (_) =>
+                                    ChatPage(matchId: m['match_id'] as String),
+                          ),
+                        );
+                      },
+                      child: Icon(Icons.message),
+                    ),
                   ],
                 ),
               ],
