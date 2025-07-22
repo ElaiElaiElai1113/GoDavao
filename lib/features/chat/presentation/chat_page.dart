@@ -1,3 +1,5 @@
+// lib/features/chat/presentation/chat_page.dart
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -10,10 +12,11 @@ class ChatPage extends StatefulWidget {
 }
 
 class _ChatPageState extends State<ChatPage> {
-  final supabase = Supabase.instance.client;
+  final _supabase = Supabase.instance.client;
   final _textCtrl = TextEditingController();
+  final _scrollController = ScrollController();
   final List<Map<String, dynamic>> _messages = [];
-  RealtimeChannel? _messagesChannel;
+  RealtimeChannel? _channel;
 
   @override
   void initState() {
@@ -23,22 +26,27 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _fetchHistory() async {
-    final data = await supabase
+    final rows = await _supabase
         .from('ride_messages')
         .select('id, sender_id, content, created_at')
         .eq('ride_match_id', widget.matchId)
         .order('created_at', ascending: true);
+
     setState(() {
-      _messages.clear();
-      _messages.addAll((data as List).cast<Map<String, dynamic>>());
+      _messages
+        ..clear()
+        ..addAll((rows as List).cast<Map<String, dynamic>>());
     });
+    _scrollToBottom();
   }
 
   void _subscribeRealtime() {
-    // create & store the actual RealtimeChannel
-    _messagesChannel =
-        supabase
-            .channel('public:ride_messages') // channel identifier
+    // give each chat its own channel name
+    final channelName = 'messages:${widget.matchId}';
+
+    _channel =
+        _supabase
+            .channel(channelName)
             .onPostgresChanges(
               schema: 'public',
               table: 'ride_messages',
@@ -49,10 +57,9 @@ class _ChatPageState extends State<ChatPage> {
                 value: widget.matchId,
               ),
               callback: (payload) {
-                final msg = Map<String, dynamic>.from(payload.newRecord!);
-                setState(() {
-                  _messages.add(msg);
-                });
+                final newMsg = Map<String, dynamic>.from(payload.newRecord!);
+                setState(() => _messages.add(newMsg));
+                _scrollToBottom();
               },
             )
             .subscribe();
@@ -61,41 +68,62 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _sendMessage() async {
     final text = _textCtrl.text.trim();
     if (text.isEmpty) return;
-    final user = supabase.auth.currentUser;
+
+    final user = _supabase.auth.currentUser;
     if (user == null) return;
 
-    await supabase.from('ride_messages').insert({
-      'ride_match_id': widget.matchId,
-      'sender_id': user.id,
-      'content': text,
-    });
+    // Insert + return the new message
+    final inserted =
+        await _supabase
+            .from('ride_messages')
+            .insert({
+              'ride_match_id': widget.matchId,
+              'sender_id': user.id,
+              'content': text,
+            })
+            .select('id, sender_id, content, created_at')
+            .maybeSingle();
+
     _textCtrl.clear();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent + 100,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   @override
   void dispose() {
-    // remove the RealtimeChannel, not the String
-    if (_messagesChannel != null) {
-      supabase.removeChannel(_messagesChannel!);
+    if (_channel != null) {
+      _supabase.removeChannel(_channel!);
     }
     _textCtrl.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final me = supabase.auth.currentUser?.id;
+    final myId = _supabase.auth.currentUser?.id;
     return Scaffold(
       appBar: AppBar(title: const Text('Chat')),
       body: Column(
         children: [
+          // message list
           Expanded(
             child: ListView.builder(
+              controller: _scrollController,
               padding: const EdgeInsets.all(8),
               itemCount: _messages.length,
               itemBuilder: (ctx, i) {
                 final msg = _messages[i];
-                final isMe = msg['sender_id'] == me;
+                final isMe = msg['sender_id'] == myId;
                 return Align(
                   alignment:
                       isMe ? Alignment.centerRight : Alignment.centerLeft,
@@ -120,6 +148,8 @@ class _ChatPageState extends State<ChatPage> {
               },
             ),
           ),
+
+          // input bar
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -132,6 +162,7 @@ class _ChatPageState extends State<ChatPage> {
                     decoration: const InputDecoration.collapsed(
                       hintText: 'Type a message',
                     ),
+                    onSubmitted: (_) => _sendMessage(),
                   ),
                 ),
                 IconButton(
