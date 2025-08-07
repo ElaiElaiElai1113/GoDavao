@@ -1,24 +1,22 @@
-// lib/features/maps/passenger_map_page.dart
-
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:geocoding/geocoding.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-// import your global notifications instance
-import 'package:godavao/main.dart' show localNotify;
-// import the OSRM service
-import 'package:godavao/core/osrm_service.dart';
+// Decode Google-style encoded polylines
+import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 
-import '../ride/presentation/confirm_ride_page.dart';
+import 'package:godavao/main.dart' show localNotify;
+
+// OSRM service for fetching real routes
+import 'package:godavao/core/osrm_service.dart';
 
 class DriverRoute {
   final String id;
   final String driverId;
   final String polyline;
+
   DriverRoute.fromMap(Map<String, dynamic> m)
     : id = m['id'] as String,
       driverId = m['driver_id'] as String,
@@ -27,29 +25,29 @@ class DriverRoute {
 
 class PassengerMapPage extends StatefulWidget {
   const PassengerMapPage({super.key});
+
   @override
   State<PassengerMapPage> createState() => _PassengerMapPageState();
 }
 
 class _PassengerMapPageState extends State<PassengerMapPage> {
   final supabase = Supabase.instance.client;
-  final polylinePoints = PolylinePoints();
+  final _polyDecoder = PolylinePoints();
 
-  bool loading = true;
-  String? errorMessage;
+  bool _loadingRoutes = true;
+  String? _routesError;
 
   List<DriverRoute> _routes = [];
   DriverRoute? _selectedRoute;
   List<LatLng> _routePoints = [];
 
-  // Holds the OSRM-generated route between pickup and dropoff
+  // OSRM-computed segment for passenger
   Polyline? _osrmRoute;
 
   LatLng? _pickupLocation;
-  String? _pickupAddress;
-
   LatLng? _dropoffLocation;
-  String? _dropoffAddress;
+
+  bool _sending = false;
 
   @override
   void initState() {
@@ -59,8 +57,8 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
 
   Future<void> _loadRoutes() async {
     setState(() {
-      loading = true;
-      errorMessage = null;
+      _loadingRoutes = true;
+      _routesError = null;
     });
     try {
       final data = await supabase
@@ -70,49 +68,38 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
           (data as List)
               .map((m) => DriverRoute.fromMap(m as Map<String, dynamic>))
               .toList();
-
-      if (_routes.isEmpty) throw Exception('No driver routes available');
-
+      if (_routes.isEmpty) throw 'No routes available';
       _selectRoute(_routes.first);
     } catch (e) {
-      setState(() {
-        errorMessage = 'Failed to load routes: $e';
-      });
+      _routesError = 'Error loading routes: $e';
     } finally {
-      setState(() => loading = false);
+      setState(() => _loadingRoutes = false);
     }
   }
 
   void _selectRoute(DriverRoute r) {
-    final pts = polylinePoints.decodePolyline(r.polyline);
-    _routePoints = pts.map((p) => LatLng(p.latitude, p.longitude)).toList();
+    final pts = _polyDecoder.decodePolyline(r.polyline);
+    _routePoints =
+        pts
+            .map((p) => LatLng(p.latitude.toDouble(), p.longitude.toDouble()))
+            .toList();
     setState(() {
       _selectedRoute = r;
       _pickupLocation = null;
-      _pickupAddress = null;
       _dropoffLocation = null;
-      _dropoffAddress = null;
       _osrmRoute = null;
     });
   }
 
-  Future<String> _reverseGeocode(LatLng loc) async {
-    try {
-      final pm = await placemarkFromCoordinates(loc.latitude, loc.longitude);
-      final p = pm.first;
-      return '${p.street}, ${p.locality}';
-    } catch (_) {
-      return 'Unknown location';
-    }
-  }
+  void _onMapTap(TapPosition _, LatLng tap) async {
+    if (_routePoints.isEmpty) return;
 
-  LatLng _snapToRoute(LatLng tap, List<LatLng> route) {
-    final dist = Distance();
-    LatLng best = route.first;
+    // snap tap to nearest segment:
+    late LatLng snapped;
     double bestD = double.infinity;
-
-    for (int i = 0; i < route.length - 1; i++) {
-      final a = route[i], b = route[i + 1];
+    final dist = Distance();
+    for (var i = 0; i < _routePoints.length - 1; i++) {
+      final a = _routePoints[i], b = _routePoints[i + 1];
       final dx = b.longitude - a.longitude;
       final dy = b.latitude - a.latitude;
       final len2 = dx * dx + dy * dy;
@@ -126,61 +113,118 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
       final d = dist(proj, tap);
       if (d < bestD) {
         bestD = d;
-        best = proj;
+        snapped = proj;
       }
     }
-    return best;
-  }
-
-  Future<void> _onMapTap(TapPosition _, LatLng latlng) async {
-    if (_routePoints.isEmpty) return;
 
     if (_pickupLocation == null) {
-      final snapped = _snapToRoute(latlng, _routePoints);
-      final addr = await _reverseGeocode(snapped);
-      setState(() {
-        _pickupLocation = snapped;
-        _pickupAddress = addr;
-      });
+      setState(() => _pickupLocation = snapped);
     } else if (_dropoffLocation == null) {
-      final snapped = _snapToRoute(latlng, _routePoints);
-      final addr = await _reverseGeocode(snapped);
       setState(() {
         _dropoffLocation = snapped;
-        _dropoffAddress = addr;
+        _osrmRoute = null;
       });
-      // Fetch the OSRM route between pickup & dropoff
+      // fetch OSRM segment
       try {
-        final fetchedRoute = await fetchOsrmRoute(
+        final fetched = await fetchOsrmRoute(
           start: _pickupLocation!,
           end: _dropoffLocation!,
         );
-        setState(() => _osrmRoute = fetchedRoute);
+        setState(() => _osrmRoute = fetched);
       } catch (e) {
-        debugPrint('OSRM routing failed: $e');
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Routing failed: $e')));
       }
     } else {
-      final snapped = _snapToRoute(latlng, _routePoints);
-      final addr = await _reverseGeocode(snapped);
+      // reset for new selection
       setState(() {
         _pickupLocation = snapped;
-        _pickupAddress = addr;
         _dropoffLocation = null;
-        _dropoffAddress = null;
         _osrmRoute = null;
       });
     }
   }
 
+  Future<void> _onRequestRide() async {
+    if (_pickupLocation == null || _dropoffLocation == null || _sending) return;
+    setState(() => _sending = true);
+
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You must be signed in to request a ride'),
+        ),
+      );
+      return setState(() => _sending = false);
+    }
+
+    try {
+      // 1) Create ride_request
+      final inserted =
+          await supabase
+              .from('ride_requests')
+              .insert({
+                'passenger_id': user.id,
+                'pickup_lat': _pickupLocation!.latitude,
+                'pickup_lng': _pickupLocation!.longitude,
+                'destination_lat': _dropoffLocation!.latitude,
+                'destination_lng': _dropoffLocation!.longitude,
+                'driver_route_id': _selectedRoute!.id,
+                'status': 'pending',
+              })
+              .select('id')
+              .maybeSingle();
+
+      final rideReqId = (inserted as Map<String, dynamic>?)?['id'] as String?;
+      if (rideReqId == null) throw 'Failed to create ride request';
+
+      // 2) Create ride_match
+      await supabase.from('ride_matches').insert({
+        'ride_request_id': rideReqId,
+        'driver_route_id': _selectedRoute!.id,
+        'driver_id': _selectedRoute!.driverId,
+        'status': 'pending',
+      });
+
+      // 3) Local notification
+      await localNotify.show(
+        0,
+        'Ride Requested',
+        'Your ride has been requested. Check My Rides for status.',
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'rides_channel',
+            'Ride Updates',
+            channelDescription: 'Alerts when you confirm a ride',
+            importance: Importance.max,
+            priority: Priority.high,
+          ),
+          iOS: DarwinNotificationDetails(),
+        ),
+      );
+
+      // 4) Navigate on success
+      Navigator.pushReplacementNamed(context, '/passenger_rides');
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error requesting ride: $e')));
+    } finally {
+      setState(() => _sending = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (loading) {
+    if (_loadingRoutes) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    if (errorMessage != null) {
+    if (_routesError != null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Join a Driver Route')),
-        body: Center(child: Text(errorMessage!)),
+        body: Center(child: Text(_routesError!)),
       );
     }
 
@@ -188,38 +232,30 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
       appBar: AppBar(title: const Text('Join a Driver Route')),
       body: Column(
         children: [
-          // Route selector buttons
+          // Route selector
           SizedBox(
-            height: 80,
-            child: ListView.builder(
+            height: 60,
+            child: ListView(
               scrollDirection: Axis.horizontal,
-              itemCount: _routes.length,
-              itemBuilder: (_, i) {
-                final r = _routes[i];
-                final sel = r.id == _selectedRoute?.id;
-                return Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 12,
-                  ),
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: sel ? Colors.blue : Colors.grey.shade200,
-                    ),
-                    onPressed: () => _selectRoute(r),
-                    child: Text(
-                      'Route ${i + 1}',
-                      style: TextStyle(
-                        color: sel ? Colors.white : Colors.black,
+              children:
+                  _routes.map((r) {
+                    final sel = r.id == _selectedRoute?.id;
+                    return Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor:
+                              sel ? Colors.blue : Colors.grey.shade200,
+                        ),
+                        onPressed: () => _selectRoute(r),
+                        child: Text(sel ? 'Selected' : 'Route'),
                       ),
-                    ),
-                  ),
-                );
-              },
+                    );
+                  }).toList(),
             ),
           ),
 
-          // Map with driver route, pickup/drop markers, and OSRM route
+          // Map + polylines/markers
           Expanded(
             child: FlutterMap(
               options: MapOptions(
@@ -233,7 +269,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
               children: [
                 TileLayer(
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.example.godavao',
                 ),
                 if (_routePoints.isNotEmpty)
                   PolylineLayer(
@@ -241,7 +276,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                       Polyline(
                         points: _routePoints,
                         strokeWidth: 4,
-                        color: Colors.blue,
+                        color: Colors.red,
                       ),
                     ],
                   ),
@@ -251,12 +286,12 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     markers: [
                       Marker(
                         point: _pickupLocation!,
-                        width: 40,
-                        height: 40,
+                        width: 30,
+                        height: 30,
                         child: const Icon(
                           Icons.location_pin,
                           color: Colors.green,
-                          size: 40,
+                          size: 30,
                         ),
                       ),
                     ],
@@ -266,12 +301,12 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     markers: [
                       Marker(
                         point: _dropoffLocation!,
-                        width: 40,
-                        height: 40,
+                        width: 30,
+                        height: 30,
                         child: const Icon(
                           Icons.flag,
                           color: Colors.red,
-                          size: 40,
+                          size: 30,
                         ),
                       ),
                     ],
@@ -280,51 +315,27 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
             ),
           ),
 
-          // Confirm ride button with local notification
+          // Request Ride button
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(16),
             child: ElevatedButton(
               onPressed:
-                  _pickupLocation == null
-                      ? null
-                      : () async {
-                        // Fire local notification
-                        final destText = _dropoffAddress ?? 'end of the route';
-                        await localNotify.show(
-                          0,
-                          'Ride Requested',
-                          "Pickup at ${_pickupAddress ?? 'route'} → $destText",
-                          const NotificationDetails(
-                            android: AndroidNotificationDetails(
-                              'rides_channel',
-                              'Ride Updates',
-                              channelDescription:
-                                  'Alerts when you confirm a ride',
-                              importance: Importance.max,
-                              priority: Priority.high,
-                            ),
-                            iOS: DarwinNotificationDetails(),
-                          ),
-                        );
-
-                        // Navigate to confirmation page
-                        final pickup = _pickupLocation!;
-                        final destination =
-                            _dropoffLocation ?? _routePoints.last;
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder:
-                                (_) => ConfirmRidePage(
-                                  pickup: pickup,
-                                  destination: destination,
-                                  routeId: _selectedRoute!.id,
-                                  driverId: _selectedRoute!.driverId,
-                                ),
-                          ),
-                        );
-                      },
-              child: const Text('Request Ride'),
+                  (_pickupLocation != null &&
+                          _dropoffLocation != null &&
+                          !_sending)
+                      ? _onRequestRide
+                      : null,
+              child:
+                  _sending
+                      ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                      : const Text('Request Ride'),
             ),
           ),
         ],

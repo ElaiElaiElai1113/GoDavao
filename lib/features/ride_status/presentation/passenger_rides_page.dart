@@ -7,6 +7,9 @@ import 'package:latlong2/latlong.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+// OSRM
+import 'package:godavao/core/osrm_service.dart';
+
 class PassengerRidesPage extends StatefulWidget {
   const PassengerRidesPage({Key? key}) : super(key: key);
 
@@ -93,8 +96,6 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
               final st = r['status'] as String;
               return ['pending', 'accepted', 'en_route'].contains(st);
             }).toList();
-
-        // Everything else goes to history
         _history =
             enriched.where((r) {
               final st = r['status'] as String;
@@ -146,51 +147,77 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // mini map preview
+            // ** REPLACED: static map → OSRM‐powered preview **
             SizedBox(
               height: 120,
-              child: FlutterMap(
-                options: MapOptions(
-                  center: LatLng((pLat + dLat) / 2, (pLng + dLng) / 2),
-                  zoom: 13,
-                  interactiveFlags: InteractiveFlag.none,
+              child: FutureBuilder<Polyline>(
+                future: fetchOsrmRoute(
+                  start: LatLng(pLat, pLng),
+                  end: LatLng(dLat, dLng),
                 ),
-                children: [
-                  TileLayer(
-                    urlTemplate:
-                        'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    subdomains: const ['a', 'b', 'c'],
-                    userAgentPackageName: 'com.example.godavao',
-                  ),
-                  PolylineLayer(
-                    polylines: [
-                      Polyline(
-                        points: [LatLng(pLat, pLng), LatLng(dLat, dLng)],
-                        strokeWidth: 3,
-                        color: Colors.green.shade700,
+                builder: (ctx, snap) {
+                  final routeLayer =
+                      snap.hasData
+                          // OSRM route in green
+                          ? PolylineLayer(
+                            polylines: [
+                              Polyline(
+                                points: snap.data!.points,
+                                strokeWidth: 3,
+                                color: Colors.green.shade700,
+                              ),
+                            ],
+                          )
+                          // fallback straight‐line
+                          : PolylineLayer(
+                            polylines: [
+                              Polyline(
+                                points: [
+                                  LatLng(pLat, pLng),
+                                  LatLng(dLat, dLng),
+                                ],
+                                strokeWidth: 3,
+                                color: Colors.green.shade700,
+                              ),
+                            ],
+                          );
+
+                  return FlutterMap(
+                    options: MapOptions(
+                      center: LatLng((pLat + dLat) / 2, (pLng + dLng) / 2),
+                      zoom: 13,
+                      interactiveFlags: InteractiveFlag.none,
+                    ),
+                    children: [
+                      TileLayer(
+                        urlTemplate:
+                            'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        subdomains: const ['a', 'b', 'c'],
+                        userAgentPackageName: 'com.example.godavao',
+                      ),
+                      routeLayer,
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            point: LatLng(pLat, pLng),
+                            width: 30,
+                            height: 30,
+                            child: const Icon(
+                              Icons.location_on,
+                              color: Colors.green,
+                            ),
+                          ),
+                          Marker(
+                            point: LatLng(dLat, dLng),
+                            width: 30,
+                            height: 30,
+                            child: const Icon(Icons.flag, color: Colors.red),
+                          ),
+                        ],
                       ),
                     ],
-                  ),
-                  MarkerLayer(
-                    markers: [
-                      Marker(
-                        point: LatLng(pLat, pLng),
-                        width: 30,
-                        height: 30,
-                        child: const Icon(
-                          Icons.location_on,
-                          color: Colors.green,
-                        ),
-                      ),
-                      Marker(
-                        point: LatLng(dLat, dLng),
-                        width: 30,
-                        height: 30,
-                        child: const Icon(Icons.flag, color: Colors.red),
-                      ),
-                    ],
-                  ),
-                ],
+                  );
+                },
               ),
             ),
 
@@ -232,7 +259,6 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
                     Expanded(
                       child: ElevatedButton(
                         onPressed: () async {
-                          // cancel ride
                           await supabase
                               .from('ride_requests')
                               .update({'status': 'cancelled'})
@@ -304,7 +330,6 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
         body: TabBarView(
           controller: _tabController,
           children: [
-            // Upcoming
             RefreshIndicator(
               onRefresh: _loadRides,
               child: ListView(
@@ -315,8 +340,6 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
                         .toList(),
               ),
             ),
-
-            // History
             RefreshIndicator(
               onRefresh: _loadRides,
               child: ListView(

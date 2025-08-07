@@ -5,6 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'package:godavao/main.dart' show localNotify;
+// OSRM service for fetching real routes
+import 'package:godavao/core/osrm_service.dart';
 
 class ConfirmRidePage extends StatefulWidget {
   final LatLng pickup;
@@ -30,10 +32,14 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   double _fare = 0;
   final Distance _dist = const Distance();
 
+  // Holds the OSRM‐computed polyline (in map‐ready LatLngs)
+  Polyline? _osrmRoute;
+
   @override
   void initState() {
     super.initState();
     _calculateFare();
+    _fetchOsrmRoute();
   }
 
   void _calculateFare() {
@@ -45,8 +51,23 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     setState(() {
       _distanceKm = km;
       _fare = fare;
-      _loading = false;
     });
+  }
+
+  Future<void> _fetchOsrmRoute() async {
+    try {
+      final route = await fetchOsrmRoute(
+        start: widget.pickup,
+        end: widget.destination,
+      );
+      setState(() {
+        _osrmRoute = route;
+        _loading = false;
+      });
+    } catch (e) {
+      debugPrint('OSRM routing error: $e');
+      setState(() => _loading = false);
+    }
   }
 
   Future<void> _showNotification(String title, String body) async {
@@ -68,8 +89,8 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
 
   Future<void> _confirmRide() async {
     setState(() => _loading = true);
-    final supabase = Supabase.instance.client;
-    final user = supabase.auth.currentUser;
+    final supabaseClient = Supabase.instance.client;
+    final user = supabaseClient.auth.currentUser;
     if (user == null) {
       ScaffoldMessenger.of(
         context,
@@ -78,9 +99,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     }
 
     try {
-      // 1) create ride_request, stamping driver_route_id
+      // 1) Create ride_request
       final req =
-          await supabase
+          await supabaseClient
               .from('ride_requests')
               .insert({
                 'passenger_id': user.id,
@@ -94,30 +115,28 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
               })
               .select('id')
               .maybeSingle();
-      final rideReqId = req?['id'] as String?;
-
+      final rideReqId = (req as Map<String, dynamic>?)?['id'] as String?;
       if (rideReqId == null) throw 'Failed to create ride request';
 
-      // 2) create ride_match
-      await supabase.from('ride_matches').insert({
+      // 2) Create ride_match
+      await supabaseClient.from('ride_matches').insert({
         'ride_request_id': rideReqId,
         'driver_route_id': widget.routeId,
         'driver_id': widget.driverId,
         'status': 'pending',
       });
 
-      _showNotification(
+      // Notify & navigate
+      await _showNotification(
         'Ride Requested',
         'Your ride (₱${_fare.toStringAsFixed(2)}) has been requested',
       );
-
       Navigator.pushReplacementNamed(context, '/passenger_rides');
     } catch (e) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Error: $e')));
-      _showNotification('Request Failed', e.toString());
-    } finally {
+      await _showNotification('Request Failed', e.toString());
       setState(() => _loading = false);
     }
   }
@@ -128,6 +147,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       appBar: AppBar(title: const Text('Confirm Your Ride')),
       body: Column(
         children: [
+          // Map area
           Expanded(
             child: FlutterMap(
               options: MapOptions(center: widget.pickup, zoom: 13),
@@ -136,17 +156,21 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                   urlTemplate:
                       'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                   subdomains: const ['a', 'b', 'c'],
-                  userAgentPackageName: 'com.yourcompany.godavao',
                 ),
-                PolylineLayer(
-                  polylines: [
-                    Polyline(
-                      points: [widget.pickup, widget.destination],
-                      strokeWidth: 4,
-                      color: Theme.of(context).primaryColor,
-                    ),
-                  ],
-                ),
+                // If OSRM route is ready, draw it...
+                if (_osrmRoute != null) PolylineLayer(polylines: [_osrmRoute!]),
+                // ...otherwise draw a straight fallback
+                if (_osrmRoute == null)
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(
+                        points: [widget.pickup, widget.destination],
+                        strokeWidth: 4,
+                        color: Theme.of(context).primaryColor,
+                      ),
+                    ],
+                  ),
+                // Markers
                 MarkerLayer(
                   markers: [
                     Marker(
@@ -174,6 +198,8 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
               ],
             ),
           ),
+
+          // Fare & Confirm button
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
