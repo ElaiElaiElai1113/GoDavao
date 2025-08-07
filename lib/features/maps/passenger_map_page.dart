@@ -10,6 +10,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 // import your global notifications instance
 import 'package:godavao/main.dart' show localNotify;
+// import the OSRM service
+import 'package:godavao/core/osrm_service.dart';
 
 import '../ride/presentation/confirm_ride_page.dart';
 
@@ -39,6 +41,9 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
   List<DriverRoute> _routes = [];
   DriverRoute? _selectedRoute;
   List<LatLng> _routePoints = [];
+
+  // Holds the OSRM-generated route between pickup and dropoff
+  Polyline? _osrmRoute;
 
   LatLng? _pickupLocation;
   String? _pickupAddress;
@@ -70,7 +75,9 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
 
       _selectRoute(_routes.first);
     } catch (e) {
-      errorMessage = 'Failed to load routes: $e';
+      setState(() {
+        errorMessage = 'Failed to load routes: $e';
+      });
     } finally {
       setState(() => loading = false);
     }
@@ -85,6 +92,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
       _pickupAddress = null;
       _dropoffLocation = null;
       _dropoffAddress = null;
+      _osrmRoute = null;
     });
   }
 
@@ -124,7 +132,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     return best;
   }
 
-  void _onMapTap(TapPosition _, LatLng latlng) async {
+  Future<void> _onMapTap(TapPosition _, LatLng latlng) async {
     if (_routePoints.isEmpty) return;
 
     if (_pickupLocation == null) {
@@ -141,6 +149,16 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
         _dropoffLocation = snapped;
         _dropoffAddress = addr;
       });
+      // Fetch the OSRM route between pickup & dropoff
+      try {
+        final fetchedRoute = await fetchOsrmRoute(
+          start: _pickupLocation!,
+          end: _dropoffLocation!,
+        );
+        setState(() => _osrmRoute = fetchedRoute);
+      } catch (e) {
+        debugPrint('OSRM routing failed: $e');
+      }
     } else {
       final snapped = _snapToRoute(latlng, _routePoints);
       final addr = await _reverseGeocode(snapped);
@@ -149,6 +167,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
         _pickupAddress = addr;
         _dropoffLocation = null;
         _dropoffAddress = null;
+        _osrmRoute = null;
       });
     }
   }
@@ -169,7 +188,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
       appBar: AppBar(title: const Text('Join a Driver Route')),
       body: Column(
         children: [
-          // Route selector
+          // Route selector buttons
           SizedBox(
             height: 80,
             child: ListView.builder(
@@ -200,7 +219,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
             ),
           ),
 
-          // Map
+          // Map with driver route, pickup/drop markers, and OSRM route
           Expanded(
             child: FlutterMap(
               options: MapOptions(
@@ -226,6 +245,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                       ),
                     ],
                   ),
+                if (_osrmRoute != null) PolylineLayer(polylines: [_osrmRoute!]),
                 if (_pickupLocation != null)
                   MarkerLayer(
                     markers: [
@@ -260,7 +280,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
             ),
           ),
 
-          // Confirm button with local notification
+          // Confirm ride button with local notification
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: ElevatedButton(
@@ -273,7 +293,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                         await localNotify.show(
                           0,
                           'Ride Requested',
-                          'Pickup at ${_pickupAddress ?? 'route'} → $destText',
+                          "Pickup at ${_pickupAddress ?? 'route'} → $destText",
                           const NotificationDetails(
                             android: AndroidNotificationDetails(
                               'rides_channel',
@@ -287,7 +307,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                           ),
                         );
 
-                        // Navigate to confirmation
+                        // Navigate to confirmation page
                         final pickup = _pickupLocation!;
                         final destination =
                             _dropoffLocation ?? _routePoints.last;
