@@ -177,7 +177,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
               .select('id')
               .maybeSingle();
 
-      final rideReqId = (inserted as Map<String, dynamic>?)?['id'] as String?;
+      final rideReqId = (inserted)?['id'] as String?;
       if (rideReqId == null) throw 'Failed to create ride request';
 
       // 2) Create ride_match

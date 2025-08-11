@@ -7,8 +7,7 @@ import 'package:godavao/features/chat/presentation/chat_page.dart';
 
 class PassengerRideStatusPage extends StatefulWidget {
   final String rideId;
-  const PassengerRideStatusPage({required this.rideId, Key? key})
-    : super(key: key);
+  const PassengerRideStatusPage({required this.rideId, super.key});
 
   @override
   State<PassengerRideStatusPage> createState() =>
@@ -98,7 +97,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                 value: widget.rideId,
               ),
               callback: (payload) {
-                final updated = Map<String, dynamic>.from(payload.newRecord!);
+                final updated = Map<String, dynamic>.from(payload.newRecord);
                 setState(() {
                   _ride = updated;
                 });

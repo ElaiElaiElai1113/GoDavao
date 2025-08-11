@@ -18,7 +18,7 @@ class ChatSubscriptionService extends ChangeNotifier {
               table: 'ride_messages',
               event: PostgresChangeEvent.insert,
               callback: (payload) {
-                final matchId = payload.newRecord!['ride_match_id'] as String;
+                final matchId = payload.newRecord['ride_match_id'] as String;
                 if (_currentOpenChatId != matchId) {
                   unreadCounts[matchId] = (unreadCounts[matchId] ?? 0) + 1;
                   notifyListeners();

@@ -11,7 +11,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/core/osrm_service.dart';
 
 class PassengerRidesPage extends StatefulWidget {
-  const PassengerRidesPage({Key? key}) : super(key: key);
+  const PassengerRidesPage({super.key});
 
   @override
   State<PassengerRidesPage> createState() => _PassengerRidesPageState();

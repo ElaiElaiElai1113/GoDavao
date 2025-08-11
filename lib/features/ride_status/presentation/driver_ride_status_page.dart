@@ -10,8 +10,7 @@ import 'package:godavao/main.dart' show localNotify;
 
 class DriverRideStatusPage extends StatefulWidget {
   final String rideId;
-  const DriverRideStatusPage({required this.rideId, Key? key})
-    : super(key: key);
+  const DriverRideStatusPage({required this.rideId, super.key});
 
   @override
   State<DriverRideStatusPage> createState() => _DriverRideStatusPageState();
@@ -90,7 +89,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage> {
                 value: widget.rideId,
               ),
               callback: (payload) {
-                final updated = payload.newRecord! as Map<String, dynamic>;
+                final updated = payload.newRecord;
                 setState(() => _ride = updated);
                 _showNotification(
                   'Ride Update',
@@ -109,12 +108,15 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading)
+    if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    if (_error != null)
+    }
+    if (_error != null) {
       return Scaffold(body: Center(child: Text('Error: $_error')));
-    if (_ride == null)
+    }
+    if (_ride == null) {
       return const Scaffold(body: Center(child: Text('No ride data')));
+    }
 
     final r = _ride!;
     final pickup = LatLng(r['pickup_lat'], r['pickup_lng']);

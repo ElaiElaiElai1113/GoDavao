@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../chat/presentation/chat_page.dart';
-import '../data/chat_subscription_service.dart';
 
 class ConversationsList extends StatefulWidget {
   const ConversationsList({super.key});

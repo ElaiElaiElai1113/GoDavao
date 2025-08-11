@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/widgets.dart';
 
-import '../data/chat_subscription_service.dart';
 import '../../../../main.dart';
 
 class ChatPage extends StatefulWidget {
@@ -103,7 +102,7 @@ class _ChatPageState extends State<ChatPage>
                 value: widget.matchId,
               ),
               callback: (p) {
-                final msg = ChatMessage.fromMap(Map.from(p.newRecord!));
+                final msg = ChatMessage.fromMap(Map.from(p.newRecord));
                 setState(() => _messages.add(msg));
                 _scrollToBottom();
               },

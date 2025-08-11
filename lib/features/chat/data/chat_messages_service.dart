@@ -48,7 +48,7 @@ class ChatMessagesService extends ChangeNotifier {
           ),
           callback: (payload) {
             final msg = ChatMessage.fromMap(
-              Map<String, dynamic>.from(payload.newRecord!),
+              Map<String, dynamic>.from(payload.newRecord),
             );
             _history.putIfAbsent(chatId, () => []).add(msg);
             notifyListeners();

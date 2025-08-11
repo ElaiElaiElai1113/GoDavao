@@ -16,7 +16,7 @@ import 'package:godavao/main.dart' show localNotify;
 import 'driver_ride_status_page.dart';
 
 class DriverRidesPage extends StatefulWidget {
-  const DriverRidesPage({Key? key}) : super(key: key);
+  const DriverRidesPage({super.key});
 
   @override
   State<DriverRidesPage> createState() => _DriverRidesPageState();
@@ -32,7 +32,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
   List<Map<String, dynamic>> _upcoming = [];
   List<Map<String, dynamic>> _declined = [];
   List<Map<String, dynamic>> _completed = [];
-  Set<String> _newMatchIds = {};
+  final Set<String> _newMatchIds = {};
 
   bool _loading = true;
   RealtimeChannel? _matchChannel;
@@ -317,7 +317,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                 value: routeId,
               ),
               callback: (payload) {
-                final m = payload.newRecord! as Map<String, dynamic>;
+                final m = payload.newRecord;
                 final id = m['id'] as String;
                 setState(() => _newMatchIds.add(id));
                 _showNotification(
@@ -655,7 +655,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                             ),
                           ),
                           const SizedBox(height: 16),
-                          ..._upcoming.map(_buildCard).toList(),
+                          ..._upcoming.map(_buildCard),
                         ],
                       ),
                     ),

@@ -115,7 +115,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
               })
               .select('id')
               .maybeSingle();
-      final rideReqId = (req as Map<String, dynamic>?)?['id'] as String?;
+      final rideReqId = (req)?['id'] as String?;
       if (rideReqId == null) throw 'Failed to create ride request';
 
       // 2) Create ride_match
