@@ -10,6 +10,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 // OSRM
 import 'package:godavao/core/osrm_service.dart';
 
+import 'package:godavao/features/ratings/presentation/user_rating.dart';
+
 class PassengerRidesPage extends StatefulWidget {
   const PassengerRidesPage({super.key});
 
@@ -47,6 +49,21 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
     }
   }
 
+  // Safely extract driverId from a ride row (handles map or list)
+  String? _extractDriverId(Map<String, dynamic> ride) {
+    final rel = ride['driver_routes'];
+    if (rel is Map && rel['driver_id'] != null) {
+      return rel['driver_id'].toString();
+    }
+    if (rel is List &&
+        rel.isNotEmpty &&
+        rel.first is Map &&
+        rel.first['driver_id'] != null) {
+      return rel.first['driver_id'].toString();
+    }
+    return null;
+  }
+
   Future<void> _loadRides() async {
     setState(() => _loading = true);
     final user = supabase.auth.currentUser;
@@ -58,16 +75,18 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
     try {
       final data = await supabase
           .from('ride_requests')
-          .select('''
-            id,
-            pickup_lat,
-            pickup_lng,
-            destination_lat,
-            destination_lng,
-            fare,
-            status,
-            created_at
-          ''')
+          .select(r'''
+    id,
+    pickup_lat,
+    pickup_lng,
+    destination_lat,
+    destination_lng,
+    fare,
+    status,
+    created_at,
+    driver_route_id,
+    driver_routes ( id, driver_id )
+  ''')
           .eq('passenger_id', user.id)
           .order('created_at', ascending: false);
 
@@ -138,6 +157,8 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
     final dLat = (ride['destination_lat'] as num).toDouble();
     final dLng = (ride['destination_lng'] as num).toDouble();
 
+    final driverId = _extractDriverId(ride);
+
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -147,7 +168,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ** REPLACED: static map → OSRM‐powered preview **
+            // OSRM-powered mini map preview
             SizedBox(
               height: 120,
               child: FutureBuilder<Polyline>(
@@ -158,7 +179,6 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
                 builder: (ctx, snap) {
                   final routeLayer =
                       snap.hasData
-                          // OSRM route in green
                           ? PolylineLayer(
                             polylines: [
                               Polyline(
@@ -168,7 +188,6 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
                               ),
                             ],
                           )
-                          // fallback straight‐line
                           : PolylineLayer(
                             polylines: [
                               Polyline(
@@ -222,15 +241,28 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
             ),
 
             const SizedBox(height: 8),
+
             // addresses & fare
             Text(
               '${ride['pickup_address']} → ${ride['destination_address']}',
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
+
+            // NEW: Driver row with rating badge
+            Row(
+              children: [
+                Expanded(child: Text('Driver: ${driverId ?? 'unassigned'}')),
+                if (driverId != null)
+                  UserRatingBadge(userId: driverId, iconSize: 14),
+              ],
+            ),
+
+            const SizedBox(height: 4),
             Text('Fare: ₱${fare.toStringAsFixed(2)}'),
             Text('Requested: $dt'),
             const SizedBox(height: 4),
+
             // status pill
             Align(
               alignment: Alignment.centerLeft,
@@ -251,6 +283,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
             ),
 
             const SizedBox(height: 8),
+
             // action buttons (only for upcoming)
             if (upcoming)
               Row(

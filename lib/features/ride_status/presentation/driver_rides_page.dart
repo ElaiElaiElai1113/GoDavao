@@ -1,5 +1,3 @@
-// lib/features/ride_status/presentation/driver_rides_page.dart
-
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
@@ -15,6 +13,8 @@ import 'package:godavao/main.dart' show localNotify;
 
 import 'driver_ride_status_page.dart';
 
+import 'package:godavao/features/ratings/presentation/user_rating.dart';
+
 class DriverRidesPage extends StatefulWidget {
   const DriverRidesPage({super.key});
 
@@ -28,7 +28,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
   final _poly = PolylinePoints();
   final _dist = Distance();
 
-  List<LatLng> _routePoints = []; // decoded driver route
+  List<LatLng> _routePoints = [];
   List<Map<String, dynamic>> _upcoming = [];
   List<Map<String, dynamic>> _declined = [];
   List<Map<String, dynamic>> _completed = [];
@@ -97,7 +97,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               ),
               const SizedBox(height: 16),
 
-              // Action buttons row
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
@@ -159,7 +158,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                       label: const Text('Complete Ride'),
                     ),
                   ] else ...[
-                    Center(child: Text('No actions available')),
+                    const Center(child: Text('No actions available')),
                   ],
                 ],
               ),
@@ -222,22 +221,23 @@ class _DriverRidesPageState extends State<DriverRidesPage>
 
     _subscribeToNewMatches(routeData['id'] as String);
 
-    // 2) fetch all ride_matches + nested ride_requests + passenger name
+    // 2) fetch all ride_matches + nested ride_requests + passenger (id + name)
     final raw = await _supabase
         .from('ride_matches')
         .select(r'''
-          id,
-          ride_request_id,
-          status,
-          created_at,
-          ride_requests!ride_matches_ride_request_id_fkey (
-            pickup_lat,
-            pickup_lng,
-            destination_lat,
-            destination_lng,
-            users!ride_requests_passenger_id_fkey ( name )
-          )
-        ''')
+    id,
+    ride_request_id,
+    status,
+    created_at,
+    ride_requests (
+      pickup_lat,
+      pickup_lng,
+      destination_lat,
+      destination_lng,
+      passenger_id,
+      users ( id, name )
+    )
+  ''')
         .eq('driver_route_id', routeData['id'] as String)
         .order('created_at', ascending: true);
 
@@ -247,7 +247,26 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       final req = m['ride_requests'] as Map<String, dynamic>?;
       if (req == null) continue;
 
-      final passenger = (req['users'] as Map?)?['name'] as String? ?? 'Unknown';
+      // Passenger name/id with robust list-or-map handling
+      String? passengerName;
+      String? passengerId;
+
+      final usersRel = req['users'];
+      if (usersRel is Map) {
+        passengerName = usersRel['name'] as String?;
+        passengerId = usersRel['id']?.toString();
+      } else if (usersRel is List &&
+          usersRel.isNotEmpty &&
+          usersRel.first is Map) {
+        final first = usersRel.first as Map;
+        passengerName = (first['name'] as String?) ?? 'Unknown';
+        passengerId = first['id']?.toString();
+      }
+
+      // Fallback to ride_requests.passenger_id if needed
+      passengerId ??= req['passenger_id']?.toString();
+      passengerName ??= 'Unknown';
+
       final pLat = (req['pickup_lat'] as num).toDouble();
       final pLng = (req['pickup_lng'] as num).toDouble();
       final dLat = (req['destination_lat'] as num).toDouble();
@@ -279,7 +298,8 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         'ride_request_id': m['ride_request_id'],
         'status': m['status'],
         'created_at': m['created_at'],
-        'passenger': passenger,
+        'passenger': passengerName,
+        'passenger_id': passengerId, // NEW: used by the rating badge
         'pickup_point': pickPt,
         'pickup_address': fmt(pMark),
         'destination_address': fmt(dMark),
@@ -353,18 +373,17 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     final dt = DateFormat(
       'MMM d, y h:mm a',
     ).format(DateTime.parse(m['created_at'] as String));
+    final passengerId = m['passenger_id'] as String?;
 
     return Dismissible(
       key: ValueKey(id),
       direction: DismissDirection.horizontal,
-      // red “decline” background
       background: Container(
         color: Colors.red.shade100,
         alignment: Alignment.centerLeft,
         padding: const EdgeInsets.only(left: 16),
         child: const Icon(Icons.close, color: Colors.red),
       ),
-      // green “accept” background
       secondaryBackground: Container(
         color: Colors.green.shade100,
         alignment: Alignment.centerRight,
@@ -373,10 +392,8 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       ),
       onDismissed: (direction) {
         if (direction == DismissDirection.startToEnd) {
-          // swiped right → decline
           _updateMatchStatus(id, m['ride_request_id'], 'declined');
         } else {
-          // swiped left → accept
           _updateMatchStatus(id, m['ride_request_id'], 'accepted');
         }
       },
@@ -421,7 +438,16 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text('Passenger: ${m['passenger']}'),
+
+                // Passenger row + rating badge
+                Row(
+                  children: [
+                    Expanded(child: Text('Passenger: ${m['passenger']}')),
+                    if (passengerId != null)
+                      UserRatingBadge(userId: passengerId, iconSize: 14),
+                  ],
+                ),
+
                 Text('Requested: $dt'),
                 const SizedBox(height: 8),
                 Text(
@@ -486,7 +512,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                           ),
                         );
                       },
-                      child: Icon(Icons.message),
+                      child: const Icon(Icons.message),
                     ),
                   ],
                 ),
@@ -525,7 +551,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     }
     await _supabase.from('ride_requests').update(upd).eq('id', rideRequestId);
 
-    // inline move
     setState(() {
       final src = _upcoming;
       final item = src.firstWhere((e) => e['match_id'] == matchId);
@@ -586,7 +611,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                 : TabBarView(
                   controller: _tabController,
                   children: [
-                    // Upcoming with colored mini‑map
+                    // Upcoming with colored mini-map
                     RefreshIndicator(
                       onRefresh: _loadMatches,
                       child: ListView(

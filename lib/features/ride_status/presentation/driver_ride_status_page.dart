@@ -1,5 +1,3 @@
-// lib/features/ride_status/presentation/driver_ride_status_page.dart
-
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:latlong2/latlong.dart';
@@ -7,6 +5,11 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'package:godavao/main.dart' show localNotify;
+
+// ⬇️ Ratings imports
+import 'package:godavao/features/ratings/data/ratings_service.dart';
+import 'package:godavao/features/ratings/presentation/rate_user.dart';
+import 'package:godavao/features/ratings/presentation/user_rating.dart';
 
 class DriverRideStatusPage extends StatefulWidget {
   final String rideId;
@@ -23,6 +26,8 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage> {
   Map<String, dynamic>? _ride;
   bool _loading = true;
   String? _error;
+
+  bool _ratingPromptShown = false;
 
   @override
   void initState() {
@@ -49,6 +54,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage> {
   }
 
   Future<void> _loadRide() async {
+    if (!mounted) return;
     setState(() => _loading = true);
     try {
       final r =
@@ -67,10 +73,13 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage> {
               .maybeSingle();
 
       if (r == null) throw Exception('Ride not found');
-      setState(() => _ride = Map<String, dynamic>.from(r as Map));
+      _ride = Map<String, dynamic>.from(r as Map);
+
+      await _maybePromptRatingIfCompleted();
     } catch (e) {
-      setState(() => _error = e.toString());
+      _error = e.toString();
     } finally {
+      if (!mounted) return;
       setState(() => _loading = false);
     }
   }
@@ -88,16 +97,52 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage> {
                 column: 'id',
                 value: widget.rideId,
               ),
-              callback: (payload) {
-                final updated = payload.newRecord;
+              callback: (payload) async {
+                final updated = Map<String, dynamic>.from(payload.newRecord);
+                if (!mounted) return;
+
                 setState(() => _ride = updated);
-                _showNotification(
+                await _showNotification(
                   'Ride Update',
                   'Passenger status is now ${updated['status']}',
                 );
+
+                await _maybePromptRatingIfCompleted();
               },
             )
             .subscribe();
+  }
+
+  Future<void> _maybePromptRatingIfCompleted() async {
+    if (_ratingPromptShown) return;
+    final status = _ride?['status']?.toString();
+    if (status != 'completed') return;
+
+    final uid = supabase.auth.currentUser?.id;
+    final passengerId = _ride?['passenger_id']?.toString();
+    if (uid == null || passengerId == null) return;
+
+    final existing = await RatingsService(supabase).getExistingRating(
+      rideId: widget.rideId,
+      raterUserId: uid,
+      rateeUserId: passengerId,
+    );
+    if (existing != null) return;
+
+    if (!mounted) return;
+    _ratingPromptShown = true;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder:
+          (_) => RateUserSheet(
+            rideId: widget.rideId,
+            raterUserId: uid,
+            rateeUserId: passengerId,
+            rateeName: 'Passenger',
+            rateeRole: 'passenger',
+          ),
+    );
   }
 
   @override
@@ -126,10 +171,21 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage> {
       appBar: AppBar(title: const Text('Driver Ride Details')),
       body: Column(
         children: [
+          // Passenger row with badge
           ListTile(
-            title: Text('Status: ${r['status']}'),
-            subtitle: Text('Passenger: ${r['passenger_id']}'),
+            title: Row(
+              children: [
+                Expanded(child: Text('Passenger: ${r['passenger_id']}')),
+                if (r['passenger_id'] != null)
+                  UserRatingBadge(
+                    userId: r['passenger_id'].toString(),
+                    iconSize: 14,
+                  ),
+              ],
+            ),
+            subtitle: Text('Status: ${r['status']}'),
           ),
+
           Expanded(
             child: FlutterMap(
               options: MapOptions(center: pickup, zoom: 13),
@@ -173,6 +229,27 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage> {
                     ),
                   ],
                 ),
+              ],
+            ),
+          ),
+
+          // Rating action button
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              children: [
+                if (r['status'] == 'completed' && r['passenger_id'] != null)
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.star),
+                      label: const Text('Rate your passenger'),
+                      onPressed: () async {
+                        _ratingPromptShown = false;
+                        await _maybePromptRatingIfCompleted();
+                      },
+                    ),
+                  ),
               ],
             ),
           ),
