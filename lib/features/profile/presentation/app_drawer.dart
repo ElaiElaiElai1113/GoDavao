@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:godavao/features/history/presentation/booking_history_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
 import 'package:godavao/features/profile/presentation/profile_page.dart';
@@ -85,7 +86,11 @@ class AppDrawer extends StatelessWidget {
                     );
                   }),
                   _item(context, Icons.history, 'Booking History', () {
-                    // navigate to your history page
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => BookingHistoryPage()),
+                    );
                   }),
                   _item(
                     context,
