@@ -3,6 +3,8 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:godavao/features/ride_status/presentation/driver_ride_status_page.dart';
 import 'package:godavao/features/ride_status/presentation/passenger_ride_status_page.dart';
+import 'package:godavao/features/verify/presentation/admin_menu_action.dart';
+import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -355,6 +357,20 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
       child: Scaffold(
         appBar: AppBar(
           title: const Text('My Rides'),
+          actions: [
+            AdminMenuAction(),
+            IconButton(
+              icon: const Icon(Icons.verified_user),
+              tooltip: 'Get Verified',
+              onPressed: () {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => const VerifyIdentitySheet(),
+                );
+              },
+            ),
+          ],
           bottom: TabBar(
             controller: _tabController,
             tabs: const [Tab(text: 'Upcoming'), Tab(text: 'History')],

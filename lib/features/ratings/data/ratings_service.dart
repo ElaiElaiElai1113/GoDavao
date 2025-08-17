@@ -8,19 +8,19 @@ class RatingsService {
     required String rideId,
     required String raterUserId,
     required String rateeUserId,
-    required int rating, // 1..5
+    required int rating, // 1..5 from UI
     required String rateeRole, // 'driver' | 'passenger'
     String? comment,
-    List<String>? tags, // optional feedback tags
+    List<String>? tags,
   }) async {
     await supabase.from('ratings').insert({
       'ride_id': rideId,
       'rater_user_id': raterUserId,
       'ratee_user_id': rateeUserId,
-      'rating': rating,
-      'comment': comment,
-      'tags': tags ?? <String>[],
       'ratee_role': rateeRole,
+      'score': rating, // <- your column is `score`
+      'comment': (comment?.isEmpty ?? true) ? null : comment,
+      'tags': tags ?? <String>[],
     });
   }
 
@@ -37,25 +37,21 @@ class RatingsService {
             .eq('rater_user_id', raterUserId)
             .eq('ratee_user_id', rateeUserId)
             .maybeSingle();
-    return (row == null) ? null : Map<String, dynamic>.from(row as Map);
+    return row == null ? null : Map<String, dynamic>.from(row as Map);
   }
 
+  // Single round-trip: avg + count using SQL aliases (works on all Supabase Dart versions)
   Future<Map<String, dynamic>> fetchUserAggregate(String userId) async {
-    // avg + count
-    final res = await supabase.rpc(
-      'void',
-    ) /* dummy to keep type hints happy */; // not used
-    final rows = await supabase
-        .from('ratings')
-        .select('rating')
-        .eq('ratee_user_id', userId);
-    double sum = 0;
-    int cnt = 0;
-    for (final r in rows as List) {
-      sum += (r['rating'] as num).toDouble();
-      cnt++;
-    }
-    final avg = cnt == 0 ? null : sum / cnt;
+    final row =
+        await supabase
+            .from('ratings')
+            .select('avg:avg(score), cnt:count(*)')
+            .eq('ratee_user_id', userId)
+            .single(); // ensures a single map is returned
+
+    final map = Map<String, dynamic>.from(row as Map);
+    final avg = (map['avg'] as num?)?.toDouble();
+    final cnt = (map['cnt'] as num?)?.toInt() ?? 0;
     return {'avg_rating': avg, 'rating_count': cnt};
   }
 
@@ -65,13 +61,14 @@ class RatingsService {
   }) async {
     final rows = await supabase
         .from('ratings')
-        .select('rating')
+        .select('score')
         .eq('ratee_user_id', userId)
         .order('created_at', ascending: false)
         .limit(sample);
+
     final dist = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0};
     for (final r in rows as List) {
-      final n = r['rating'] as int;
+      final n = (r['score'] as num).toInt();
       if (dist.containsKey(n)) dist[n] = dist[n]! + 1;
     }
     return dist;
@@ -83,10 +80,11 @@ class RatingsService {
   }) async {
     final rows = await supabase
         .from('ratings')
-        .select('rating, comment, tags, created_at, rater_user_id')
+        .select('score, comment, tags, created_at, rater_user_id')
         .eq('ratee_user_id', userId)
         .order('created_at', ascending: false)
         .limit(limit);
+
     return (rows as List).map((e) => Map<String, dynamic>.from(e)).toList();
   }
 }

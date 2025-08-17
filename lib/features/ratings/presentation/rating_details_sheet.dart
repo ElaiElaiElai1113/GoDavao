@@ -3,7 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/ratings_service.dart';
 
 class RatingDetailsSheet extends StatefulWidget {
-  final String userId; // ratee
+  final String userId;
   final String title;
   const RatingDetailsSheet({
     super.key,
@@ -111,9 +111,7 @@ class _RatingDetailsSheetState extends State<RatingDetailsSheet> {
                       ..._recent.map(
                         (e) => Card(
                           child: ListTile(
-                            leading: CircleAvatar(
-                              child: Text('${e['rating']}'),
-                            ),
+                            leading: CircleAvatar(child: Text('${e['score']}')),
                             title:
                                 (e['tags'] is List &&
                                         (e['tags'] as List).isNotEmpty)

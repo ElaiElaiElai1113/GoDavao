@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:godavao/features/chat/presentation/chat_page.dart';
+import 'package:godavao/features/verify/presentation/admin_menu_action.dart';
+import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:intl/intl.dart';
 import 'package:geocoding/geocoding.dart';
@@ -11,14 +13,15 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 // global notifications instance
 import 'package:godavao/main.dart' show localNotify;
 
-import 'driver_ride_status_page.dart';
-
 // rating badge beside passenger name (already in your file)
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
 
-// ⬇️ NEW: rating sheet + service
+// rating sheet + service
 import 'package:godavao/features/ratings/presentation/rate_user.dart';
 import 'package:godavao/features/ratings/data/ratings_service.dart';
+
+// verified badge
+import 'package:godavao/features/verify/presentation/verified_badge.dart';
 
 class DriverRidesPage extends StatefulWidget {
   const DriverRidesPage({super.key});
@@ -372,7 +375,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     }
   }
 
-  // ⬇️ NEW: open rating sheet from a completed card
+  // open rating sheet from a completed card
   Future<void> _ratePassenger(Map<String, dynamic> m) async {
     final uid = _supabase.auth.currentUser?.id;
     final rideId = m['ride_request_id']?.toString();
@@ -497,8 +500,12 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                 Row(
                   children: [
                     Expanded(child: Text('Passenger: ${m['passenger']}')),
-                    if (passengerId != null)
+                    if (passengerId != null) ...[
+                      const SizedBox(width: 6),
+                      VerifiedBadge(userId: passengerId, size: 16),
+                      const SizedBox(width: 6),
                       UserRatingBadge(userId: passengerId, iconSize: 14),
+                    ],
                   ],
                 ),
 
@@ -672,6 +679,20 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               Tab(text: 'Completed'),
             ],
           ),
+          actions: [
+            AdminMenuAction(),
+            IconButton(
+              icon: const Icon(Icons.verified_user),
+              tooltip: 'Get Verified',
+              onPressed: () {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => const VerifyIdentitySheet(),
+                );
+              },
+            ),
+          ],
         ),
         body:
             _loading

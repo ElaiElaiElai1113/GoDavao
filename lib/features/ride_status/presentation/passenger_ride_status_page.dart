@@ -7,6 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/features/chat/presentation/chat_page.dart';
 import 'package:godavao/features/ratings/data/ratings_service.dart';
 import 'package:godavao/features/safety/presentation/sos_sheet.dart';
+import 'package:godavao/features/verify/presentation/verified_badge.dart';
+import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
 
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
 
@@ -275,6 +277,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
           );
         },
       ),
+
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
 
       body: Column(
@@ -283,13 +286,32 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
           ListTile(
             title: Row(
               children: [
-                Expanded(child: Text('Driver: ${_driverId ?? 'unassigned'}')),
+                const Text('Driver'),
+                const SizedBox(width: 6),
                 if (_driverId != null)
-                  UserRatingBadge(userId: _driverId!, iconSize: 14),
+                  VerifiedBadge(userId: _driverId!, size: 18),
               ],
             ),
             subtitle: Text('Status: ${r['status']}'),
+            trailing:
+                (_driverId != null)
+                    ? Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        // numeric avg + count (uses your computed driverRatingText)
+                        Text(
+                          _fetchingDriverAgg ? 'Loading…' : driverRatingText,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 2),
+                        // compact star badge that queries live avg(score)
+                        UserRatingBadge(userId: _driverId!, iconSize: 14),
+                      ],
+                    )
+                    : null,
           ),
+
           TextButton(
             child: const Text('View feedback'),
             onPressed:
