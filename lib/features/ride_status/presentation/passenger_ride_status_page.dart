@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:godavao/features/payments/presentation/gcash_proof_sheet.dart';
 import 'package:godavao/features/ratings/presentation/rate_user.dart';
 import 'package:godavao/features/ratings/presentation/rating_details_sheet.dart';
 import 'package:latlong2/latlong.dart';
@@ -379,6 +380,31 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Column(
               children: [
+                if ((r['status'] == 'accepted' ||
+                        r['status'] == 'en_route' ||
+                        r['status'] == 'completed') &&
+                    (r['payment_method'] == 'gcash')) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.account_balance_wallet),
+                      label: const Text('Pay with GCash (upload proof)'),
+                      onPressed: () {
+                        final fare = (r['fare'] as num?)?.toDouble() ?? 0.0;
+                        showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          builder:
+                              (_) => GcashProofSheet(
+                                rideId: widget.rideId,
+                                amount: fare,
+                              ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 if (r['status'] == 'completed' && _driverId != null)
                   SizedBox(
                     width: double.infinity,
