@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:godavao/features/profile/presentation/app_drawer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../auth/presentation/auth_page.dart';
@@ -107,6 +108,7 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
         ],
       ),
+      drawer: const AppDrawer(),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
