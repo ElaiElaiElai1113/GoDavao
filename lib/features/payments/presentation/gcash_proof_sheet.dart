@@ -51,14 +51,8 @@ class _GcashProofSheetState extends State<GcashProofSheet> {
     }
     setState(() => _loading = true);
     try {
-      final svc = PaymentService(Supabase.instance.client);
-      await svc.submitGcashProof(
-        rideId: widget.rideId,
-        refNo: _ref.text.trim(),
-        amount: widget.amount,
-        localImagePath: _img!.path,
-        note: _note.text.trim().isEmpty ? null : _note.text.trim(),
-      );
+      final svc = PaymentsService(Supabase.instance.client);
+
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(

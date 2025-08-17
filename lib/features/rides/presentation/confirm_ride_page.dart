@@ -1,13 +1,12 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:godavao/features/payments/data/payment_service.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'package:godavao/core/osrm_service.dart';
-import 'package:godavao/features/payments/presentation/payment_method_sheet.dart';
-import 'package:godavao/features/payments/presentation/gcash_proof_sheet.dart';
 import 'package:godavao/main.dart' show localNotify;
 
 class ConfirmRidePage extends StatefulWidget {
@@ -102,7 +101,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         _loading = false;
       });
     } catch (_) {
-      // Fallback straight line
+      // Fallback straight line when OSRM is unavailable
       final km = _haversineKm(widget.pickup, widget.destination);
       const avgKmh = 22.0;
       final mins = max((km / avgKmh) * 60.0, 1.0);
@@ -145,36 +144,10 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     );
   }
 
-  /// RPC wrapper: create/hold a payment intent (escrow) for this ride.
-  Future<String?> _createOrHoldPaymentIntent({
-    required String rideId,
-    required String method, // 'gcash' | 'cash'
-    required double amount,
-    required String driverUserId,
-    String? proofUrl,
-  }) async {
-    final supabase = Supabase.instance.client;
-    final res =
-        await supabase
-            .rpc(
-              'api_create_or_hold_payment',
-              params: {
-                '_ride_id': rideId,
-                '_method': method,
-                '_amount': amount,
-                '_payee_user_id': driverUserId,
-                '_proof_url': proofUrl,
-                '_hold_minutes': 120,
-              },
-            )
-            .maybeSingle();
-    return (res?['api_create_or_hold_payment'] as String?);
-  }
-
   Future<void> _confirmRide() async {
     setState(() => _loading = true);
-    final supabase = Supabase.instance.client;
-    final user = supabase.auth.currentUser;
+    final sb = Supabase.instance.client;
+    final user = sb.auth.currentUser;
 
     if (user == null) {
       if (mounted) {
@@ -187,9 +160,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     }
 
     try {
-      // 1) Create the ride first (so we have a ride_id for escrow)
+      // 1) Create the ride request
       final req =
-          await supabase
+          await sb
               .from('ride_requests')
               .insert({
                 'passenger_id': user.id,
@@ -200,76 +173,47 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 'fare': _fare,
                 'driver_route_id': widget.routeId,
                 'status': 'pending',
-                // Optional: audit fields
-                // 'distance_km': _distanceKm,
-                // 'duration_min': _durationMin,
               })
               .select('id')
               .maybeSingle();
 
       final rideReqId = (req)?['id'] as String?;
-      if (rideReqId == null) {
-        throw 'Failed to create ride request';
-      }
+      if (rideReqId == null) throw 'Failed to create ride request';
 
-      // 2) Ask for payment method
-      final choice = await showModalBottomSheet<PaymentChoice>(
-        context: context,
-        isScrollControlled: true,
-        builder: (_) => const PaymentMethodSheet(),
+      // 2) Create the match
+      final matchRow =
+          await sb
+              .from('ride_matches')
+              .insert({
+                'ride_request_id': rideReqId,
+                'driver_route_id': widget.routeId,
+                'driver_id': widget.driverId,
+                'status': 'accepted',
+              })
+              .select('id')
+              .maybeSingle();
+
+      final matchId = (matchRow)?['id'] as String?;
+      if (matchId == null) throw 'Failed to create ride match';
+
+      // 3) Auto-hold with GCash Sim (default)
+      final payments = PaymentsService(sb);
+      const provider = PaymentProvider.gcashSim;
+      final paymentId = await payments.holdForMatch(
+        matchId: matchId,
+        provider: provider,
       );
 
-      if (choice == null) {
-        // user dismissed — keep ride pending without a payment intent
-        if (mounted) setState(() => _loading = false);
-        return;
-      }
-
-      String? proofUrl;
-      if (choice.method == 'gcash') {
-        // 2a) Upload proof and get a storage URL
-        proofUrl = await showModalBottomSheet<String>(
-          context: context,
-          isScrollControlled: true,
-          builder: (_) => GcashProofSheet(rideId: rideReqId, amount: _fare),
-        );
-        if (proofUrl == null) {
-          // User backed out of upload; leave ride as-is
-          if (mounted) setState(() => _loading = false);
-          return;
-        }
-      }
-
-      // 3) Create/hold the payment intent (escrow)
-      final intentId = await _createOrHoldPaymentIntent(
-        rideId: rideReqId,
-        method: choice.method,
-        amount: _fare,
-        driverUserId: widget.driverId,
-        proofUrl: proofUrl,
-      );
-      if (intentId == null) throw 'Payment initialization failed';
-
-      // 4) Create the driver match after the payment intent exists
-      await supabase.from('ride_matches').insert({
-        'ride_request_id': rideReqId,
-        'driver_route_id': widget.routeId,
-        'driver_id': widget.driverId,
-        'status': 'pending',
-      });
-
-      // 5) Persist chosen method on ride for UI convenience
-      await supabase
+      // 4) Update ride request with method
+      await sb
           .from('ride_requests')
-          .update({'payment_method': choice.method})
+          .update({'payment_method': 'gcash'})
           .eq('id', rideReqId);
 
-      // 6) Notify & navigate
+      // 5) Notify & navigate
       await _showNotification(
         'Ride Requested',
-        choice.method == 'gcash'
-            ? 'We received your GCash proof — payment is on hold.'
-            : 'Cash selected — payment will be released after arrival.',
+        'Payment is on hold via GCash (sim).',
       );
 
       if (!mounted) return;
@@ -281,6 +225,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
       await _showNotification('Request Failed', e.toString());
+    } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
