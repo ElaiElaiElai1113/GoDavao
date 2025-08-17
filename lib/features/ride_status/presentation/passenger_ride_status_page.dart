@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:godavao/features/ratings/presentation/rate_user.dart';
+import 'package:godavao/features/ratings/presentation/rating_details_sheet.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/features/chat/presentation/chat_page.dart';
 import 'package:godavao/features/ratings/data/ratings_service.dart';
+import 'package:godavao/features/safety/presentation/sos_sheet.dart';
 
-// ⬇️ Add this import for the compact stars
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
 
 class PassengerRideStatusPage extends StatefulWidget {
@@ -262,6 +263,20 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Ride Details')),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: Colors.red.shade700,
+        icon: const Icon(Icons.emergency_share),
+        label: const Text('SOS'),
+        onPressed: () {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            builder: (_) => SosSheet(rideId: widget.rideId),
+          );
+        },
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+
       body: Column(
         children: [
           // Header with inline badge beside "Driver"
@@ -274,6 +289,19 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
               ],
             ),
             subtitle: Text('Status: ${r['status']}'),
+          ),
+          TextButton(
+            child: const Text('View feedback'),
+            onPressed:
+                () => showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  builder:
+                      (_) => RatingDetailsSheet(
+                        userId: _driverId!,
+                        title: 'Driver feedback',
+                      ),
+                ),
           ),
 
           // map view
@@ -340,6 +368,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                       },
                     ),
                   ),
+
                 const SizedBox(height: 8),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.message),

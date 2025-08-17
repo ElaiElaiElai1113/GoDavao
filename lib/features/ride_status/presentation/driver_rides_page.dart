@@ -13,7 +13,12 @@ import 'package:godavao/main.dart' show localNotify;
 
 import 'driver_ride_status_page.dart';
 
+// rating badge beside passenger name (already in your file)
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
+
+// ⬇️ NEW: rating sheet + service
+import 'package:godavao/features/ratings/presentation/rate_user.dart';
+import 'package:godavao/features/ratings/data/ratings_service.dart';
 
 class DriverRidesPage extends StatefulWidget {
   const DriverRidesPage({super.key});
@@ -299,7 +304,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         'status': m['status'],
         'created_at': m['created_at'],
         'passenger': passengerName,
-        'passenger_id': passengerId, // NEW: used by the rating badge
+        'passenger_id': passengerId, // used by the rating button/badge
         'pickup_point': pickPt,
         'pickup_address': fmt(pMark),
         'destination_address': fmt(dMark),
@@ -364,6 +369,55 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         return Colors.red;
       default:
         return Colors.black;
+    }
+  }
+
+  // ⬇️ NEW: open rating sheet from a completed card
+  Future<void> _ratePassenger(Map<String, dynamic> m) async {
+    final uid = _supabase.auth.currentUser?.id;
+    final rideId = m['ride_request_id']?.toString();
+    final passengerId = m['passenger_id']?.toString();
+
+    if (uid == null || rideId == null || passengerId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Missing info to rate passenger.')),
+      );
+      return;
+    }
+
+    try {
+      // Avoid double-rating this ride
+      final existing = await RatingsService(_supabase).getExistingRating(
+        rideId: rideId,
+        raterUserId: uid,
+        rateeUserId: passengerId,
+      );
+      if (existing != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('You already rated this passenger for this ride.'),
+          ),
+        );
+        return;
+      }
+
+      await showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        builder:
+            (_) => RateUserSheet(
+              rideId: rideId,
+              raterUserId: uid,
+              rateeUserId: passengerId,
+              rateeName: m['passenger']?.toString() ?? 'Passenger',
+              rateeRole: 'passenger',
+            ),
+      );
+    } catch (e) {
+      final msg = e is PostgrestException ? e.message : e.toString();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to open rating: $msg')));
     }
   }
 
@@ -458,6 +512,8 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                   ),
                 ),
                 const SizedBox(height: 8),
+
+                // Actions row (with "Rate passenger" on completed)
                 Row(
                   children: [
                     if (status == 'pending')
@@ -501,6 +557,8 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                             ),
                         child: const Text('Complete Ride'),
                       ),
+
+                    // 💬 Chat button (always visible)
                     ElevatedButton(
                       onPressed: () {
                         Navigator.push(
@@ -514,6 +572,16 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                       },
                       child: const Icon(Icons.message),
                     ),
+
+                    const SizedBox(width: 8),
+
+                    // ⭐ Only on COMPLETED: show rate button
+                    if (status == 'completed' && passengerId != null)
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.star),
+                        label: const Text('Rate passenger'),
+                        onPressed: () => _ratePassenger(m),
+                      ),
                   ],
                 ),
               ],

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:godavao/features/ratings/presentation/rating_details_sheet.dart';
+import 'package:godavao/features/safety/presentation/sos_sheet.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -169,6 +171,20 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Driver Ride Details')),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: Colors.red.shade700,
+        icon: const Icon(Icons.emergency_share),
+        label: const Text('SOS'),
+        onPressed: () {
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            builder: (_) => SosSheet(rideId: widget.rideId),
+          );
+        },
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+
       body: Column(
         children: [
           // Passenger row with badge
@@ -181,6 +197,19 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage> {
                     userId: r['passenger_id'].toString(),
                     iconSize: 14,
                   ),
+                TextButton(
+                  child: const Text('View feedback'),
+                  onPressed:
+                      () => showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        builder:
+                            (_) => RatingDetailsSheet(
+                              userId: r['passenger_id'].toString(),
+                              title: 'Passenger feedback',
+                            ),
+                      ),
+                ),
               ],
             ),
             subtitle: Text('Status: ${r['status']}'),
