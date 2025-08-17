@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:godavao/features/rides/presentation/confirm_ride_page.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -148,72 +149,27 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
 
   Future<void> _onRequestRide() async {
     if (_pickupLocation == null || _dropoffLocation == null || _sending) return;
-    setState(() => _sending = true);
 
-    final user = supabase.auth.currentUser;
-    if (user == null) {
+    if (_selectedRoute == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('You must be signed in to request a ride'),
-        ),
+        const SnackBar(content: Text('Please select a driver route first')),
       );
-      return setState(() => _sending = false);
+      return;
     }
 
-    try {
-      // 1) Create ride_request
-      final inserted =
-          await supabase
-              .from('ride_requests')
-              .insert({
-                'passenger_id': user.id,
-                'pickup_lat': _pickupLocation!.latitude,
-                'pickup_lng': _pickupLocation!.longitude,
-                'destination_lat': _dropoffLocation!.latitude,
-                'destination_lng': _dropoffLocation!.longitude,
-                'driver_route_id': _selectedRoute!.id,
-                'status': 'pending',
-              })
-              .select('id')
-              .maybeSingle();
-
-      final rideReqId = (inserted)?['id'] as String?;
-      if (rideReqId == null) throw 'Failed to create ride request';
-
-      // 2) Create ride_match
-      await supabase.from('ride_matches').insert({
-        'ride_request_id': rideReqId,
-        'driver_route_id': _selectedRoute!.id,
-        'driver_id': _selectedRoute!.driverId,
-        'status': 'pending',
-      });
-
-      // 3) Local notification
-      await localNotify.show(
-        0,
-        'Ride Requested',
-        'Your ride has been requested. Check My Rides for status.',
-        const NotificationDetails(
-          android: AndroidNotificationDetails(
-            'rides_channel',
-            'Ride Updates',
-            channelDescription: 'Alerts when you confirm a ride',
-            importance: Importance.max,
-            priority: Priority.high,
-          ),
-          iOS: DarwinNotificationDetails(),
-        ),
-      );
-
-      // 4) Navigate on success
-      Navigator.pushReplacementNamed(context, '/passenger_rides');
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error requesting ride: $e')));
-    } finally {
-      setState(() => _sending = false);
-    }
+    // No DB writes here. Just go to the confirm screen.
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (_) => ConfirmRidePage(
+              pickup: _pickupLocation!,
+              destination: _dropoffLocation!,
+              routeId: _selectedRoute!.id,
+              driverId: _selectedRoute!.driverId,
+            ),
+      ),
+    );
   }
 
   @override
@@ -335,7 +291,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                           color: Colors.white,
                         ),
                       )
-                      : const Text('Request Ride'),
+                      : const Text('Review Fare'),
             ),
           ),
         ],
