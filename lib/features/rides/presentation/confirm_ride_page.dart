@@ -196,6 +196,19 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       final matchId = (matchRow)?['id'] as String?;
       if (matchId == null) throw 'Failed to create ride match';
 
+      // 2.1) Explicit insert into payments (belt & suspenders)
+      try {
+        await sb.from('payments').insert({
+          'ride_id': rideReqId,
+          'amount': _fare,
+          'method': 'gcash',
+          'status': 'on_hold',
+        });
+      } catch (error) {
+        // If trigger already inserted it → unique violation, safe to ignore
+        debugPrint('Payments insert skipped: $error');
+      }
+
       // 3) Auto-hold with GCash Sim (default)
       final payments = PaymentsService(sb);
       const provider = PaymentProvider.gcashSim;
