@@ -1,13 +1,16 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:godavao/features/rides/presentation/fare_breakdown_row.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'package:godavao/core/osrm_service.dart';
-import 'package:godavao/features/payments/data/payment_service.dart';
-import 'package:godavao/features/rides/data/fare_calculator.dart';
 import 'package:godavao/main.dart' show localNotify;
+
+// NEW
+import 'package:godavao/features/rides/data/fare_calculator.dart';
 
 class ConfirmRidePage extends StatefulWidget {
   final LatLng pickup;
@@ -36,10 +39,26 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   double _durationMin = 0;
   double _fare = 0;
 
+  FareBreakdown? _breakdown; // NEW
+
   @override
   void initState() {
     super.initState();
     _loadRouteAndFare();
+  }
+
+  double _deg2rad(double d) => d * pi / 180.0;
+  double _haversineKm(LatLng a, LatLng b) {
+    const r = 6371.0;
+    final dLat = _deg2rad(b.latitude - a.latitude);
+    final dLon = _deg2rad(b.longitude - a.longitude);
+    final lat1 = _deg2rad(a.latitude);
+    final lat2 = _deg2rad(b.latitude);
+    final h =
+        sin(dLat / 2) * sin(dLat / 2) +
+        sin(dLon / 2) * sin(dLon / 2) * cos(lat1) * cos(lat2);
+    final c = 2 * atan2(sqrt(h), sqrt(1 - h));
+    return r * c;
   }
 
   Future<void> _loadRouteAndFare() async {
@@ -55,8 +74,8 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         timeout: const Duration(seconds: 6),
       );
 
-      final km = (d.distanceMeters / 1000.0);
-      final mins = (d.durationSeconds / 60.0).clamp(1.0, double.infinity);
+      final km = d.distanceMeters / 1000.0;
+      final mins = max(d.durationSeconds / 60.0, 1.0);
 
       final breakdown = FareCalculator.estimate(km: km, minutes: mins);
 
@@ -66,14 +85,14 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         _distanceKm = breakdown.km;
         _durationMin = breakdown.minutes;
         _fare = breakdown.total;
+        _breakdown = breakdown;
         _loading = false;
       });
     } catch (_) {
       // Fallback straight line when OSRM is unavailable
-      final km = FareCalculator.haversineKm(widget.pickup, widget.destination);
+      final km = _haversineKm(widget.pickup, widget.destination);
       const avgKmh = 22.0;
-      final mins = (km / avgKmh) * 60.0;
-
+      final mins = max((km / avgKmh) * 60.0, 1.0);
       final breakdown = FareCalculator.estimate(km: km, minutes: mins);
 
       if (!mounted) return;
@@ -86,6 +105,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         _distanceKm = breakdown.km;
         _durationMin = breakdown.minutes;
         _fare = breakdown.total;
+        _breakdown = breakdown;
         _error = 'OSRM unavailable — using approximate route.';
         _loading = false;
       });
@@ -125,7 +145,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     }
 
     try {
-      // 1) Create ride request
+      // 1) Create the ride request
       final req =
           await sb
               .from('ride_requests')
@@ -145,28 +165,16 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       final rideReqId = (req)?['id'] as String?;
       if (rideReqId == null) throw 'Failed to create ride request';
 
-      // 2) Create match
-      final matchRow =
-          await sb
-              .from('ride_matches')
-              .insert({
-                'ride_request_id': rideReqId,
-                'driver_route_id': widget.routeId,
-                'driver_id': widget.driverId,
-                'status': 'accepted',
-              })
-              .select('id')
-              .maybeSingle();
+      // 2) Create the match (still pending for driver to accept)
+      await sb.from('ride_matches').insert({
+        'ride_request_id': rideReqId,
+        'driver_route_id': widget.routeId,
+        'driver_id': widget.driverId,
+        'status': 'pending',
+      });
 
-      final matchId = (matchRow)?['id'] as String?;
-      if (matchId == null) throw 'Failed to create ride match';
-
-      // 3) Auto-hold with GCash Sim
-      final payments = PaymentsService(sb);
-      const provider = PaymentProvider.gcashSim;
-      await payments.holdForMatch(matchId: matchId, provider: provider);
-
-      // 3.1) Explicit insert into payments table (belt & suspenders)
+      // 3) Optional: belt & suspenders — insert an on_hold payment record
+      // (If you already have a DB trigger that makes this, let this be best-effort.)
       await sb
           .from('payments')
           .insert({
@@ -175,21 +183,11 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
             'method': 'gcash',
             'status': 'on_hold',
           })
-          .onError((error, _) {
-            // Ignore if a trigger already inserted (unique conflict)
-            return {};
-          });
+          .onError((_, __) => {}); // ignore unique conflict if trigger ran
 
-      // 4) Update ride request with method
-      await sb
-          .from('ride_requests')
-          .update({'payment_method': 'gcash'})
-          .eq('id', rideReqId);
-
-      // 5) Notify & navigate
       await _showNotification(
         'Ride Requested',
-        'Payment is on hold via GCash (sim).',
+        'Your ride (₱${_fare.toStringAsFixed(2)}) has been requested.',
       );
 
       if (!mounted) return;
@@ -201,7 +199,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
       await _showNotification('Request Failed', e.toString());
-    } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -274,14 +271,12 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                     Text('Time: ${_durationMin.toStringAsFixed(0)} min'),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Estimated Fare: ₱${_fare.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
-                ),
+                const SizedBox(height: 12),
+
+                // NEW: show the full fare breakdown
+                if (_breakdown != null)
+                  FareBreakdownRow(breakdown: _breakdown!),
+
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
