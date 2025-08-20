@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:flutter_polyline_points/flutter_polyline_points.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:intl/intl.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -26,13 +23,10 @@ class DriverRidesPage extends StatefulWidget {
 class _DriverRidesPageState extends State<DriverRidesPage>
     with SingleTickerProviderStateMixin {
   final _supabase = Supabase.instance.client;
-  final _poly = PolylinePoints();
-  final _dist = Distance();
 
   late TabController _tabController;
   final _listScroll = ScrollController();
 
-  List<LatLng> _routePoints = [];
   List<Map<String, dynamic>> _upcoming = [];
   List<Map<String, dynamic>> _declined = [];
   List<Map<String, dynamic>> _completed = [];
@@ -73,36 +67,10 @@ class _DriverRidesPageState extends State<DriverRidesPage>
 
     setState(() => _loading = true);
 
-    // 1) driver route
-    final routeData =
-        await _supabase
-            .from('driver_routes')
-            .select('id, route_polyline')
-            .eq('driver_id', user.id)
-            .order('created_at', ascending: false)
-            .limit(1)
-            .maybeSingle();
+    // Subscribe to ALL matches for this driver (once)
+    _subscribeToNewMatchesByDriver(user.id);
 
-    if (routeData == null) {
-      setState(() {
-        _upcoming = [];
-        _declined = [];
-        _completed = [];
-        _routePoints = [];
-        _paymentByRide = {};
-        _loading = false;
-      });
-      return;
-    }
-
-    _routePoints =
-        _poly
-            .decodePolyline(routeData['route_polyline'] as String)
-            .map((p) => LatLng(p.latitude, p.longitude))
-            .toList();
-    _subscribeToNewMatches(routeData['id'] as String);
-
-    // 2) matches + nested request
+    // Fetch ALL ride_matches for this driver, regardless of route
     final raw = await _supabase
         .from('ride_matches')
         .select('''
@@ -110,6 +78,8 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           ride_request_id,
           status,
           created_at,
+          driver_id,
+          driver_route_id,
           ride_requests (
             pickup_lat, pickup_lng,
             destination_lat, destination_lng,
@@ -117,8 +87,8 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             users ( id, name )
           )
         ''')
-        .eq('driver_route_id', routeData['id'] as String)
-        .order('created_at', ascending: true);
+        .eq('driver_id', user.id)
+        .order('created_at', ascending: false); // newest first
 
     final all = <Map<String, dynamic>>[];
     final rideIds = <String>[];
@@ -127,7 +97,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       final req = m['ride_requests'] as Map<String, dynamic>?;
       if (req == null) continue;
 
-      // passenger
+      // Passenger name/id
       String passengerName = 'Unknown';
       String? passengerId;
       final usersRel = req['users'];
@@ -143,60 +113,51 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       }
       passengerId ??= req['passenger_id']?.toString();
 
-      // coordinates
-      final pickup = LatLng(
-        (req['pickup_lat'] as num).toDouble(),
-        (req['pickup_lng'] as num).toDouble(),
-      );
-      final dest = LatLng(
-        (req['destination_lat'] as num).toDouble(),
-        (req['destination_lng'] as num).toDouble(),
-      );
-
-      // addresses (best effort)
+      // Addresses (best effort reverse geocode)
       String fmt(Placemark pm) => [
         pm.thoroughfare,
         pm.subLocality,
         pm.locality,
       ].whereType<String>().where((s) => s.isNotEmpty).join(', ');
-      final pickupMark =
-          (await placemarkFromCoordinates(
-            pickup.latitude,
-            pickup.longitude,
-          )).first;
-      final destMark =
-          (await placemarkFromCoordinates(dest.latitude, dest.longitude)).first;
 
-      // sort index closest to pickup
-      int bestI = 0;
-      double bestD = double.infinity;
-      for (var i = 0; i < _routePoints.length; i++) {
-        final d = _dist(_routePoints[i], pickup);
-        if (d < bestD) {
-          bestD = d;
-          bestI = i;
-        }
-      }
+      String pickupAddr = 'Pickup';
+      String destAddr = 'Destination';
+      try {
+        final pickupMark =
+            (await placemarkFromCoordinates(
+              (req['pickup_lat'] as num).toDouble(),
+              (req['pickup_lng'] as num).toDouble(),
+            )).first;
+        pickupAddr = fmt(pickupMark);
+      } catch (_) {}
+      try {
+        final destMark =
+            (await placemarkFromCoordinates(
+              (req['destination_lat'] as num).toDouble(),
+              (req['destination_lng'] as num).toDouble(),
+            )).first;
+        destAddr = fmt(destMark);
+      } catch (_) {}
 
       final fare = (req['fare'] as num?)?.toDouble();
 
       all.add({
         'match_id': m['id'],
         'ride_request_id': m['ride_request_id'],
+        'driver_route_id': m['driver_route_id'],
         'status': m['status'],
         'created_at': m['created_at'],
         'passenger': passengerName,
         'passenger_id': passengerId,
-        'pickup_address': fmt(pickupMark),
-        'destination_address': fmt(destMark),
-        'route_index': bestI,
+        'pickup_address': pickupAddr,
+        'destination_address': destAddr,
         'fare': fare,
       });
 
       rideIds.add(m['ride_request_id'] as String);
     }
 
-    all.sort((a, b) => a['route_index'].compareTo(b['route_index']));
+    // Load payment badges in bulk
     await _loadPaymentIntents(rideIds);
 
     setState(() {
@@ -229,19 +190,19 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     }
   }
 
-  void _subscribeToNewMatches(String routeId) {
+  void _subscribeToNewMatchesByDriver(String driverId) {
     if (_matchChannel != null) return;
     _matchChannel =
         _supabase
-            .channel('ride_matches_route_$routeId')
+            .channel('ride_matches_driver_$driverId')
             .onPostgresChanges(
               schema: 'public',
               table: 'ride_matches',
               event: PostgresChangeEvent.insert,
               filter: PostgresChangeFilter(
                 type: PostgresChangeFilterType.eq,
-                column: 'driver_route_id',
-                value: routeId,
+                column: 'driver_id',
+                value: driverId, // 🔑 watch all routes for this driver
               ),
               callback: (payload) {
                 setState(
@@ -251,35 +212,10 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                   'New Request',
                   'A passenger requested a pickup.',
                 );
-                _loadMatches();
+                _loadMatches(); // refresh list
               },
             )
             .subscribe();
-  }
-
-  Color _statusColor(String s) {
-    switch (s) {
-      case 'pending':
-        return Colors.grey;
-      case 'accepted':
-        return Colors.blue;
-      case 'en_route':
-        return Colors.orange;
-      case 'completed':
-        return Colors.green;
-      case 'declined':
-        return Colors.red;
-      default:
-        return Colors.black;
-    }
-  }
-
-  Widget _fareRow(Map<String, dynamic> m) {
-    final fare = (m['fare'] as num?)?.toDouble();
-    return Text(
-      fare != null ? 'Fare: ₱${fare.toStringAsFixed(2)}' : 'Fare: —',
-      style: const TextStyle(fontWeight: FontWeight.w600),
-    );
   }
 
   Map<String, dynamic>? _findAndRemove(String matchId) {
@@ -308,8 +244,8 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             .update({'status': 'canceled'})
             .eq('ride_id', rideRequestId);
       }
-    } catch (e) {
-      // not fatal to screen UX
+    } catch (_) {
+      // non-fatal
     } finally {
       await _loadPaymentIntents([rideRequestId]);
       if (mounted) setState(() {});
@@ -330,7 +266,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           .update({'status': newStatus})
           .eq('id', matchId);
 
-      // 2) mirror to ride_requests (+attach driver_route_id on accept)
+      // 2) mirror to ride_requests (+ attach latest route_id on accept, optional)
       final upd = {'status': newStatus};
       if (newStatus == 'accepted') {
         final u = _supabase.auth.currentUser!;
@@ -347,7 +283,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       }
       await _supabase.from('ride_requests').update(upd).eq('id', rideRequestId);
 
-      // 3) payments for terminal transitions
+      // 3) payments
       if (newStatus == 'completed' ||
           newStatus == 'declined' ||
           newStatus == 'canceled') {
@@ -464,6 +400,22 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             const SizedBox(height: 4),
             Row(
               children: [
+                if (m['driver_route_id'] != null) ...[
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Route: ${m['driver_route_id'].toString().substring(0, 8)}',
+                    ),
+                  ),
+                ],
                 Expanded(child: Text('Passenger: ${m['passenger']}')),
                 if (passengerId != null) ...[
                   const SizedBox(width: 6),
@@ -475,7 +427,12 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             ),
             Text('Requested: $dt'),
             const SizedBox(height: 8),
-            _fareRow(m),
+            Text(
+              (m['fare'] as num?) != null
+                  ? 'Fare: ₱${(m['fare'] as num).toDouble().toStringAsFixed(2)}'
+                  : 'Fare: —',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -545,6 +502,23 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         ),
       ),
     );
+  }
+
+  Color _statusColor(String s) {
+    switch (s) {
+      case 'pending':
+        return Colors.grey;
+      case 'accepted':
+        return Colors.blue;
+      case 'en_route':
+        return Colors.orange;
+      case 'completed':
+        return Colors.green;
+      case 'declined':
+        return Colors.red;
+      default:
+        return Colors.black;
+    }
   }
 
   @override
