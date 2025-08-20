@@ -4,6 +4,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:uuid/uuid.dart';
 
 import 'package:godavao/core/osrm_service.dart';
 import 'package:godavao/features/payments/data/payment_service.dart';
@@ -149,6 +150,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     setState(() => _loading = true);
     final sb = Supabase.instance.client;
     final user = sb.auth.currentUser;
+    final token = const Uuid().v4();
 
     if (user == null) {
       if (mounted) {
@@ -165,8 +167,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       final req =
           await sb
               .from('ride_requests')
-              .insert({
-                'passenger_id': user.id,
+              .upsert({
+                'client_token': token,
+                'passenger_id': user!.id,
                 'pickup_lat': widget.pickup.latitude,
                 'pickup_lng': widget.pickup.longitude,
                 'destination_lat': widget.destination.latitude,
@@ -174,11 +177,11 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 'fare': _fare,
                 'driver_route_id': widget.routeId,
                 'status': 'pending',
-              })
+              }, onConflict: 'client_token')
               .select('id')
-              .maybeSingle();
+              .single();
 
-      final rideReqId = (req)?['id'] as String?;
+      final rideReqId = req['id'] as String;
       if (rideReqId == null) throw 'Failed to create ride request';
 
       // 2) ride_matches (pending) — driver will accept later
