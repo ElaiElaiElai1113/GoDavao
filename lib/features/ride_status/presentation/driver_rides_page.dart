@@ -14,12 +14,11 @@ import 'package:godavao/features/verify/presentation/verified_badge.dart';
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
 import 'package:godavao/features/ratings/presentation/rate_user.dart';
 import 'package:godavao/features/ratings/data/ratings_service.dart';
-
+import 'package:godavao/features/payments/presentation/payment_status_chip.dart';
 import 'package:godavao/main.dart' show localNotify;
 
 class DriverRidesPage extends StatefulWidget {
   const DriverRidesPage({super.key});
-
   @override
   State<DriverRidesPage> createState() => _DriverRidesPageState();
 }
@@ -39,6 +38,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
   List<Map<String, dynamic>> _completed = [];
   final Set<String> _newMatchIds = {};
 
+  // ride_request_id -> {status, amount}
   Map<String, Map<String, dynamic>> _paymentByRide = {};
   bool _loading = true;
   RealtimeChannel? _matchChannel;
@@ -73,7 +73,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
 
     setState(() => _loading = true);
 
-    // 1. Load driver’s latest route
+    // 1) driver route
     final routeData =
         await _supabase
             .from('driver_routes')
@@ -100,10 +100,9 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             .decodePolyline(routeData['route_polyline'] as String)
             .map((p) => LatLng(p.latitude, p.longitude))
             .toList();
-
     _subscribeToNewMatches(routeData['id'] as String);
 
-    // 2. Fetch ride matches with nested ride_requests
+    // 2) matches + nested request
     final raw = await _supabase
         .from('ride_matches')
         .select('''
@@ -128,21 +127,23 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       final req = m['ride_requests'] as Map<String, dynamic>?;
       if (req == null) continue;
 
-      // passenger info
+      // passenger
       String passengerName = 'Unknown';
       String? passengerId;
       final usersRel = req['users'];
       if (usersRel is Map) {
-        passengerName = usersRel['name'] ?? passengerName;
+        passengerName = (usersRel['name'] as String?) ?? passengerName;
         passengerId = usersRel['id']?.toString();
-      } else if (usersRel is List && usersRel.isNotEmpty) {
+      } else if (usersRel is List &&
+          usersRel.isNotEmpty &&
+          usersRel.first is Map) {
         final first = usersRel.first as Map;
-        passengerName = first['name'] ?? passengerName;
+        passengerName = (first['name'] as String?) ?? passengerName;
         passengerId = first['id']?.toString();
       }
       passengerId ??= req['passenger_id']?.toString();
 
-      // pickup & destination
+      // coordinates
       final pickup = LatLng(
         (req['pickup_lat'] as num).toDouble(),
         (req['pickup_lng'] as num).toDouble(),
@@ -152,12 +153,12 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         (req['destination_lng'] as num).toDouble(),
       );
 
+      // addresses (best effort)
       String fmt(Placemark pm) => [
         pm.thoroughfare,
         pm.subLocality,
         pm.locality,
       ].whereType<String>().where((s) => s.isNotEmpty).join(', ');
-
       final pickupMark =
           (await placemarkFromCoordinates(
             pickup.latitude,
@@ -166,7 +167,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       final destMark =
           (await placemarkFromCoordinates(dest.latitude, dest.longitude)).first;
 
-      // route index for sorting
+      // sort index closest to pickup
       int bestI = 0;
       double bestD = double.infinity;
       for (var i = 0; i < _routePoints.length; i++) {
@@ -186,7 +187,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         'created_at': m['created_at'],
         'passenger': passengerName,
         'passenger_id': passengerId,
-        'pickup_point': pickup,
         'pickup_address': fmt(pickupMark),
         'destination_address': fmt(destMark),
         'route_index': bestI,
@@ -222,7 +222,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         .inFilter('ride_id', rideIds.toSet().toList());
 
     for (final row in res as List) {
-      _paymentByRide[row['ride_id']] = {
+      _paymentByRide[row['ride_id'] as String] = {
         'status': row['status'] as String?,
         'amount': (row['amount'] as num?)?.toDouble(),
       };
@@ -257,7 +257,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             .subscribe();
   }
 
-  // === UI HELPERS ===
   Color _statusColor(String s) {
     switch (s) {
       case 'pending':
@@ -275,58 +274,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     }
   }
 
-  Widget _paymentStatusBadge(String rideId) {
-    final pi = _paymentByRide[rideId];
-    if (pi == null) return const SizedBox.shrink();
-    final status = pi['status'] ?? '';
-    final amount = pi['amount'];
-
-    Color bg;
-    IconData icon;
-    String label;
-    switch (status) {
-      case 'on_hold':
-        bg = Colors.amber.shade100;
-        icon = Icons.lock_clock;
-        label = 'ON HOLD';
-        break;
-      case 'captured':
-        bg = Colors.green.shade100;
-        icon = Icons.verified;
-        label = 'CAPTURED';
-        break;
-      case 'canceled':
-        bg = Colors.red.shade100;
-        icon = Icons.cancel;
-        label = 'CANCELED';
-        break;
-      default:
-        bg = Colors.grey.shade200;
-        icon = Icons.help_outline;
-        label = status.toString();
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14),
-          const SizedBox(width: 6),
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-          if (amount != null) ...[
-            const SizedBox(width: 4),
-            Text('₱${amount.toStringAsFixed(2)}'),
-          ],
-        ],
-      ),
-    );
-  }
-
   Widget _fareRow(Map<String, dynamic> m) {
     final fare = (m['fare'] as num?)?.toDouble();
     return Text(
@@ -335,7 +282,40 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     );
   }
 
-  // update status + capture payment
+  Map<String, dynamic>? _findAndRemove(String matchId) {
+    final i1 = _upcoming.indexWhere((e) => e['match_id'] == matchId);
+    if (i1 != -1) return _upcoming.removeAt(i1);
+    final i2 = _declined.indexWhere((e) => e['match_id'] == matchId);
+    if (i2 != -1) return _declined.removeAt(i2);
+    final i3 = _completed.indexWhere((e) => e['match_id'] == matchId);
+    if (i3 != -1) return _completed.removeAt(i3);
+    return null;
+  }
+
+  Future<void> _syncPaymentForRide(
+    String rideRequestId,
+    String newStatus,
+  ) async {
+    try {
+      if (newStatus == 'completed') {
+        await _supabase
+            .from('payment_intents')
+            .update({'status': 'captured'})
+            .eq('ride_id', rideRequestId);
+      } else if (newStatus == 'declined' || newStatus == 'canceled') {
+        await _supabase
+            .from('payment_intents')
+            .update({'status': 'canceled'})
+            .eq('ride_id', rideRequestId);
+      }
+    } catch (e) {
+      // not fatal to screen UX
+    } finally {
+      await _loadPaymentIntents([rideRequestId]);
+      if (mounted) setState(() {});
+    }
+  }
+
   Future<void> _updateMatchStatus(
     String matchId,
     String rideRequestId,
@@ -343,134 +323,66 @@ class _DriverRidesPageState extends State<DriverRidesPage>
   ) async {
     setState(() => _loading = true);
 
-    await _supabase
-        .from('ride_matches')
-        .update({'status': newStatus})
-        .eq('id', matchId);
-    await _supabase
-        .from('ride_requests')
-        .update({'status': newStatus})
-        .eq('id', rideRequestId);
-
-    if (newStatus == 'completed') {
+    try {
+      // 1) match
       await _supabase
-          .from('payment_intents')
-          .update({'status': 'captured'})
-          .eq('ride_id', rideRequestId);
+          .from('ride_matches')
+          .update({'status': newStatus})
+          .eq('id', matchId);
+
+      // 2) mirror to ride_requests (+attach driver_route_id on accept)
+      final upd = {'status': newStatus};
+      if (newStatus == 'accepted') {
+        final u = _supabase.auth.currentUser!;
+        final rd =
+            await _supabase
+                .from('driver_routes')
+                .select('id')
+                .eq('driver_id', u.id)
+                .order('created_at', ascending: false)
+                .limit(1)
+                .maybeSingle();
+        final rid = (rd as Map?)?['id'] as String?;
+        if (rid != null) upd['driver_route_id'] = rid;
+      }
+      await _supabase.from('ride_requests').update(upd).eq('id', rideRequestId);
+
+      // 3) payments for terminal transitions
+      if (newStatus == 'completed' ||
+          newStatus == 'declined' ||
+          newStatus == 'canceled') {
+        await _syncPaymentForRide(rideRequestId, newStatus);
+      }
+
+      setState(() {
+        final item = _findAndRemove(matchId);
+        if (item != null) {
+          item['status'] = newStatus;
+          if (newStatus == 'declined' || newStatus == 'canceled') {
+            _declined.insert(0, item);
+          } else if (newStatus == 'completed') {
+            _completed.insert(0, item);
+          } else {
+            _upcoming.insert(0, item);
+          }
+        }
+        _loading = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Ride $newStatus')));
+      }
+    } catch (e) {
+      if (mounted) {
+        _loading = false;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Update failed: $e')));
+        setState(() {});
+      }
     }
-
-    await _loadMatches();
-    setState(() => _loading = false);
-
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Ride $newStatus')));
-  }
-
-  // === WIDGETS ===
-  Widget _buildCard(Map<String, dynamic> m) {
-    final id = m['match_id'] as String;
-    final status = (m['status'] as String).toLowerCase();
-    final dt = DateFormat(
-      'MMM d, y h:mm a',
-    ).format(DateTime.parse(m['created_at']));
-    final passengerId = m['passenger_id'];
-
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${m['pickup_address']} → ${m['destination_address']}',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            Text('Passenger: ${m['passenger']}'),
-            Text('Requested: $dt'),
-            _fareRow(m),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Text(
-                  'Status: ${status.toUpperCase()}',
-                  style: TextStyle(
-                    color: _statusColor(status),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const Spacer(),
-                _paymentStatusBadge(m['ride_request_id']),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                if (status == 'pending') ...[
-                  ElevatedButton(
-                    onPressed:
-                        () => _updateMatchStatus(
-                          id,
-                          m['ride_request_id'],
-                          'accepted',
-                        ),
-                    child: const Text('Accept'),
-                  ),
-                  const SizedBox(width: 8),
-                  TextButton(
-                    onPressed:
-                        () => _updateMatchStatus(
-                          id,
-                          m['ride_request_id'],
-                          'declined',
-                        ),
-                    child: const Text('Decline'),
-                  ),
-                ],
-                if (status == 'accepted')
-                  ElevatedButton(
-                    onPressed:
-                        () => _updateMatchStatus(
-                          id,
-                          m['ride_request_id'],
-                          'en_route',
-                        ),
-                    child: const Text('Start Ride'),
-                  ),
-                if (status == 'en_route')
-                  ElevatedButton(
-                    onPressed:
-                        () => _updateMatchStatus(
-                          id,
-                          m['ride_request_id'],
-                          'completed',
-                        ),
-                    child: const Text('Complete Ride'),
-                  ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.message),
-                  onPressed:
-                      () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ChatPage(matchId: id),
-                        ),
-                      ),
-                ),
-                if (status == 'completed' && passengerId != null)
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.star),
-                    label: const Text('Rate passenger'),
-                    onPressed: () => _ratePassenger(m),
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Future<void> _ratePassenger(Map<String, dynamic> m) async {
@@ -507,6 +419,134 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     );
   }
 
+  Widget _buildCard(Map<String, dynamic> m) {
+    final id = m['match_id'] as String;
+    final status = (m['status'] as String).toLowerCase();
+    final dt = DateFormat(
+      'MMM d, y h:mm a',
+    ).format(DateTime.parse(m['created_at']));
+    final passengerId = m['passenger_id'] as String?;
+    final rideRequestId = m['ride_request_id'] as String;
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${m['pickup_address']} → ${m['destination_address']}',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                if (_newMatchIds.remove(id))
+                  Container(
+                    margin: const EdgeInsets.only(left: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade300,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'NEW',
+                      style: TextStyle(color: Colors.white, fontSize: 10),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Expanded(child: Text('Passenger: ${m['passenger']}')),
+                if (passengerId != null) ...[
+                  const SizedBox(width: 6),
+                  VerifiedBadge(userId: passengerId, size: 16),
+                  const SizedBox(width: 6),
+                  UserRatingBadge(userId: passengerId, iconSize: 14),
+                ],
+              ],
+            ),
+            Text('Requested: $dt'),
+            const SizedBox(height: 8),
+            _fareRow(m),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Text(
+                  'Status: ${status.toUpperCase()}',
+                  style: TextStyle(
+                    color: _statusColor(status),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const Spacer(),
+                PaymentStatusChip(
+                  status: _paymentByRide[rideRequestId]?['status'] as String?,
+                  amount: _paymentByRide[rideRequestId]?['amount'] as double?,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                if (status == 'pending') ...[
+                  ElevatedButton(
+                    onPressed:
+                        () => _updateMatchStatus(id, rideRequestId, 'accepted'),
+                    child: const Text('Accept'),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed:
+                        () => _updateMatchStatus(id, rideRequestId, 'declined'),
+                    child: const Text('Decline'),
+                  ),
+                ],
+                if (status == 'accepted')
+                  ElevatedButton(
+                    onPressed:
+                        () => _updateMatchStatus(id, rideRequestId, 'en_route'),
+                    child: const Text('Start Ride'),
+                  ),
+                if (status == 'en_route')
+                  ElevatedButton(
+                    onPressed:
+                        () =>
+                            _updateMatchStatus(id, rideRequestId, 'completed'),
+                    child: const Text('Complete Ride'),
+                  ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.message),
+                  onPressed:
+                      () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ChatPage(matchId: id),
+                        ),
+                      ),
+                ),
+                if (status == 'completed' && passengerId != null)
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.star),
+                    label: const Text('Rate passenger'),
+                    onPressed: () => _ratePassenger(m),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
@@ -527,12 +567,13 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             IconButton(
               icon: const Icon(Icons.verified_user),
               tooltip: 'Get Verified',
-              onPressed:
-                  () => showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    builder: (_) => const VerifyIdentitySheet(),
-                  ),
+              onPressed: () {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => const VerifyIdentitySheet(),
+                );
+              },
             ),
           ],
         ),
@@ -545,7 +586,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     RefreshIndicator(
                       onRefresh: _loadMatches,
                       child: ListView(
-                        controller: _listScroll,
                         padding: const EdgeInsets.all(16),
                         children: _upcoming.map(_buildCard).toList(),
                       ),

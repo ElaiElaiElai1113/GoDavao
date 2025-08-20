@@ -1,16 +1,14 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:godavao/features/rides/presentation/fare_breakdown_row.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'package:godavao/core/osrm_service.dart';
+import 'package:godavao/features/payments/data/payment_service.dart';
+import 'package:godavao/features/payments/presentation/payment_status_chip.dart';
 import 'package:godavao/main.dart' show localNotify;
-
-// NEW
-import 'package:godavao/features/rides/data/fare_calculator.dart';
 
 class ConfirmRidePage extends StatefulWidget {
   final LatLng pickup;
@@ -39,12 +37,25 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   double _durationMin = 0;
   double _fare = 0;
 
-  FareBreakdown? _breakdown; // NEW
+  // Fare rules
+  static const double _baseFare = 50.0;
+  static const double _perKm = 10.0;
+  static const double _perMin = 2.0;
+  static const double _minFare = 70.0;
+  static const double _bookingFee = 5.0;
+  static const double _nightPct = 0.15;
+  static const int _nightStartHour = 23;
+  static const int _nightEndHour = 5;
 
   @override
   void initState() {
     super.initState();
     _loadRouteAndFare();
+  }
+
+  bool _isNight(DateTime now) {
+    final h = now.hour;
+    return (h >= _nightStartHour) || (h <= _nightEndHour);
   }
 
   double _deg2rad(double d) => d * pi / 180.0;
@@ -76,24 +87,30 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
 
       final km = d.distanceMeters / 1000.0;
       final mins = max(d.durationSeconds / 60.0, 1.0);
-
-      final breakdown = FareCalculator.estimate(km: km, minutes: mins);
+      double subtotal =
+          _baseFare + (_perKm * km) + (_perMin * mins) + _bookingFee;
+      subtotal = max(subtotal, _minFare);
+      final night = _isNight(DateTime.now()) ? subtotal * _nightPct : 0.0;
+      final total = subtotal + night;
 
       if (!mounted) return;
       setState(() {
         _routePolyline = d.toPolyline(color: Colors.blue, width: 4);
-        _distanceKm = breakdown.km;
-        _durationMin = breakdown.minutes;
-        _fare = breakdown.total;
-        _breakdown = breakdown;
+        _distanceKm = double.parse(km.toStringAsFixed(2));
+        _durationMin = double.parse(mins.toStringAsFixed(0));
+        _fare = total.roundToDouble();
         _loading = false;
       });
     } catch (_) {
-      // Fallback straight line when OSRM is unavailable
+      // Fallback
       final km = _haversineKm(widget.pickup, widget.destination);
       const avgKmh = 22.0;
       final mins = max((km / avgKmh) * 60.0, 1.0);
-      final breakdown = FareCalculator.estimate(km: km, minutes: mins);
+      double subtotal =
+          _baseFare + (_perKm * km) + (_perMin * mins) + _bookingFee;
+      subtotal = max(subtotal, _minFare);
+      final night = _isNight(DateTime.now()) ? subtotal * _nightPct : 0.0;
+      final total = subtotal + night;
 
       if (!mounted) return;
       setState(() {
@@ -102,10 +119,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
           strokeWidth: 4,
           color: Colors.blue,
         );
-        _distanceKm = breakdown.km;
-        _durationMin = breakdown.minutes;
-        _fare = breakdown.total;
-        _breakdown = breakdown;
+        _distanceKm = double.parse(km.toStringAsFixed(2));
+        _durationMin = double.parse(mins.toStringAsFixed(0));
+        _fare = total.roundToDouble();
         _error = 'OSRM unavailable — using approximate route.';
         _loading = false;
       });
@@ -145,7 +161,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     }
 
     try {
-      // 1) Create the ride request
+      // 1) ride_requests (pending)
       final req =
           await sb
               .from('ride_requests')
@@ -165,7 +181,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       final rideReqId = (req)?['id'] as String?;
       if (rideReqId == null) throw 'Failed to create ride request';
 
-      // 2) Create the match (still pending for driver to accept)
+      // 2) ride_matches (pending) — driver will accept later
       await sb.from('ride_matches').insert({
         'ride_request_id': rideReqId,
         'driver_route_id': widget.routeId,
@@ -173,32 +189,42 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         'status': 'pending',
       });
 
-      // 3) Optional: belt & suspenders — insert an on_hold payment record
-      // (If you already have a DB trigger that makes this, let this be best-effort.)
-      await sb
-          .from('payments')
-          .insert({
-            'ride_id': rideReqId,
-            'amount': _fare,
-            'method': 'gcash',
-            'status': 'on_hold',
-          })
-          .onError((_, __) => {}); // ignore unique conflict if trigger ran
+      // 3) Payment intent ON HOLD (GCash sim)
+      final payments = PaymentsService(sb);
+      await payments.upsertOnHoldSafe(
+        rideId: rideReqId,
+        amount: _fare,
+        method: 'gcash',
+        payerUserId: user.id,
+        payeeUserId: widget.driverId,
+      );
+
+      // 4) Optional: update ride_requests.payment_method if column exists
+      try {
+        await sb
+            .from('ride_requests')
+            .update({'payment_method': 'gcash'})
+            .eq('id', rideReqId);
+      } catch (e, st) {
+        print('Payment hold failed: $e');
+        print(st);
+      }
 
       await _showNotification(
         'Ride Requested',
-        'Your ride (₱${_fare.toStringAsFixed(2)}) has been requested.',
+        'Payment placed on hold via GCash (sim).',
       );
-
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/passenger_rides');
-    } catch (e) {
+    } catch (e, st) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+        debugPrint('Payment upsert failed: $e\n$st');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e, Payment hold failed: $e')),
+        );
       }
       await _showNotification('Request Failed', e.toString());
+    } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -271,12 +297,17 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                     Text('Time: ${_durationMin.toStringAsFixed(0)} min'),
                   ],
                 ),
-                const SizedBox(height: 12),
-
-                // NEW: show the full fare breakdown
-                if (_breakdown != null)
-                  FareBreakdownRow(breakdown: _breakdown!),
-
+                const SizedBox(height: 8),
+                Text(
+                  'Estimated Fare: ₱${_fare.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // preview what we’ll do to payment on confirm:
+                const PaymentStatusChip(status: 'on_hold'),
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
@@ -285,15 +316,15 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                     child:
                         _loading
                             ? const SizedBox(
-                              width: 24,
-                              height: 24,
+                              width: 22,
+                              height: 22,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
                                 color: Colors.white,
                               ),
                             )
                             : Text(
-                              'Confirm & Pay ₱${_fare.toStringAsFixed(2)}',
+                              'Confirm & Hold ₱${_fare.toStringAsFixed(2)} (GCash)',
                             ),
                   ),
                 ),

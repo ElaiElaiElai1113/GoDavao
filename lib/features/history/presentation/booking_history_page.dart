@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -35,7 +34,7 @@ class _BookingHistoryPageState extends State<BookingHistoryPage> {
       final m = pm.first;
       final parts = <String?>[m.thoroughfare, m.subLocality, m.locality];
       return parts
-          .where((e) => e != null && e!.isNotEmpty)
+          .where((e) => e != null && e.isNotEmpty)
           .cast<String>()
           .join(', ');
     } catch (_) {

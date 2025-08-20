@@ -3,7 +3,6 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:godavao/features/rides/presentation/confirm_ride_page.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 // Decode Google-style encoded polylines
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
