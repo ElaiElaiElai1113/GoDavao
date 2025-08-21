@@ -23,12 +23,12 @@ class _DashboardPageState extends State<DashboardPage> {
 
   // Overview counts
   bool _loadingOverview = true;
-  int? _driverActiveRoutes; // driver
-  int? _driverPendingRequests; // driver
-  int? _passengerUpcoming; // passenger
-  int? _passengerHistory; // passenger
+  int? _driverActiveRoutes;
+  int? _driverPendingRequests;
+  int? _passengerUpcoming;
+  int? _passengerHistory;
 
-  // Theme (align to Figma)
+  // Theme
   static const _bg = Color(0xFFF7F7FB);
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
@@ -60,7 +60,7 @@ class _DashboardPageState extends State<DashboardPage> {
         _user = res;
         _loading = false;
       });
-      await _loadOverview(); // after profile, load counts
+      await _loadOverview();
     } catch (e) {
       setState(() {
         _error = 'Failed to load profile.';
@@ -129,7 +129,6 @@ class _DashboardPageState extends State<DashboardPage> {
         });
       }
     } catch (_) {
-      // Non-fatal: leave nulls (shown as —)
     } finally {
       if (mounted) setState(() => _loadingOverview = false);
     }
@@ -152,7 +151,6 @@ class _DashboardPageState extends State<DashboardPage> {
     final vehicleInfo = _user?['vehicle_info'] as String?;
     final isDriver = role == 'driver';
 
-    // Resolve overview values
     final overviewLeftLabel = isDriver ? 'Active Routes' : 'Upcoming';
     final overviewLeftValue =
         isDriver
@@ -190,7 +188,6 @@ class _DashboardPageState extends State<DashboardPage> {
                             onMenu: () => Scaffold.of(ctx).openDrawer(),
                             onLogout: _logout,
                             onNotifications: () {
-                              // TODO: push notifications page/sheet
                               ScaffoldMessenger.of(ctx).showSnackBar(
                                 const SnackBar(
                                   content: Text('Notifications coming soon'),
@@ -198,7 +195,6 @@ class _DashboardPageState extends State<DashboardPage> {
                               );
                             },
                             onSettings: () {
-                              // TODO: push settings page/sheet
                               ScaffoldMessenger.of(ctx).showSnackBar(
                                 const SnackBar(
                                   content: Text('Settings coming soon'),
@@ -346,8 +342,6 @@ class _DashboardPageState extends State<DashboardPage> {
   String _fmtCount(int? n) => n == null ? '—' : n.toString();
 }
 
-// ------------------- Pieces -------------------
-
 class _HeroHeader extends StatelessWidget {
   final String name;
   final String role;
@@ -391,7 +385,6 @@ class _HeroHeader extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Top action row (replaces AppBar)
           Row(
             children: [
               IconButton(
