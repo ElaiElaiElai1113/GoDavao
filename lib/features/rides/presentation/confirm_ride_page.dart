@@ -14,8 +14,8 @@ import 'package:godavao/main.dart' show localNotify;
 class ConfirmRidePage extends StatefulWidget {
   final LatLng pickup;
   final LatLng destination;
-  final String routeId;
-  final String driverId;
+  final String routeId; // driver_routes.id
+  final String driverId; // driver user id
 
   const ConfirmRidePage({
     required this.pickup,
@@ -38,6 +38,11 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   double _durationMin = 0;
   double _fare = 0;
 
+  // Seating
+  int _seatsRequested = 1;
+  int? _capacityTotal;
+  int? _capacityAvailable;
+
   // Fare rules
   static const double _baseFare = 50.0;
   static const double _perKm = 10.0;
@@ -51,7 +56,16 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   @override
   void initState() {
     super.initState();
-    _loadRouteAndFare();
+    _init();
+  }
+
+  Future<void> _init() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    await Future.wait([_loadRouteAndFare(), _loadCapacity()]);
+    if (mounted) setState(() => _loading = false);
   }
 
   bool _isNight(DateTime now) {
@@ -74,11 +88,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   }
 
   Future<void> _loadRouteAndFare() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
     try {
       final d = await fetchOsrmRouteDetailed(
         start: widget.pickup,
@@ -100,10 +109,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         _distanceKm = double.parse(km.toStringAsFixed(2));
         _durationMin = double.parse(mins.toStringAsFixed(0));
         _fare = total.roundToDouble();
-        _loading = false;
       });
     } catch (_) {
-      // Fallback
+      // Fallback if OSRM is unavailable
       final km = _haversineKm(widget.pickup, widget.destination);
       const avgKmh = 22.0;
       final mins = max((km / avgKmh) * 60.0, 1.0);
@@ -124,8 +132,28 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         _durationMin = double.parse(mins.toStringAsFixed(0));
         _fare = total.roundToDouble();
         _error = 'OSRM unavailable — using approximate route.';
-        _loading = false;
       });
+    }
+  }
+
+  Future<void> _loadCapacity() async {
+    try {
+      final sb = Supabase.instance.client;
+      final route =
+          await sb
+              .from('driver_routes')
+              .select('capacity_total, capacity_available')
+              .eq('id', widget.routeId)
+              .single(); // returns Map<String, dynamic>
+
+      setState(() {
+        _capacityTotal = (route['capacity_total'] as num?)?.toInt();
+        _capacityAvailable = (route['capacity_available'] as num?)?.toInt();
+      });
+    } on PostgrestException catch (e) {
+      _snack(e.message);
+    } catch (_) {
+      _snack('Failed to load seats capacity.');
     }
   }
 
@@ -146,6 +174,11 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     );
   }
 
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
   Future<void> _confirmRide() async {
     setState(() => _loading = true);
     final sb = Supabase.instance.client;
@@ -153,23 +186,27 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     final token = const Uuid().v4();
 
     if (user == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Not logged in')));
-      }
+      _snack('Not logged in');
+      setState(() => _loading = false);
+      return;
+    }
+
+    // Pre-check: capacity on client (server will re-check atomically in RPC)
+    final available = _capacityAvailable ?? 0;
+    if (_seatsRequested > available) {
+      _snack('Not enough seats available for your request.');
       setState(() => _loading = false);
       return;
     }
 
     try {
-      // 1) ride_requests (pending)
+      // 1) Upsert ride_requests (idempotent via client_token)
       final req =
           await sb
               .from('ride_requests')
               .upsert({
                 'client_token': token,
-                'passenger_id': user!.id,
+                'passenger_id': user.id,
                 'pickup_lat': widget.pickup.latitude,
                 'pickup_lng': widget.pickup.longitude,
                 'destination_lat': widget.destination.latitude,
@@ -177,22 +214,28 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 'fare': _fare,
                 'driver_route_id': widget.routeId,
                 'status': 'pending',
+                'seats_requested': _seatsRequested,
               }, onConflict: 'client_token')
               .select('id')
               .single();
 
       final rideReqId = req['id'] as String;
-      if (rideReqId == null) throw 'Failed to create ride request';
+      if (rideReqId.isEmpty) {
+        throw 'Failed to create ride request';
+      }
 
-      // 2) ride_matches (pending) — driver will accept later
-      await sb.from('ride_matches').insert({
-        'ride_request_id': rideReqId,
-        'driver_route_id': widget.routeId,
-        'driver_id': widget.driverId,
-        'status': 'pending',
-      });
+      // 2) **Atomic seat allocation** via RPC
+      // This will create/ensure a pending match row and decrement capacity.
+      await sb.rpc(
+        'allocate_seats',
+        params: {
+          'p_driver_route_id': widget.routeId,
+          'p_ride_request_id': rideReqId,
+          'p_seats_requested': _seatsRequested,
+        },
+      );
 
-      // 3) Payment intent ON HOLD (GCash sim)
+      // 3) Put payment on HOLD (GCash sim)
       final payments = PaymentsService(sb);
       await payments.upsertOnHoldSafe(
         rideId: rideReqId,
@@ -202,30 +245,28 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         payeeUserId: widget.driverId,
       );
 
-      // 4) Optional: update ride_requests.payment_method if column exists
+      // 4) Optional: mark method on ride_requests
       try {
         await sb
             .from('ride_requests')
             .update({'payment_method': 'gcash'})
             .eq('id', rideReqId);
-      } catch (e, st) {
-        print('Payment hold failed: $e');
-        print(st);
+      } catch (_) {
+        /* non-fatal */
       }
 
       await _showNotification(
         'Ride Requested',
-        'Payment placed on hold via GCash (sim).',
+        'Seats reserved & payment on hold.',
       );
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/passenger_rides');
-    } catch (e, st) {
-      if (mounted) {
-        debugPrint('Payment upsert failed: $e\n$st');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e, Payment hold failed: $e')),
-        );
-      }
+    } on PostgrestException catch (e) {
+      // Eg: "Not enough seats available" from RPC or RLS issue
+      _snack(e.message);
+      await _showNotification('Request Failed', e.message);
+    } catch (e) {
+      _snack('Error: $e');
       await _showNotification('Request Failed', e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -238,6 +279,10 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       (widget.pickup.latitude + widget.destination.latitude) / 2,
       (widget.pickup.longitude + widget.destination.longitude) / 2,
     );
+
+    final capAvail = _capacityAvailable ?? 0;
+    final capTotal = _capacityTotal ?? 0;
+    final notEnough = _seatsRequested > capAvail;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Confirm Your Ride')),
@@ -308,14 +353,52 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                     fontSize: 16,
                   ),
                 ),
+                const SizedBox(height: 12),
+
+                // Seats UI
+                Row(
+                  children: [
+                    const Text('Seats needed:'),
+                    const SizedBox(width: 12),
+                    DropdownButton<int>(
+                      value: _seatsRequested,
+                      items:
+                          [1, 2, 3, 4, 5, 6]
+                              .map(
+                                (n) => DropdownMenuItem(
+                                  value: n,
+                                  child: Text('$n'),
+                                ),
+                              )
+                              .toList(),
+                      onChanged:
+                          _loading
+                              ? null
+                              : (v) => setState(() => _seatsRequested = v ?? 1),
+                    ),
+                    const Spacer(),
+                    Chip(label: Text('Avail: $capAvail / $capTotal')),
+                  ],
+                ),
+                if (notEnough)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        'Not enough seats available',
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ),
+
                 const SizedBox(height: 8),
-                // preview what we’ll do to payment on confirm:
                 const PaymentStatusChip(status: 'on_hold'),
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _loading ? null : _confirmRide,
+                    onPressed: _loading || notEnough ? null : _confirmRide,
                     child:
                         _loading
                             ? const SizedBox(

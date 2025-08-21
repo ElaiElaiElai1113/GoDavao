@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../dashboard/presentation/dashboard_page.dart';
+
+// If you use these routes, keep the imports.
+// Otherwise replace the navigations below with your own.
+import 'package:godavao/features/dashboard/presentation/dashboard_page.dart';
+import 'package:godavao/features/auth/presentation/vehicle_form.dart';
 
 class AuthPage extends StatefulWidget {
   const AuthPage({super.key});
@@ -10,87 +14,58 @@ class AuthPage extends StatefulWidget {
 }
 
 class _AuthPageState extends State<AuthPage> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _nameController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _vehicleController = TextEditingController();
-
   final _formKey = GlobalKey<FormState>();
+
+  final _emailCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  final _nameCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+
   bool _isLogin = true;
   bool _loading = false;
   bool _obscure = true;
   String _role = 'passenger';
   String? _error;
 
+  final _sb = Supabase.instance.client;
+
+  // Brand palette to match your mock
+  static const _purple = Color(0xFF6A27F7);
+  static const _purpleDark = Color(0xFF4B18C9);
+  static const _bg = Color(0xFFF7F7FB);
+
   @override
   void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    _nameController.dispose();
-    _phoneController.dispose();
-    _vehicleController.dispose();
+    _emailCtrl.dispose();
+    _passwordCtrl.dispose();
+    _nameCtrl.dispose();
+    _phoneCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _auth() async {
-    if (_loading) return;
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
-    try {
-      final supabase = Supabase.instance.client;
-
-      if (_isLogin) {
-        // keep your existing login
-        await supabase.auth.signInWithPassword(
-          email: _emailController.text.trim(),
-          password: _passwordController.text.trim(),
-        );
-      } else {
-        // keep your existing signup + users row insert
-        final res = await supabase.auth.signUp(
-          email: _emailController.text.trim(),
-          password: _passwordController.text.trim(),
-        );
-
-        await supabase.from('users').insert({
-          'id': res.user!.id,
-          'name': _nameController.text.trim(),
-          'role': _role,
-          'phone': _phoneController.text.trim(),
-          'vehicle_info':
-              _role == 'driver' ? _vehicleController.text.trim() : null,
-          'verified': false,
-        });
-      }
-
-      if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const DashboardPage()),
-      );
-    } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+  InputDecoration _fieldDecor({String? hint, String? label, Widget? suffix}) {
+    return InputDecoration(
+      hintText: hint,
+      labelText: label,
+      border: const UnderlineInputBorder(),
+      focusedBorder: const UnderlineInputBorder(
+        borderSide: BorderSide(color: _purple, width: 2),
+      ),
+      suffixIcon: suffix,
+    );
   }
 
   Future<void> _forgotPassword() async {
-    final email = _emailController.text.trim();
+    final email = _emailCtrl.text.trim();
     if (email.isEmpty) {
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Enter your email first.')));
       return;
     }
     try {
-      await Supabase.instance.client.auth.resetPasswordForEmail(email);
+      await _sb.auth.resetPasswordForEmail(email);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Password reset email sent.')),
@@ -103,69 +78,158 @@ class _AuthPageState extends State<AuthPage> {
     }
   }
 
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_loading) return;
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      if (_isLogin) {
+        // LOGIN (email + password)
+        final res = await _sb.auth.signInWithPassword(
+          email: _emailCtrl.text.trim(),
+          password: _passwordCtrl.text.trim(),
+        );
+        if (res.session == null) throw 'Login failed';
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const DashboardPage()),
+        );
+      } else {
+        // SIGNUP
+        final res = await _sb.auth.signUp(
+          email: _emailCtrl.text.trim(),
+          password: _passwordCtrl.text.trim(),
+        );
+        if (res.user == null) throw 'Signup failed';
+
+        // Insert profile row
+        await _sb.from('users').insert({
+          'id': res.user!.id,
+          'name': _nameCtrl.text.trim(),
+          'phone': _phoneCtrl.text.trim(),
+          'role': _role,
+          'verified': false,
+        });
+
+        if (!mounted) return;
+
+        // Drivers go to vehicle onboarding
+        if (_role == 'driver') {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const VehicleForm()),
+          );
+        } else {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const DashboardPage()),
+          );
+        }
+      }
+    } on AuthException catch (e) {
+      setState(() => _error = e.message);
+    } on PostgrestException catch (e) {
+      setState(() => _error = e.message);
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    const purple = Color(0xFF6A27F7);
-    const purpleDark = Color(0xFF4B18C9);
-
-    final isDriver = _role == 'driver';
-
     return Scaffold(
+      backgroundColor: _bg,
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, c) {
             final maxW = c.maxWidth;
             final contentW = maxW > 420 ? 420.0 : maxW;
+
             return Center(
               child: ConstrainedBox(
                 constraints: BoxConstraints.tightFor(width: contentW),
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 24,
-                    vertical: 12,
+                    vertical: 16,
                   ),
                   child: Form(
                     key: _formKey,
                     child: Column(
                       children: [
                         const SizedBox(height: 8),
-                        // Logo
-                        const CircleAvatar(
-                          radius: 64,
-                          backgroundImage: AssetImage(
-                            'assets/images/godavao_logo.png',
+                        // Round Logo (like your mock)
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black12,
+                                blurRadius: 12,
+                                offset: Offset(0, 6),
+                              ),
+                            ],
                           ),
-                          backgroundColor: Colors.transparent,
+                          child: const CircleAvatar(
+                            radius: 60,
+                            backgroundImage: AssetImage(
+                              'assets/images/godavao_logo.png',
+                            ),
+                            backgroundColor: Colors.white,
+                          ),
                         ),
                         const SizedBox(height: 24),
 
-                        // Email (acts like "Phone number" field in the mock; label kept as Phone if you prefer)
-                        TextFormField(
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          decoration: const InputDecoration(
-                            hintText: 'Phone number',
-                            // use underline to match mock
-                            border: UnderlineInputBorder(),
-                          ),
-                          validator: (v) {
-                            if (v == null || v.trim().isEmpty) {
-                              return 'Enter your email / phone';
-                            }
-                            return null;
-                          },
+                        // Headline + subtitle
+                        Text(
+                          _isLogin ? 'Welcome back' : 'Create your account',
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(fontWeight: FontWeight.w700),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 4),
+                        Text(
+                          _isLogin
+                              ? 'Sign in to book rides around Davao.'
+                              : 'Join GoDavao to start riding or driving.',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: Colors.black54),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 24),
+
+                        // Email (login uses email only)
+                        TextFormField(
+                          controller: _emailCtrl,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: _fieldDecor(
+                            label: 'Email',
+                            hint: 'Enter your email',
+                          ),
+                          validator:
+                              (v) =>
+                                  (v == null || v.trim().isEmpty)
+                                      ? 'Enter your email'
+                                      : null,
+                        ),
+                        const SizedBox(height: 12),
 
                         // Password
                         TextFormField(
-                          controller: _passwordController,
+                          controller: _passwordCtrl,
                           obscureText: _obscure,
-                          decoration: InputDecoration(
-                            hintText: 'Password',
-                            border: const UnderlineInputBorder(),
-                            suffixIcon: IconButton(
+                          decoration: _fieldDecor(
+                            label: 'Password',
+                            hint: 'Enter your password',
+                            suffix: IconButton(
                               icon: Icon(
                                 _obscure
                                     ? Icons.visibility_off
@@ -183,136 +247,42 @@ class _AuthPageState extends State<AuthPage> {
                           },
                         ),
 
-                        // Forgot password
+                        // Forgot password (like the mock)
                         Align(
                           alignment: Alignment.centerRight,
                           child: TextButton(
                             onPressed: _forgotPassword,
-                            style: TextButton.styleFrom(
-                              foregroundColor:
-                                  Theme.of(context).colorScheme.primary,
-                            ),
                             child: const Text('Forgot Password?'),
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 8),
 
-                        // Login / Register button (purple gradient)
-                        SizedBox(
-                          width: double.infinity,
-                          height: 52,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              gradient: const LinearGradient(
-                                colors: [purple, purpleDark],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: purple.withOpacity(0.3),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 6),
-                                ),
-                              ],
-                            ),
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.transparent,
-                                shadowColor: Colors.transparent,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              onPressed: _loading ? null : _auth,
-                              child:
-                                  _loading
-                                      ? const SizedBox(
-                                        width: 22,
-                                        height: 22,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          valueColor:
-                                              AlwaysStoppedAnimation<Color>(
-                                                Colors.white,
-                                              ),
-                                        ),
-                                      )
-                                      : Text(
-                                        _isLogin ? 'Login' : 'Register',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 16,
-                                        ),
-                                      ),
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 12),
-                        // "or Signup" / "Already have an account? Login"
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              _isLogin ? 'or ' : 'Already have an account? ',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: Colors.black54,
-                              ),
-                            ),
-                            GestureDetector(
-                              onTap: () => setState(() => _isLogin = !_isLogin),
-                              child: Text(
-                                _isLogin ? 'Signup' : 'Login',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: purple,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        // Signup-only extra fields (kept from your logic)
+                        // Signup-only fields (Name, Phone, Role)
                         if (!_isLogin) ...[
-                          const SizedBox(height: 16),
                           TextFormField(
-                            controller: _nameController,
-                            decoration: const InputDecoration(
-                              labelText: 'Full Name',
-                              border: UnderlineInputBorder(),
-                            ),
-                            validator: (v) {
-                              if (_isLogin) return null;
-                              if (v == null || v.trim().isEmpty)
-                                return 'Enter your name';
-                              return null;
-                            },
+                            controller: _nameCtrl,
+                            decoration: _fieldDecor(label: 'Full Name'),
+                            validator:
+                                (v) =>
+                                    (v == null || v.trim().isEmpty)
+                                        ? 'Enter your name'
+                                        : null,
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 12),
                           TextFormField(
-                            controller: _phoneController,
+                            controller: _phoneCtrl,
                             keyboardType: TextInputType.phone,
-                            decoration: const InputDecoration(
-                              labelText: 'Phone Number',
-                              border: UnderlineInputBorder(),
-                            ),
-                            validator: (v) {
-                              if (_isLogin) return null;
-                              if (v == null || v.trim().isEmpty)
-                                return 'Enter your phone';
-                              return null;
-                            },
+                            decoration: _fieldDecor(label: 'Phone Number'),
+                            validator:
+                                (v) =>
+                                    (v == null || v.trim().isEmpty)
+                                        ? 'Enter your phone'
+                                        : null,
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 12),
                           DropdownButtonFormField<String>(
                             value: _role,
-                            decoration: const InputDecoration(
-                              labelText: 'Role',
-                              border: UnderlineInputBorder(),
-                            ),
+                            decoration: _fieldDecor(label: 'Role'),
                             items: const [
                               DropdownMenuItem(
                                 value: 'passenger',
@@ -323,37 +293,98 @@ class _AuthPageState extends State<AuthPage> {
                                 child: Text('Driver'),
                               ),
                             ],
-                            onChanged: (value) {
-                              if (value != null) setState(() => _role = value);
+                            onChanged: (v) {
+                              if (v != null) setState(() => _role = v);
                             },
                           ),
-                          if (isDriver) ...[
-                            const SizedBox(height: 8),
-                            TextFormField(
-                              controller: _vehicleController,
-                              decoration: const InputDecoration(
-                                labelText: 'Vehicle Info',
-                                border: UnderlineInputBorder(),
-                              ),
-                              validator: (v) {
-                                if (_isLogin || !isDriver) return null;
-                                if (v == null || v.trim().isEmpty) {
-                                  return 'Enter your vehicle info';
-                                }
-                                return null;
-                              },
-                            ),
-                          ],
+                          const SizedBox(height: 8),
                         ],
 
+                        // Primary CTA (purple gradient)
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 52,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(14),
+                              gradient: const LinearGradient(
+                                colors: [_purple, _purpleDark],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: _purple.withOpacity(0.25),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 10),
+                                ),
+                              ],
+                            ),
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                elevation: 0,
+                                backgroundColor: Colors.transparent,
+                                shadowColor: Colors.transparent,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                              onPressed: _loading ? null : _submit,
+                              child:
+                                  _loading
+                                      ? const SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor: AlwaysStoppedAnimation(
+                                            Colors.white,
+                                          ),
+                                        ),
+                                      )
+                                      : Text(
+                                        _isLogin ? 'Login' : 'Register',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 14),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              _isLogin ? 'or ' : 'Already have an account? ',
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(color: Colors.black54),
+                            ),
+                            GestureDetector(
+                              onTap: () => setState(() => _isLogin = !_isLogin),
+                              child: const Text(
+                                'Switch',
+                                style: TextStyle(
+                                  color: _purple,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+
                         if (_error != null) ...[
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 12),
                           Text(
                             _error!,
                             style: const TextStyle(color: Colors.red),
                           ),
                         ],
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 8),
                       ],
                     ),
                   ),

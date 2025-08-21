@@ -44,6 +44,43 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     _loadMatches();
   }
 
+  Future<void> _acceptViaRpc(String matchId, String rideRequestId) async {
+    setState(() => _loading = true);
+    try {
+      // 1) Do the atomic accept + capacity decrement
+      await _supabase.rpc('accept_match', params: {'p_match_id': matchId});
+
+      // 2) (Optional) reload payments for the card
+      await _loadPaymentIntents([rideRequestId]);
+
+      // 3) Update local lists (similar to your existing code)
+      setState(() {
+        final item = _findAndRemove(matchId);
+        if (item != null) {
+          item['status'] = 'accepted';
+          _upcoming.insert(0, item);
+        }
+        _loading = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Ride accepted')));
+      }
+    } on PostgrestException catch (e) {
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Accept failed: $e')));
+    }
+  }
+
   Future<void> _showNotification(String title, String body) async {
     const android = AndroidNotificationDetails(
       'matches_channel',
@@ -93,8 +130,9 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     final all = <Map<String, dynamic>>[];
     final rideIds = <String>[];
 
-    for (final m in raw as List) {
-      final req = m['ride_requests'] as Map<String, dynamic>?;
+    for (final row in (raw as List)) {
+      final m = (row as Map).cast<String, dynamic>();
+      final req = (m['ride_requests'] as Map?)?.cast<String, dynamic>();
       if (req == null) continue;
 
       // Passenger name/id
@@ -107,7 +145,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       } else if (usersRel is List &&
           usersRel.isNotEmpty &&
           usersRel.first is Map) {
-        final first = usersRel.first as Map;
+        final first = (usersRel.first as Map).cast<String, dynamic>();
         passengerName = (first['name'] as String?) ?? passengerName;
         passengerId = first['id']?.toString();
       }
@@ -182,10 +220,11 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         .select('ride_id, status, amount')
         .inFilter('ride_id', rideIds.toSet().toList());
 
-    for (final row in res as List) {
-      _paymentByRide[row['ride_id'] as String] = {
-        'status': row['status'] as String?,
-        'amount': (row['amount'] as num?)?.toDouble(),
+    for (final row in (res as List)) {
+      final r = (row as Map).cast<String, dynamic>();
+      _paymentByRide[r['ride_id'] as String] = {
+        'status': r['status'] as String?,
+        'amount': (r['amount'] as num?)?.toDouble(),
       };
     }
   }
@@ -199,20 +238,43 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               schema: 'public',
               table: 'ride_matches',
               event: PostgresChangeEvent.insert,
-              filter: PostgresChangeFilter(
-                type: PostgresChangeFilterType.eq,
-                column: 'driver_id',
-                value: driverId, // 🔑 watch all routes for this driver
-              ),
+              // No filter param (SDKs differ). Filter inside callback:
               callback: (payload) {
-                setState(
-                  () => _newMatchIds.add(payload.newRecord['id'] as String),
-                );
+                final newRec = payload.newRecord;
+                if (newRec == null) return;
+                final rec = (newRec as Map).cast<String, dynamic>();
+                if (rec['driver_id']?.toString() != driverId) return;
+
+                setState(() => _newMatchIds.add(rec['id']?.toString() ?? ''));
                 _showNotification(
                   'New Request',
                   'A passenger requested a pickup.',
                 );
                 _loadMatches(); // refresh list
+              },
+            )
+            .onPostgresChanges(
+              schema: 'public',
+              table: 'ride_matches',
+              event: PostgresChangeEvent.update,
+              callback: (payload) {
+                final newRec = payload.newRecord;
+                if (newRec == null) return;
+                final rec = (newRec as Map).cast<String, dynamic>();
+                if (rec['driver_id']?.toString() != driverId) return;
+                _loadMatches();
+              },
+            )
+            .onPostgresChanges(
+              schema: 'public',
+              table: 'ride_matches',
+              event: PostgresChangeEvent.delete,
+              callback: (payload) {
+                final oldRec = payload.oldRecord;
+                if (oldRec == null) return;
+                final rec = (oldRec as Map).cast<String, dynamic>();
+                if (rec['driver_id']?.toString() != driverId) return;
+                _loadMatches();
               },
             )
             .subscribe();
@@ -416,6 +478,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     ),
                   ),
                 ],
+                const SizedBox(width: 8),
                 Expanded(child: Text('Passenger: ${m['passenger']}')),
                 if (passengerId != null) ...[
                   const SizedBox(width: 6),
@@ -455,10 +518,10 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               children: [
                 if (status == 'pending') ...[
                   ElevatedButton(
-                    onPressed:
-                        () => _updateMatchStatus(id, rideRequestId, 'accepted'),
+                    onPressed: () => _acceptViaRpc(id, rideRequestId),
                     child: const Text('Accept'),
                   ),
+
                   const SizedBox(width: 8),
                   TextButton(
                     onPressed:

@@ -10,7 +10,6 @@ import 'package:godavao/features/ratings/data/ratings_service.dart';
 import 'package:godavao/features/safety/presentation/sos_sheet.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
 import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
-
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
 
 class PassengerRideStatusPage extends StatefulWidget {
@@ -66,6 +65,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
             destination_lat,
             destination_lng,
             status,
+            fare,
+            payment_method,
             driver_route_id
           ''')
               .eq('id', widget.rideId)
@@ -74,7 +75,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
       if (rideResp == null) {
         throw Exception('Ride not found');
       }
-      _ride = Map<String, dynamic>.from(rideResp as Map);
+      _ride = (rideResp as Map).cast<String, dynamic>();
 
       // 2) Load the matching ride_matches row
       final matchResp =
@@ -87,7 +88,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
       if (matchResp == null) {
         throw Exception('No match found for this ride');
       }
-      _matchId = (matchResp as Map)['id'] as String;
+      _matchId = (matchResp as Map)['id']?.toString();
 
       // 3) Resolve driver_id from driver_routes (if assigned)
       await _resolveDriverIdAndAgg();
@@ -110,7 +111,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     final driverRouteId = _ride?['driver_route_id'];
     if (driverRouteId == null) return;
 
-    // Fetch driver_id from driver_routes
     final dr =
         await _supabase
             .from('driver_routes')
@@ -121,7 +121,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     if (dr != null) {
       _driverId = (dr as Map)['driver_id']?.toString();
       if (_driverId != null) {
-        await _fetchDriverAggregate(); // best-effort, ignore errors
+        await _fetchDriverAggregate(); // best-effort
       }
     }
   }
@@ -151,7 +151,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
   }
 
   void _subscribeToRideUpdates() {
-    // keep subscription alive to auto-refresh status
+    // Subscribe to ride_requests updates and filter inside callback
     _rideChannel =
         _supabase
             .channel('ride_requests:${widget.rideId}')
@@ -159,13 +159,11 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
               schema: 'public',
               table: 'ride_requests',
               event: PostgresChangeEvent.update,
-              filter: PostgresChangeFilter(
-                type: PostgresChangeFilterType.eq,
-                column: 'id',
-                value: widget.rideId,
-              ),
               callback: (payload) async {
-                final updated = Map<String, dynamic>.from(payload.newRecord);
+                final newRec = payload.newRecord;
+                if (newRec == null) return;
+                final updated = (newRec as Map).cast<String, dynamic>();
+                if (updated['id'] != widget.rideId) return;
 
                 if (!mounted) return;
                 setState(() {
@@ -174,9 +172,10 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
 
                 // Small toast note
                 if (mounted) {
+                  final st = updated['status'];
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Ride status: ${updated['status']}'),
+                      content: Text('Ride status: $st'),
                       duration: const Duration(seconds: 2),
                     ),
                   );
@@ -252,10 +251,15 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     }
 
     final r = _ride!;
-    final pickup = LatLng(r['pickup_lat'], r['pickup_lng']);
-    final dest = LatLng(r['destination_lat'], r['destination_lng']);
+    final pickup = LatLng(
+      (r['pickup_lat'] as num).toDouble(),
+      (r['pickup_lng'] as num).toDouble(),
+    );
+    final dest = LatLng(
+      (r['destination_lat'] as num).toDouble(),
+      (r['destination_lng'] as num).toDouble(),
+    );
 
-    // Keeping your previous text fallback if you need it elsewhere
     final driverRatingText = () {
       if (_fetchingDriverAgg) return 'Loading…';
       final avg = (_driverAggregate?['avg_rating'] as num?)?.toDouble();
@@ -278,9 +282,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
           );
         },
       ),
-
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-
       body: Column(
         children: [
           // Header with inline badge beside "Driver"
@@ -300,13 +302,11 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        // numeric avg + count (uses your computed driverRatingText)
                         Text(
                           _fetchingDriverAgg ? 'Loading…' : driverRatingText,
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 2),
-                        // compact star badge that queries live avg(score)
                         UserRatingBadge(userId: _driverId!, iconSize: 14),
                       ],
                     )
@@ -316,15 +316,17 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
           TextButton(
             child: const Text('View feedback'),
             onPressed:
-                () => showModalBottomSheet(
-                  context: context,
-                  isScrollControlled: true,
-                  builder:
-                      (_) => RatingDetailsSheet(
-                        userId: _driverId!,
-                        title: 'Driver feedback',
-                      ),
-                ),
+                _driverId == null
+                    ? null
+                    : () => showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      builder:
+                          (_) => RatingDetailsSheet(
+                            userId: _driverId!,
+                            title: 'Driver feedback',
+                          ),
+                    ),
           ),
 
           // map view
@@ -416,7 +418,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                       },
                     ),
                   ),
-
                 const SizedBox(height: 8),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.message),
