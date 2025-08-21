@@ -32,10 +32,14 @@ class _DriverRidesPageState extends State<DriverRidesPage>
   List<Map<String, dynamic>> _completed = [];
   final Set<String> _newMatchIds = {};
 
-  // ride_request_id -> {status, amount}
   Map<String, Map<String, dynamic>> _paymentByRide = {};
   bool _loading = true;
   RealtimeChannel? _matchChannel;
+
+  // theme tokens
+  static const _purple = Color(0xFF6A27F7);
+  static const _purpleDark = Color(0xFF4B18C9);
+  static const _bg = Color(0xFFF7F7FB);
 
   @override
   void initState() {
@@ -44,16 +48,13 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     _loadMatches();
   }
 
+  // --- Actions ---------------------------------------------------------------
+
   Future<void> _acceptViaRpc(String matchId, String rideRequestId) async {
     setState(() => _loading = true);
     try {
-      // 1) Do the atomic accept + capacity decrement
       await _supabase.rpc('accept_match', params: {'p_match_id': matchId});
-
-      // 2) (Optional) reload payments for the card
       await _loadPaymentIntents([rideRequestId]);
-
-      // 3) Update local lists (similar to your existing code)
       setState(() {
         final item = _findAndRemove(matchId);
         if (item != null) {
@@ -62,7 +63,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         }
         _loading = false;
       });
-
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -104,10 +104,8 @@ class _DriverRidesPageState extends State<DriverRidesPage>
 
     setState(() => _loading = true);
 
-    // Subscribe to ALL matches for this driver (once)
     _subscribeToNewMatchesByDriver(user.id);
 
-    // Fetch ALL ride_matches for this driver, regardless of route
     final raw = await _supabase
         .from('ride_matches')
         .select('''
@@ -125,7 +123,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           )
         ''')
         .eq('driver_id', user.id)
-        .order('created_at', ascending: false); // newest first
+        .order('created_at', ascending: false);
 
     final all = <Map<String, dynamic>>[];
     final rideIds = <String>[];
@@ -135,7 +133,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       final req = (m['ride_requests'] as Map?)?.cast<String, dynamic>();
       if (req == null) continue;
 
-      // Passenger name/id
+      // passenger
       String passengerName = 'Unknown';
       String? passengerId;
       final usersRel = req['users'];
@@ -151,7 +149,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       }
       passengerId ??= req['passenger_id']?.toString();
 
-      // Addresses (best effort reverse geocode)
+      // reverse geocode (best effort)
       String fmt(Placemark pm) => [
         pm.thoroughfare,
         pm.subLocality,
@@ -195,7 +193,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       rideIds.add(m['ride_request_id'] as String);
     }
 
-    // Load payment badges in bulk
     await _loadPaymentIntents(rideIds);
 
     setState(() {
@@ -238,7 +235,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               schema: 'public',
               table: 'ride_matches',
               event: PostgresChangeEvent.insert,
-              // No filter param (SDKs differ). Filter inside callback:
               callback: (payload) {
                 final newRec = payload.newRecord;
                 if (newRec == null) return;
@@ -250,7 +246,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                   'New Request',
                   'A passenger requested a pickup.',
                 );
-                _loadMatches(); // refresh list
+                _loadMatches();
               },
             )
             .onPostgresChanges(
@@ -322,13 +318,11 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     setState(() => _loading = true);
 
     try {
-      // 1) match
       await _supabase
           .from('ride_matches')
           .update({'status': newStatus})
           .eq('id', matchId);
 
-      // 2) mirror to ride_requests (+ attach latest route_id on accept, optional)
       final upd = {'status': newStatus};
       if (newStatus == 'accepted') {
         final u = _supabase.auth.currentUser!;
@@ -345,7 +339,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       }
       await _supabase.from('ride_requests').update(upd).eq('id', rideRequestId);
 
-      // 3) payments
       if (newStatus == 'completed' ||
           newStatus == 'declined' ||
           newStatus == 'canceled') {
@@ -396,9 +389,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     );
     if (existing != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('You already rated this passenger for this ride.'),
-        ),
+        const SnackBar(content: Text('You already rated this passenger.')),
       );
       return;
     }
@@ -417,155 +408,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     );
   }
 
-  Widget _buildCard(Map<String, dynamic> m) {
-    final id = m['match_id'] as String;
-    final status = (m['status'] as String).toLowerCase();
-    final dt = DateFormat(
-      'MMM d, y h:mm a',
-    ).format(DateTime.parse(m['created_at']));
-    final passengerId = m['passenger_id'] as String?;
-    final rideRequestId = m['ride_request_id'] as String;
-
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${m['pickup_address']} → ${m['destination_address']}',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                if (_newMatchIds.remove(id))
-                  Container(
-                    margin: const EdgeInsets.only(left: 6),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade300,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text(
-                      'NEW',
-                      style: TextStyle(color: Colors.white, fontSize: 10),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                if (m['driver_route_id'] != null) ...[
-                  const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade200,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      'Route: ${m['driver_route_id'].toString().substring(0, 8)}',
-                    ),
-                  ),
-                ],
-                const SizedBox(width: 8),
-                Expanded(child: Text('Passenger: ${m['passenger']}')),
-                if (passengerId != null) ...[
-                  const SizedBox(width: 6),
-                  VerifiedBadge(userId: passengerId, size: 16),
-                  const SizedBox(width: 6),
-                  UserRatingBadge(userId: passengerId, iconSize: 14),
-                ],
-              ],
-            ),
-            Text('Requested: $dt'),
-            const SizedBox(height: 8),
-            Text(
-              (m['fare'] as num?) != null
-                  ? 'Fare: ₱${(m['fare'] as num).toDouble().toStringAsFixed(2)}'
-                  : 'Fare: —',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Text(
-                  'Status: ${status.toUpperCase()}',
-                  style: TextStyle(
-                    color: _statusColor(status),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const Spacer(),
-                PaymentStatusChip(
-                  status: _paymentByRide[rideRequestId]?['status'] as String?,
-                  amount: _paymentByRide[rideRequestId]?['amount'] as double?,
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                if (status == 'pending') ...[
-                  ElevatedButton(
-                    onPressed: () => _acceptViaRpc(id, rideRequestId),
-                    child: const Text('Accept'),
-                  ),
-
-                  const SizedBox(width: 8),
-                  TextButton(
-                    onPressed:
-                        () => _updateMatchStatus(id, rideRequestId, 'declined'),
-                    child: const Text('Decline'),
-                  ),
-                ],
-                if (status == 'accepted')
-                  ElevatedButton(
-                    onPressed:
-                        () => _updateMatchStatus(id, rideRequestId, 'en_route'),
-                    child: const Text('Start Ride'),
-                  ),
-                if (status == 'en_route')
-                  ElevatedButton(
-                    onPressed:
-                        () =>
-                            _updateMatchStatus(id, rideRequestId, 'completed'),
-                    child: const Text('Complete Ride'),
-                  ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.message),
-                  onPressed:
-                      () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ChatPage(matchId: id),
-                        ),
-                      ),
-                ),
-                if (status == 'completed' && passengerId != null)
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.star),
-                    label: const Text('Rate passenger'),
-                    onPressed: () => _ratePassenger(m),
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  // --- UI --------------------------------------------------------------------
 
   Color _statusColor(String s) {
     switch (s) {
@@ -584,65 +427,359 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Ride Matches'),
-          bottom: TabBar(
-            controller: _tabController,
-            tabs: const [
-              Tab(text: 'Upcoming'),
-              Tab(text: 'Declined'),
-              Tab(text: 'Completed'),
-            ],
+  Widget _pill(String text, {IconData? icon, Color? color}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: (color ?? Colors.grey.shade100).withOpacity(0.9),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: Colors.black54),
+            const SizedBox(width: 6),
+          ],
+          Text(
+            text,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
           ),
-          actions: [
-            AdminMenuAction(),
-            IconButton(
-              icon: const Icon(Icons.verified_user),
-              tooltip: 'Get Verified',
-              onPressed: () {
-                showModalBottomSheet(
-                  context: context,
-                  isScrollControlled: true,
-                  builder: (_) => const VerifyIdentitySheet(),
-                );
-              },
+        ],
+      ),
+    );
+  }
+
+  Widget _primaryButton({
+    required Widget child,
+    required VoidCallback? onPressed,
+  }) {
+    return SizedBox(
+      height: 40,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          gradient: const LinearGradient(
+            colors: [_purple, _purpleDark],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: _purple.withOpacity(0.25),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
-        body:
-            _loading
-                ? const Center(child: CircularProgressIndicator())
-                : TabBarView(
-                  controller: _tabController,
-                  children: [
-                    RefreshIndicator(
-                      onRefresh: _loadMatches,
-                      child: ListView(
-                        padding: const EdgeInsets.all(16),
-                        children: _upcoming.map(_buildCard).toList(),
-                      ),
-                    ),
-                    RefreshIndicator(
-                      onRefresh: _loadMatches,
-                      child: ListView(
-                        padding: const EdgeInsets.all(16),
-                        children: _declined.map(_buildCard).toList(),
-                      ),
-                    ),
-                    RefreshIndicator(
-                      onRefresh: _loadMatches,
-                      child: ListView(
-                        padding: const EdgeInsets.all(16),
-                        children: _completed.map(_buildCard).toList(),
-                      ),
-                    ),
-                  ],
+        child: ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            elevation: 0,
+            backgroundColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          onPressed: onPressed,
+          child: DefaultTextStyle.merge(
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCard(Map<String, dynamic> m) {
+    final id = m['match_id'] as String;
+    final status = (m['status'] as String).toLowerCase();
+    final dt = DateFormat(
+      'MMM d, y • h:mm a',
+    ).format(DateTime.parse(m['created_at']));
+    final passengerId = m['passenger_id'] as String?;
+    final rideRequestId = m['ride_request_id'] as String;
+    final isNew = _newMatchIds.remove(id);
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // top row: route + NEW
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${m['pickup_address']} → ${m['destination_address']}',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
                 ),
+                if (isNew)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade400,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Text(
+                      'NEW',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+
+            // meta row
+            Row(
+              children: [
+                if (m['driver_route_id'] != null)
+                  _pill(
+                    'Route ${m['driver_route_id'].toString().substring(0, 8)}',
+                    icon: Icons.alt_route,
+                  ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Row(
+                    children: [
+                      const Icon(Icons.person, size: 14, color: Colors.black54),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          m['passenger'] ?? 'Passenger',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (passengerId != null) ...[
+                        const SizedBox(width: 6),
+                        VerifiedBadge(userId: passengerId, size: 16),
+                        const SizedBox(width: 6),
+                        UserRatingBadge(userId: passengerId, iconSize: 14),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+
+            // time + fare
+            Row(
+              children: [
+                _pill(dt, icon: Icons.access_time),
+                const SizedBox(width: 8),
+                if (m['fare'] != null)
+                  _pill(
+                    '₱${(m['fare'] as num).toDouble().toStringAsFixed(2)}',
+                    icon: Icons.payments,
+                  ),
+                const Spacer(),
+                PaymentStatusChip(
+                  status: _paymentByRide[rideRequestId]?['status'] as String?,
+                  amount: _paymentByRide[rideRequestId]?['amount'] as double?,
+                ),
+              ],
+            ),
+
+            const Divider(height: 18),
+
+            // status + actions
+            Row(
+              children: [
+                Text(
+                  status.toUpperCase(),
+                  style: TextStyle(
+                    color: _statusColor(status),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Spacer(),
+
+                // actions
+                if (status == 'pending') ...[
+                  SizedBox(
+                    width: 120,
+                    child: _primaryButton(
+                      child: const Text('Accept'),
+                      onPressed: () => _acceptViaRpc(id, rideRequestId),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed:
+                        () => _updateMatchStatus(id, rideRequestId, 'declined'),
+                    child: const Text('Decline'),
+                  ),
+                ] else if (status == 'accepted') ...[
+                  SizedBox(
+                    width: 150,
+                    child: _primaryButton(
+                      child: const Text('Start Ride'),
+                      onPressed:
+                          () =>
+                              _updateMatchStatus(id, rideRequestId, 'en_route'),
+                    ),
+                  ),
+                ] else if (status == 'en_route') ...[
+                  SizedBox(
+                    width: 170,
+                    child: _primaryButton(
+                      child: const Text('Complete Ride'),
+                      onPressed:
+                          () => _updateMatchStatus(
+                            id,
+                            rideRequestId,
+                            'completed',
+                          ),
+                    ),
+                  ),
+                ] else if (status == 'completed' && passengerId != null) ...[
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.star),
+                    label: const Text('Rate passenger'),
+                    onPressed: () => _ratePassenger(m),
+                  ),
+                ],
+
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: 'Open chat',
+                  icon: const Icon(Icons.message_outlined),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => ChatPage(matchId: id)),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- Scaffold --------------------------------------------------------------
+
+  @override
+  Widget build(BuildContext context) {
+    final counters = [_upcoming.length, _declined.length, _completed.length];
+
+    return Scaffold(
+      backgroundColor: _bg,
+      appBar: AppBar(
+        title: const Text('Ride Matches'),
+        actions: [
+          AdminMenuAction(),
+          IconButton(
+            icon: const Icon(Icons.verified_user),
+            tooltip: 'Get Verified',
+            onPressed: () {
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                builder: (_) => const VerifyIdentitySheet(),
+              );
+            },
+          ),
+        ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(56),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(999),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: TabBar(
+                controller: _tabController,
+                indicator: BoxDecoration(
+                  color: _purple,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                labelColor: Colors.white,
+                unselectedLabelColor: Colors.black87,
+                dividerColor: Colors.transparent,
+                tabs: [
+                  _segTab('Upcoming', counters[0]),
+                  _segTab('Declined', counters[1]),
+                  _segTab('Completed', counters[2]),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+      body:
+          _loading
+              ? const Center(child: CircularProgressIndicator())
+              : TabBarView(
+                controller: _tabController,
+                children: [
+                  _list(_upcoming),
+                  _list(_declined),
+                  _list(_completed),
+                ],
+              ),
+    );
+  }
+
+  Tab _segTab(String label, int count) {
+    return Tab(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(label),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              '$count',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _list(List<Map<String, dynamic>> items) {
+    return RefreshIndicator(
+      onRefresh: _loadMatches,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: items.length,
+        itemBuilder: (_, i) => _buildCard(items[i]),
       ),
     );
   }

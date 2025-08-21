@@ -9,7 +9,6 @@ import 'package:godavao/features/chat/presentation/chat_page.dart';
 import 'package:godavao/features/ratings/data/ratings_service.dart';
 import 'package:godavao/features/safety/presentation/sos_sheet.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
-import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
 
 class PassengerRideStatusPage extends StatefulWidget {
@@ -38,6 +37,11 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
 
   // Avoid duplicate rating modals
   bool _ratingPromptShown = false;
+
+  // Theme tokens
+  static const _purple = Color(0xFF6A27F7);
+  static const _purpleDark = Color(0xFF4B18C9);
+  static const _bg = Color(0xFFF7F7FB);
 
   @override
   void initState() {
@@ -236,6 +240,97 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     super.dispose();
   }
 
+  // ---------- UI helpers ----------
+
+  Widget _statusPill(String status) {
+    final color = _statusColor(status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        status.toUpperCase(),
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+          letterSpacing: .3,
+        ),
+      ),
+    );
+  }
+
+  Color _statusColor(String s) {
+    switch (s) {
+      case 'pending':
+        return Colors.grey;
+      case 'accepted':
+        return Colors.blue;
+      case 'en_route':
+        return Colors.orange;
+      case 'completed':
+        return Colors.green;
+      case 'declined':
+      case 'cancelled':
+      case 'canceled':
+        return Colors.red;
+      default:
+        return Colors.black87;
+    }
+  }
+
+  Widget _primaryGradientButton({
+    required String label,
+    required VoidCallback? onPressed,
+    IconData? icon,
+  }) {
+    return SizedBox(
+      height: 48,
+      width: double.infinity,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          gradient: const LinearGradient(
+            colors: [_purple, _purpleDark],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: _purple.withOpacity(0.25),
+              blurRadius: 14,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: ElevatedButton.icon(
+          onPressed: onPressed,
+          icon:
+              icon == null
+                  ? const SizedBox.shrink()
+                  : Icon(icon, color: Colors.white),
+          label: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            elevation: 0,
+            backgroundColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -268,8 +363,23 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
       return '${avg.toStringAsFixed(2)} ★  ($cnt)';
     }();
 
+    final status = (r['status'] as String?) ?? 'pending';
+    final fare = (r['fare'] as num?)?.toDouble() ?? 0.0;
+
+    final canUploadGcash =
+        (status == 'accepted' ||
+            status == 'en_route' ||
+            status == 'completed') &&
+        (r['payment_method'] == 'gcash');
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Ride Details')),
+      backgroundColor: _bg,
+      appBar: AppBar(
+        title: const Text('Ride Details'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.white,
+      ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: Colors.red.shade700,
         icon: const Icon(Icons.emergency_share),
@@ -283,54 +393,11 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
         },
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      body: Column(
+
+      body: Stack(
         children: [
-          // Header with inline badge beside "Driver"
-          ListTile(
-            title: Row(
-              children: [
-                const Text('Driver'),
-                const SizedBox(width: 6),
-                if (_driverId != null)
-                  VerifiedBadge(userId: _driverId!, size: 18),
-              ],
-            ),
-            subtitle: Text('Status: ${r['status']}'),
-            trailing:
-                (_driverId != null)
-                    ? Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          _fetchingDriverAgg ? 'Loading…' : driverRatingText,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 2),
-                        UserRatingBadge(userId: _driverId!, iconSize: 14),
-                      ],
-                    )
-                    : null,
-          ),
-
-          TextButton(
-            child: const Text('View feedback'),
-            onPressed:
-                _driverId == null
-                    ? null
-                    : () => showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      builder:
-                          (_) => RatingDetailsSheet(
-                            userId: _driverId!,
-                            title: 'Driver feedback',
-                          ),
-                    ),
-          ),
-
-          // map view
-          Expanded(
+          // Map canvas
+          Positioned.fill(
             child: FlutterMap(
               options: MapOptions(center: pickup, zoom: 13),
               children: [
@@ -338,14 +405,14 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                   urlTemplate:
                       'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                   subdomains: const ['a', 'b', 'c'],
-                  userAgentPackageName: 'com.example.godavao',
+                  userAgentPackageName: 'com.godavao.app',
                 ),
                 PolylineLayer(
                   polylines: [
                     Polyline(
                       points: [pickup, dest],
                       strokeWidth: 4,
-                      color: Theme.of(context).primaryColor,
+                      color: _purple,
                     ),
                   ],
                 ),
@@ -353,22 +420,22 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                   markers: [
                     Marker(
                       point: pickup,
-                      width: 40,
-                      height: 40,
+                      width: 38,
+                      height: 38,
                       child: const Icon(
                         Icons.location_on,
                         color: Colors.green,
-                        size: 40,
+                        size: 38,
                       ),
                     ),
                     Marker(
                       point: dest,
-                      width: 40,
-                      height: 40,
+                      width: 38,
+                      height: 38,
                       child: const Icon(
-                        Icons.location_on,
+                        Icons.flag,
                         color: Colors.red,
-                        size: 40,
+                        size: 38,
                       ),
                     ),
                   ],
@@ -377,64 +444,151 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
             ),
           ),
 
-          // Actions
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Column(
-              children: [
-                if ((r['status'] == 'accepted' ||
-                        r['status'] == 'en_route' ||
-                        r['status'] == 'completed') &&
-                    (r['payment_method'] == 'gcash')) ...[
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.account_balance_wallet),
-                      label: const Text('Pay with GCash (upload proof)'),
-                      onPressed: () {
-                        final fare = (r['fare'] as num?)?.toDouble() ?? 0.0;
-                        showModalBottomSheet(
-                          context: context,
-                          isScrollControlled: true,
-                          builder:
-                              (_) => GcashProofSheet(
-                                rideId: widget.rideId,
-                                amount: fare,
-                              ),
-                        );
-                      },
+          // Bottom sheet summary card (sticky)
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: SafeArea(
+              top: false,
+              child: Container(
+                width: double.infinity,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 12,
+                      offset: Offset(0, -4),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                ],
-                if (r['status'] == 'completed' && _driverId != null)
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.star),
-                      label: const Text('Rate your driver'),
-                      onPressed: () async {
-                        await _maybePromptRatingIfCompleted();
-                      },
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.message),
-                  label: const Text('Chat with Driver'),
-                  style: ElevatedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(48),
-                  ),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ChatPage(matchId: _matchId!),
-                      ),
-                    );
-                  },
+                  ],
                 ),
-              ],
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Header row: Driver + status pill
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        const Text(
+                          'Driver',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(width: 6),
+                        if (_driverId != null)
+                          VerifiedBadge(userId: _driverId!, size: 18),
+                        const Spacer(),
+                        _statusPill(status),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+
+                    // Rating block
+                    if (_driverId != null)
+                      Row(
+                        children: [
+                          UserRatingBadge(userId: _driverId!, iconSize: 16),
+                          const SizedBox(width: 6),
+                          Text(
+                            driverRatingText,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          const Spacer(),
+                          TextButton(
+                            onPressed: () {
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                builder:
+                                    (_) => RatingDetailsSheet(
+                                      userId: _driverId!,
+                                      title: 'Driver feedback',
+                                    ),
+                              );
+                            },
+                            child: const Text('View feedback'),
+                          ),
+                        ],
+                      ),
+
+                    const SizedBox(height: 8),
+
+                    // Fare row
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.receipt_long,
+                          size: 16,
+                          color: Colors.black54,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Fare: ₱${fare.toStringAsFixed(2)}',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // Actions
+                    if (canUploadGcash) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.account_balance_wallet),
+                          label: const Text('Pay with GCash (upload proof)'),
+                          onPressed: () {
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              builder:
+                                  (_) => GcashProofSheet(
+                                    rideId: widget.rideId,
+                                    amount: fare,
+                                  ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _primaryGradientButton(
+                            label: 'Chat with Driver',
+                            icon: Icons.message,
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ChatPage(matchId: _matchId!),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    if (status == 'completed' && _driverId != null) ...[
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.star),
+                          label: const Text('Rate your driver'),
+                          onPressed: () async {
+                            await _maybePromptRatingIfCompleted();
+                          },
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ),
         ],

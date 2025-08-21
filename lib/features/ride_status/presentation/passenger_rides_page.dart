@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:godavao/features/ride_status/presentation/driver_ride_status_page.dart';
 import 'package:godavao/features/ride_status/presentation/passenger_ride_status_page.dart';
 import 'package:godavao/features/verify/presentation/admin_menu_action.dart';
 import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
@@ -30,6 +29,11 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
   List<Map<String, dynamic>> _upcoming = [];
   List<Map<String, dynamic>> _history = [];
 
+  // Theme tokens (match the other pages)
+  static const _purple = Color(0xFF6A27F7);
+  static const _purpleDark = Color(0xFF4B18C9);
+  static const _bg = Color(0xFFF7F7FB);
+
   @override
   void initState() {
     super.initState();
@@ -43,7 +47,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
       final m = pm.first;
       final parts = <String?>[m.thoroughfare, m.subLocality, m.locality];
       return parts
-          .where((s) => s != null && s.isNotEmpty)
+          .where((s) => s != null && s!.isNotEmpty)
           .cast<String>()
           .join(', ');
     } catch (_) {
@@ -78,17 +82,17 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
       final data = await supabase
           .from('ride_requests')
           .select(r'''
-    id,
-    pickup_lat,
-    pickup_lng,
-    destination_lat,
-    destination_lng,
-    fare,
-    status,
-    created_at,
-    driver_route_id,
-    driver_routes ( id, driver_id )
-  ''')
+            id,
+            pickup_lat,
+            pickup_lng,
+            destination_lat,
+            destination_lng,
+            fare,
+            status,
+            created_at,
+            driver_route_id,
+            driver_routes ( id, driver_id )
+          ''')
           .eq('passenger_id', user.id)
           .order('created_at', ascending: false);
 
@@ -117,10 +121,16 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
               final st = r['status'] as String;
               return ['pending', 'accepted', 'en_route'].contains(st);
             }).toList();
+
         _history =
             enriched.where((r) {
               final st = r['status'] as String;
-              return ['completed', 'declined', 'cancelled'].contains(st);
+              return [
+                'completed',
+                'declined',
+                'cancelled',
+                'canceled',
+              ].contains(st);
             }).toList();
       });
     } catch (e) {
@@ -141,15 +151,86 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
       case 'completed':
         return Colors.green;
       case 'declined':
+      case 'cancelled':
+      case 'canceled':
         return Colors.red;
       default:
-        return Colors.black;
+        return Colors.black87;
     }
+  }
+
+  Widget _statusPill(String status) {
+    final c = _statusColor(status);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: c.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        status.toUpperCase(),
+        style: TextStyle(
+          color: c,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+          letterSpacing: .3,
+        ),
+      ),
+    );
+  }
+
+  Widget _primaryGradientButton({
+    required String label,
+    required VoidCallback? onPressed,
+    IconData? icon,
+  }) {
+    return SizedBox(
+      height: 44,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          gradient: const LinearGradient(
+            colors: [_purple, _purpleDark],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: _purple.withOpacity(0.25),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: ElevatedButton.icon(
+          onPressed: onPressed,
+          icon:
+              icon == null
+                  ? const SizedBox.shrink()
+                  : Icon(icon, color: Colors.white, size: 18),
+          label: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            elevation: 0,
+            backgroundColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildCard(Map<String, dynamic> ride, {required bool upcoming}) {
     final dt = DateFormat(
-      'MMM d, y h:mm a',
+      'MMM d, y • h:mm a',
     ).format(DateTime.parse(ride['created_at'] as String));
     final status = (ride['status'] as String);
     final fare = (ride['fare'] as num?)?.toDouble() ?? 0.0;
@@ -163,136 +244,146 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      elevation: 0,
+      color: Colors.white,
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // OSRM-powered mini map preview
-            SizedBox(
-              height: 120,
-              child: FutureBuilder<Polyline>(
-                future: fetchOsrmRoute(
-                  start: LatLng(pLat, pLng),
-                  end: LatLng(dLat, dLng),
-                ),
-                builder: (ctx, snap) {
-                  final routeLayer =
-                      snap.hasData
-                          ? PolylineLayer(
-                            polylines: [
-                              Polyline(
-                                points: snap.data!.points,
-                                strokeWidth: 3,
-                                color: Colors.green.shade700,
-                              ),
-                            ],
-                          )
-                          : PolylineLayer(
-                            polylines: [
-                              Polyline(
-                                points: [
-                                  LatLng(pLat, pLng),
-                                  LatLng(dLat, dLng),
-                                ],
-                                strokeWidth: 3,
-                                color: Colors.green.shade700,
-                              ),
-                            ],
-                          );
+            // Mini-map preview (OSRM with fallback line)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                height: 120,
+                child: FutureBuilder<Polyline>(
+                  future: fetchOsrmRoute(
+                    start: LatLng(pLat, pLng),
+                    end: LatLng(dLat, dLng),
+                  ),
+                  builder: (ctx, snap) {
+                    final routeLayer =
+                        snap.hasData
+                            ? PolylineLayer(
+                              polylines: [
+                                Polyline(
+                                  points: snap.data!.points,
+                                  strokeWidth: 3,
+                                  color: Colors.green.shade700,
+                                ),
+                              ],
+                            )
+                            : PolylineLayer(
+                              polylines: [
+                                Polyline(
+                                  points: [
+                                    LatLng(pLat, pLng),
+                                    LatLng(dLat, dLng),
+                                  ],
+                                  strokeWidth: 3,
+                                  color: Colors.green.shade700,
+                                ),
+                              ],
+                            );
 
-                  return FlutterMap(
-                    options: MapOptions(
-                      center: LatLng((pLat + dLat) / 2, (pLng + dLng) / 2),
-                      zoom: 13,
-                      interactiveFlags: InteractiveFlag.none,
-                    ),
-                    children: [
-                      TileLayer(
-                        urlTemplate:
-                            'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        subdomains: const ['a', 'b', 'c'],
-                        userAgentPackageName: 'com.example.godavao',
+                    return FlutterMap(
+                      options: MapOptions(
+                        center: LatLng((pLat + dLat) / 2, (pLng + dLng) / 2),
+                        zoom: 13,
+                        interactiveFlags: InteractiveFlag.none,
                       ),
-                      routeLayer,
-                      MarkerLayer(
-                        markers: [
-                          Marker(
-                            point: LatLng(pLat, pLng),
-                            width: 30,
-                            height: 30,
-                            child: const Icon(
-                              Icons.location_on,
-                              color: Colors.green,
+                      children: [
+                        TileLayer(
+                          urlTemplate:
+                              'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          subdomains: const ['a', 'b', 'c'],
+                          userAgentPackageName: 'com.godavao.app',
+                        ),
+                        routeLayer,
+                        MarkerLayer(
+                          markers: [
+                            Marker(
+                              point: LatLng(pLat, pLng),
+                              width: 28,
+                              height: 28,
+                              child: const Icon(
+                                Icons.location_on,
+                                color: Colors.green,
+                              ),
                             ),
-                          ),
-                          Marker(
-                            point: LatLng(dLat, dLng),
-                            width: 30,
-                            height: 30,
-                            child: const Icon(Icons.flag, color: Colors.red),
-                          ),
-                        ],
-                      ),
-                    ],
-                  );
-                },
+                            Marker(
+                              point: LatLng(dLat, dLng),
+                              width: 28,
+                              height: 28,
+                              child: const Icon(Icons.flag, color: Colors.red),
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
+                ),
               ),
             ),
 
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
 
-            // addresses & fare
+            // Addresses
             Text(
               '${ride['pickup_address']} → ${ride['destination_address']}',
-              style: const TextStyle(fontWeight: FontWeight.bold),
+              style: const TextStyle(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 4),
 
-            // NEW: Driver row with rating badge
+            // Driver row + rating badge (if assigned)
             Row(
               children: [
-                Expanded(child: Text('Driver: ${driverId ?? 'unassigned'}')),
+                const Icon(
+                  Icons.directions_car,
+                  size: 14,
+                  color: Colors.black54,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Driver: ${driverId ?? 'unassigned'}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
                 if (driverId != null)
                   UserRatingBadge(userId: driverId, iconSize: 14),
               ],
             ),
-
-            const SizedBox(height: 4),
-            Text('Fare: ₱${fare.toStringAsFixed(2)}'),
-            Text('Requested: $dt'),
             const SizedBox(height: 4),
 
-            // status pill
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                decoration: BoxDecoration(
-                  color: _statusColor(status).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
+            // Fare + time + status pill
+            Row(
+              children: [
+                Text(
+                  '₱${fare.toStringAsFixed(2)}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
-                child: Text(
-                  status.toUpperCase(),
-                  style: TextStyle(
-                    color: _statusColor(status),
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
+                const SizedBox(width: 10),
+                const Icon(Icons.access_time, size: 14, color: Colors.black54),
+                const SizedBox(width: 4),
+                Text(dt, style: const TextStyle(color: Colors.black54)),
+                const Spacer(),
+                _statusPill(status),
+              ],
             ),
 
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
 
-            // action buttons (only for upcoming)
+            // Actions
             if (upcoming)
               Row(
                 children: [
                   if (status == 'pending')
                     Expanded(
-                      child: ElevatedButton(
+                      child: _primaryGradientButton(
+                        label: 'Cancel Ride',
+                        icon: Icons.close,
                         onPressed: () async {
                           await supabase
                               .from('ride_requests')
@@ -300,33 +391,27 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
                               .eq('id', ride['id']);
                           _loadRides();
                         },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
-                        ),
-                        child: const Text('Cancel Ride'),
                       ),
                     ),
                   if (status == 'accepted' || status == 'en_route') ...[
                     Expanded(
-                      child: ElevatedButton.icon(
+                      child: _primaryGradientButton(
+                        label: 'Contact Driver',
+                        icon: Icons.phone,
                         onPressed: () {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('Contacting driver…')),
                           );
                         },
-                        icon: const Icon(Icons.phone),
-                        label: const Text('Contact Driver'),
                       ),
                     ),
                   ],
                 ],
               ),
 
-            // view details arrow
             Align(
               alignment: Alignment.centerRight,
-              child: IconButton(
-                icon: const Icon(Icons.arrow_forward_ios, size: 16),
+              child: TextButton.icon(
                 onPressed: () {
                   Navigator.push(
                     context,
@@ -338,6 +423,9 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
                     ),
                   );
                 },
+                icon: const Icon(Icons.chevron_right),
+                label: const Text('View details'),
+                style: TextButton.styleFrom(foregroundColor: _purple),
               ),
             ),
           ],
@@ -345,6 +433,8 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
       ),
     );
   }
+
+  // --- Scaffold --------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -355,8 +445,12 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
     return DefaultTabController(
       length: 2,
       child: Scaffold(
+        backgroundColor: _bg,
         appBar: AppBar(
           title: const Text('My Rides'),
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.white,
+          elevation: 0,
           actions: [
             AdminMenuAction(),
             IconButton(
@@ -371,9 +465,38 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
               },
             ),
           ],
-          bottom: TabBar(
-            controller: _tabController,
-            tabs: const [Tab(text: 'Upcoming'), Tab(text: 'History')],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(56),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: TabBar(
+                  controller: _tabController,
+                  indicator: BoxDecoration(
+                    color: _purple,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  labelColor: Colors.white,
+                  unselectedLabelColor: Colors.black87,
+                  dividerColor: Colors.transparent,
+                  tabs: [
+                    const Tab(text: 'Upcoming'),
+                    const Tab(text: 'History'),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
         body: TabBarView(

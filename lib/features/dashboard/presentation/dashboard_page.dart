@@ -21,6 +21,13 @@ class _DashboardPageState extends State<DashboardPage> {
   bool _loading = true;
   String? _error;
 
+  // Overview counts
+  bool _loadingOverview = true;
+  int? _driverActiveRoutes; // driver
+  int? _driverPendingRequests; // driver
+  int? _passengerUpcoming; // passenger
+  int? _passengerHistory; // passenger
+
   // Theme (align to Figma)
   static const _bg = Color(0xFFF7F7FB);
   static const _purple = Color(0xFF6A27F7);
@@ -53,11 +60,78 @@ class _DashboardPageState extends State<DashboardPage> {
         _user = res;
         _loading = false;
       });
+      await _loadOverview(); // after profile, load counts
     } catch (e) {
       setState(() {
         _error = 'Failed to load profile.';
         _loading = false;
+        _loadingOverview = false;
       });
+    }
+  }
+
+  Future<void> _loadOverview() async {
+    setState(() => _loadingOverview = true);
+    final uid = _sb.auth.currentUser?.id;
+    if (uid == null) {
+      setState(() => _loadingOverview = false);
+      return;
+    }
+    final role = (_user?['role'] as String?) ?? 'passenger';
+
+    try {
+      if (role == 'driver') {
+        // Active routes
+        final activeRoutes = await _sb
+            .from('driver_routes')
+            .select('id')
+            .eq('driver_id', uid)
+            .eq('is_active', true);
+        final activeCount = (activeRoutes as List).length;
+
+        // Pending matches
+        final pendingMatches = await _sb
+            .from('ride_matches')
+            .select('id')
+            .eq('driver_id', uid)
+            .eq('status', 'pending');
+        final pendingCount = (pendingMatches as List).length;
+
+        setState(() {
+          _driverActiveRoutes = activeCount;
+          _driverPendingRequests = pendingCount;
+        });
+      } else {
+        // Passenger upcoming
+        final upcoming = await _sb
+            .from('ride_requests')
+            .select('id')
+            .eq('passenger_id', uid)
+            .inFilter('status', ['pending', 'accepted', 'en_route']);
+        final upcomingCount = (upcoming as List).length;
+
+        // Passenger history
+        final history = await _sb
+            .from('ride_requests')
+            .select('id')
+            .eq('passenger_id', uid)
+            .inFilter('status', [
+              'completed',
+              'declined',
+              'cancelled',
+              'canceled',
+            ]);
+        final historyCount = (history as List).length;
+
+        setState(() {
+          _passengerUpcoming = upcomingCount;
+          _passengerHistory = historyCount;
+        });
+      }
+    } catch (_) {
+      // Non-fatal: leave nulls (shown as —)
+    } finally {
+      if (mounted) setState(() => _loadingOverview = false);
     }
   }
 
@@ -78,21 +152,25 @@ class _DashboardPageState extends State<DashboardPage> {
     final vehicleInfo = _user?['vehicle_info'] as String?;
     final isDriver = role == 'driver';
 
+    // Resolve overview values
+    final overviewLeftLabel = isDriver ? 'Active Routes' : 'Upcoming';
+    final overviewLeftValue =
+        isDriver
+            ? _fmtCount(_driverActiveRoutes)
+            : _fmtCount(_passengerUpcoming);
+    final overviewRightLabel = isDriver ? 'Pending Requests' : 'Past Rides';
+    final overviewRightValue =
+        isDriver
+            ? _fmtCount(_driverPendingRequests)
+            : _fmtCount(_passengerHistory);
+
     return Scaffold(
       backgroundColor: _bg,
       drawer: const AppDrawer(),
-      appBar: AppBar(
-        title: const Text('GoDavao'),
-        actions: [
-          IconButton(
-            onPressed: _logout,
-            tooltip: 'Logout',
-            icon: const Icon(Icons.logout),
-          ),
-        ],
-      ),
       body: RefreshIndicator(
-        onRefresh: _fetch,
+        onRefresh: () async {
+          await _fetch();
+        },
         child:
             _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -101,12 +179,33 @@ class _DashboardPageState extends State<DashboardPage> {
                 : ListView(
                   padding: EdgeInsets.zero,
                   children: [
-                    // HERO HEADER
-                    _HeroHeader(
-                      name: name,
-                      role: role,
-                      purple: _purple,
-                      purpleDark: _purpleDark,
+                    // HERO HEADER (now contains menu + actions; replaces AppBar)
+                    Builder(
+                      builder:
+                          (ctx) => _HeroHeader(
+                            name: name,
+                            role: role,
+                            purple: _purple,
+                            purpleDark: _purpleDark,
+                            onMenu: () => Scaffold.of(ctx).openDrawer(),
+                            onLogout: _logout,
+                            onNotifications: () {
+                              // TODO: push notifications page/sheet
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Notifications coming soon'),
+                                ),
+                              );
+                            },
+                            onSettings: () {
+                              // TODO: push settings page/sheet
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Settings coming soon'),
+                                ),
+                              );
+                            },
+                          ),
                     ),
 
                     const SizedBox(height: 16),
@@ -118,7 +217,6 @@ class _DashboardPageState extends State<DashboardPage> {
                         child: _VehicleCard(
                           vehicleInfo: vehicleInfo,
                           onManage: () {
-                            // Optional: navigate to vehicles page if you have one
                             Navigator.push(
                               context,
                               MaterialPageRoute(
@@ -203,7 +301,7 @@ class _DashboardPageState extends State<DashboardPage> {
                               ),
                     ),
 
-                    // RIDE SNAPSHOT (placeholder counts; wire to real data later)
+                    // OVERVIEW
                     const SizedBox(height: 16),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -220,17 +318,17 @@ class _DashboardPageState extends State<DashboardPage> {
                         children: [
                           Expanded(
                             child: _StatCard(
-                              label: isDriver ? 'Active Routes' : 'Upcoming',
-                              value: '—',
+                              label: overviewLeftLabel,
+                              value: _loadingOverview ? '—' : overviewLeftValue,
                               icon: Icons.event_available,
                             ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: _StatCard(
-                              label:
-                                  isDriver ? 'Pending Requests' : 'Past Rides',
-                              value: '—',
+                              label: overviewRightLabel,
+                              value:
+                                  _loadingOverview ? '—' : overviewRightValue,
                               icon: Icons.history,
                             ),
                           ),
@@ -244,6 +342,8 @@ class _DashboardPageState extends State<DashboardPage> {
       ),
     );
   }
+
+  String _fmtCount(int? n) => n == null ? '—' : n.toString();
 }
 
 // ------------------- Pieces -------------------
@@ -254,17 +354,26 @@ class _HeroHeader extends StatelessWidget {
   final Color purple;
   final Color purpleDark;
 
+  final VoidCallback onMenu;
+  final VoidCallback onLogout;
+  final VoidCallback onNotifications;
+  final VoidCallback onSettings;
+
   const _HeroHeader({
     required this.name,
     required this.role,
     required this.purple,
     required this.purpleDark,
+    required this.onMenu,
+    required this.onLogout,
+    required this.onNotifications,
+    required this.onSettings,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [purple, purpleDark],
@@ -280,66 +389,104 @@ class _HeroHeader extends StatelessWidget {
           ),
         ],
       ),
-      child: Row(
+      child: Column(
         children: [
-          CircleAvatar(
-            radius: 26,
-            backgroundColor: Colors.white,
-            child: Text(
-              name.isNotEmpty ? name[0].toUpperCase() : '?',
-              style: TextStyle(
-                color: purpleDark,
-                fontWeight: FontWeight.w800,
-                fontSize: 20,
+          // Top action row (replaces AppBar)
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.menu, color: Colors.white),
+                onPressed: onMenu,
+                tooltip: 'Menu',
               ),
-            ),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.notifications_none, color: Colors.white),
+                onPressed: onNotifications,
+                tooltip: 'Notifications',
+              ),
+              IconButton(
+                icon: const Icon(Icons.settings, color: Colors.white),
+                onPressed: onSettings,
+                tooltip: 'Settings',
+              ),
+              IconButton(
+                icon: const Icon(Icons.logout, color: Colors.white),
+                onPressed: onLogout,
+                tooltip: 'Logout',
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Welcome back,',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.labelLarge?.copyWith(color: Colors.white70),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  name,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Colors.white,
+          const SizedBox(height: 6),
+
+          // Identity row
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 26,
+                backgroundColor: Colors.white,
+                child: Text(
+                  name.isNotEmpty ? name[0].toUpperCase() : '?',
+                  style: TextStyle(
+                    color: purpleDark,
                     fontWeight: FontWeight.w800,
+                    fontSize: 20,
                   ),
                 ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(.15),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: Colors.white24),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  role == 'driver' ? Icons.car_rental : Icons.person_pin_circle,
-                  color: Colors.white,
-                  size: 18,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Welcome back,',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.labelLarge?.copyWith(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      name,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  role.toUpperCase(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
                 ),
-              ],
-            ),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(.15),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      role == 'driver'
+                          ? Icons.car_rental
+                          : Icons.person_pin_circle,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      role.toUpperCase(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
