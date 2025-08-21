@@ -33,7 +33,21 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   RealtimeChannel? _driverLocChannel;
   RealtimeChannel? _selfLocChannel;
 
+  // Map controller + readiness guard
   final MapController _map = MapController();
+  bool _mapReady = false;
+  LatLng? _pendingCenter;
+  double? _pendingZoom;
+
+  // Call this instead of _map.move(...)
+  void _safeMove(LatLng center, double zoom) {
+    if (_mapReady) {
+      _map.move(center, zoom);
+    } else {
+      _pendingCenter = center;
+      _pendingZoom = zoom;
+    }
+  }
 
   bool _loading = true;
   String? _error;
@@ -135,15 +149,15 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
       }
       _matchId = (matchResp as Map)['id']?.toString();
 
-      // 3) Resolve driver_id from driver_routes (if assigned) → then subscribe to driver live
+      // 3) Resolve driver + subscribe to live location
       await _resolveDriverIdAndAgg();
 
-      // 4) Initially center the map on pickup
+      // 4) Initially center the map on pickup (use safe move)
       final pickup = LatLng(
         (_ride!['pickup_lat'] as num).toDouble(),
         (_ride!['pickup_lng'] as num).toDouble(),
       );
-      _map.move(pickup, 13);
+      _safeMove(pickup, 13);
 
       // 5) If already completed when user opens page, maybe prompt rating
       await _maybePromptRatingIfCompleted();
@@ -174,9 +188,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
       _driverId = (dr as Map)['driver_id']?.toString();
       if (_driverId != null) {
         await _fetchDriverAggregate(); // best-effort
-        _subscribeDriverLive(
-          _driverId!,
-        ); // 🚗 subscribe after we know driver id
+        _subscribeDriverLive(_driverId!); // subscribe after we know driver id
       }
     }
   }
@@ -208,7 +220,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   // ----------------- Realtime subscriptions -----------------
 
   void _subscribeToRideUpdates() {
-    // ride_requests updates
     _rideChannel =
         _supabase
             .channel('ride_requests:${widget.rideId}')
@@ -254,7 +265,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   }
 
   void _subscribeDriverLive(String driverUserId) {
-    // live_locations table, single-row per user_id (upsert from driver app)
     _driverLocChannel =
         _supabase
             .channel('live_locations_driver_$driverUserId')
@@ -331,7 +341,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     // Follow camera while en_route if toggled on
     final status = (_ride?['status'] ?? '').toString();
     if (_followDriver && status == 'en_route') {
-      _map.move(p, _map.camera.zoom.clamp(14, 16));
+      final currentZoom = _mapReady ? _map.camera.zoom : 15.0;
+      _safeMove(p, currentZoom.clamp(14, 16));
     }
   }
 
@@ -355,7 +366,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     );
     if (existing != null) return;
 
-    // Show sheet (passenger rates driver)
     if (!mounted) return;
     _ratingPromptShown = true;
     await showModalBottomSheet(
@@ -551,6 +561,18 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
               options: MapOptions(
                 center: pickup,
                 zoom: 13,
+                onMapReady: () {
+                  setState(() => _mapReady = true);
+                  // Flush any pending initial move
+                  if (_pendingCenter != null) {
+                    _map.move(
+                      _pendingCenter!,
+                      _pendingZoom ?? _map.camera.zoom,
+                    );
+                    _pendingCenter = null;
+                    _pendingZoom = null;
+                  }
+                },
                 onTap: (_, __) {
                   // disable follow if user explores map
                   if (_followDriver) setState(() => _followDriver = false);
@@ -704,9 +726,11 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                         TextButton.icon(
                           onPressed: () {
                             final p = _driverInterp ?? _driverNext;
-                            if (p != null)
-                              _map.move(p, math.max(_map.camera.zoom, 15));
-                            setState(() => _followDriver = true);
+                            if (p != null) {
+                              final z = _mapReady ? _map.camera.zoom : 15.0;
+                              _safeMove(p, math.max(z, 15));
+                              setState(() => _followDriver = true);
+                            }
                           },
                           icon: const Icon(Icons.center_focus_strong, size: 16),
                           label: const Text('Center'),
