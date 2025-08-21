@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:godavao/features/payments/presentation/gcash_proof_sheet.dart';
@@ -11,6 +12,11 @@ import 'package:godavao/features/safety/presentation/sos_sheet.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
 
+// Live tracking bits
+import 'package:godavao/features/live_tracking/presentation/driver_marker.dart';
+import 'package:godavao/features/live_tracking/presentation/passenger_marker.dart';
+import 'package:godavao/features/live_tracking/utils/live_tracking_helpers.dart';
+
 class PassengerRideStatusPage extends StatefulWidget {
   final String rideId;
   const PassengerRideStatusPage({required this.rideId, super.key});
@@ -20,9 +26,14 @@ class PassengerRideStatusPage extends StatefulWidget {
       _PassengerRideStatusPageState();
 }
 
-class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
+class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
+    with SingleTickerProviderStateMixin {
   final _supabase = Supabase.instance.client;
   RealtimeChannel? _rideChannel;
+  RealtimeChannel? _driverLocChannel;
+  RealtimeChannel? _selfLocChannel;
+
+  final MapController _map = MapController();
 
   bool _loading = true;
   String? _error;
@@ -30,15 +41,31 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
   Map<String, dynamic>? _ride;
   String? _matchId;
 
-  // Driver identity (for rating + display)
+  // Driver identity
   String? _driverId;
-  Map<String, dynamic>? _driverAggregate; // {avg_rating, rating_count}
+  Map<String, dynamic>? _driverAggregate;
   bool _fetchingDriverAgg = false;
 
   // Avoid duplicate rating modals
   bool _ratingPromptShown = false;
 
-  // Theme tokens
+  // Follow camera toggle
+  bool _followDriver = true;
+
+  // Live tracking state (driver car)
+  LatLng? _driverPrev;
+  LatLng? _driverNext;
+  LatLng? _driverInterp;
+  double _driverHeading = 0;
+
+  // Passenger live
+  LatLng? _selfLive;
+
+  late final AnimationController _driverAnim = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 450),
+  )..addListener(_onDriverTick);
+
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
   static const _bg = Color(0xFFF7F7FB);
@@ -48,7 +75,21 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     super.initState();
     _loadRideDetails();
     _subscribeToRideUpdates();
+
+    final me = _supabase.auth.currentUser?.id;
+    if (me != null) _subscribeSelfLive(me);
   }
+
+  @override
+  void dispose() {
+    _rideChannel?.let(_supabase.removeChannel);
+    _driverLocChannel?.let(_supabase.removeChannel);
+    _selfLocChannel?.let(_supabase.removeChannel);
+    _driverAnim.dispose();
+    super.dispose();
+  }
+
+  // ----------------- Data loading -----------------
 
   Future<void> _loadRideDetails() async {
     if (!mounted) return;
@@ -94,10 +135,17 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
       }
       _matchId = (matchResp as Map)['id']?.toString();
 
-      // 3) Resolve driver_id from driver_routes (if assigned)
+      // 3) Resolve driver_id from driver_routes (if assigned) → then subscribe to driver live
       await _resolveDriverIdAndAgg();
 
-      // 4) If already completed when user opens page, maybe prompt rating
+      // 4) Initially center the map on pickup
+      final pickup = LatLng(
+        (_ride!['pickup_lat'] as num).toDouble(),
+        (_ride!['pickup_lng'] as num).toDouble(),
+      );
+      _map.move(pickup, 13);
+
+      // 5) If already completed when user opens page, maybe prompt rating
       await _maybePromptRatingIfCompleted();
     } on PostgrestException catch (e) {
       _error = 'Supabase error: ${e.message}';
@@ -126,6 +174,9 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
       _driverId = (dr as Map)['driver_id']?.toString();
       if (_driverId != null) {
         await _fetchDriverAggregate(); // best-effort
+        _subscribeDriverLive(
+          _driverId!,
+        ); // 🚗 subscribe after we know driver id
       }
     }
   }
@@ -154,8 +205,10 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     }
   }
 
+  // ----------------- Realtime subscriptions -----------------
+
   void _subscribeToRideUpdates() {
-    // Subscribe to ride_requests updates and filter inside callback
+    // ride_requests updates
     _rideChannel =
         _supabase
             .channel('ride_requests:${widget.rideId}')
@@ -185,6 +238,11 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                   );
                 }
 
+                // auto-follow while en_route
+                if ((updated['status'] ?? '') == 'en_route') {
+                  setState(() => _followDriver = true);
+                }
+
                 // Re-resolve driver_id if assignment changed
                 await _resolveDriverIdAndAgg();
 
@@ -194,6 +252,90 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
             )
             .subscribe();
   }
+
+  void _subscribeDriverLive(String driverUserId) {
+    // live_locations table, single-row per user_id (upsert from driver app)
+    _driverLocChannel =
+        _supabase
+            .channel('live_locations_driver_$driverUserId')
+            .onPostgresChanges(
+              schema: 'public',
+              table: 'live_locations',
+              event: PostgresChangeEvent.insert,
+              callback: (payload) {
+                final rec = payload.newRecord;
+                if (rec == null) return;
+                if (rec['user_id']?.toString() != driverUserId) return;
+                _consumeDriverLocation(rec);
+              },
+            )
+            .onPostgresChanges(
+              schema: 'public',
+              table: 'live_locations',
+              event: PostgresChangeEvent.update,
+              callback: (payload) {
+                final rec = payload.newRecord;
+                if (rec == null) return;
+                if (rec['user_id']?.toString() != driverUserId) return;
+                _consumeDriverLocation(rec);
+              },
+            )
+            .subscribe();
+  }
+
+  void _subscribeSelfLive(String selfUserId) {
+    _selfLocChannel =
+        _supabase
+            .channel('live_locations_self_$selfUserId')
+            .onPostgresChanges(
+              schema: 'public',
+              table: 'live_locations',
+              event: PostgresChangeEvent.update,
+              callback: (payload) {
+                final rec = payload.newRecord;
+                if (rec == null) return;
+                if (rec['user_id']?.toString() != selfUserId) return;
+                final lat = (rec['lat'] as num?)?.toDouble();
+                final lng = (rec['lng'] as num?)?.toDouble();
+                if (lat == null || lng == null) return;
+                setState(() => _selfLive = LatLng(lat, lng));
+              },
+            )
+            .subscribe();
+  }
+
+  void _consumeDriverLocation(Map rec) {
+    final lat = (rec['lat'] as num?)?.toDouble();
+    final lng = (rec['lng'] as num?)?.toDouble();
+    if (lat == null || lng == null) return;
+
+    final next = LatLng(lat, lng);
+    final hdg = (rec['heading'] as num?)?.toDouble() ?? _driverHeading;
+
+    setState(() {
+      _driverPrev = _driverInterp ?? _driverNext ?? next;
+      _driverNext = next;
+      _driverHeading = hdg;
+      _driverAnim
+        ..reset()
+        ..forward();
+    });
+  }
+
+  void _onDriverTick() {
+    if (_driverPrev == null || _driverNext == null) return;
+    final t = _driverAnim.value;
+    final p = LiveTrackingHelpers.lerp(_driverPrev!, _driverNext!, t);
+    setState(() => _driverInterp = p);
+
+    // Follow camera while en_route if toggled on
+    final status = (_ride?['status'] ?? '').toString();
+    if (_followDriver && status == 'en_route') {
+      _map.move(p, _map.camera.zoom.clamp(14, 16));
+    }
+  }
+
+  // ----------------- Ratings -----------------
 
   Future<void> _maybePromptRatingIfCompleted() async {
     if (_ratingPromptShown) return;
@@ -230,14 +372,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     );
 
     await _fetchDriverAggregate();
-  }
-
-  @override
-  void dispose() {
-    if (_rideChannel != null) {
-      _supabase.removeChannel(_rideChannel!);
-    }
-    super.dispose();
   }
 
   // ---------- UI helpers ----------
@@ -331,6 +465,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     );
   }
 
+  // ----------------- BUILD -----------------
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -372,6 +508,9 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
             status == 'completed') &&
         (r['payment_method'] == 'gcash');
 
+    // Driver marker position pref: live interp > next > pickup (fallback)
+    final driverPoint = _driverInterp ?? _driverNext ?? pickup;
+
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
@@ -379,6 +518,15 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
         backgroundColor: Colors.white,
         elevation: 0,
         surfaceTintColor: Colors.white,
+        actions: [
+          IconButton(
+            tooltip: _followDriver ? 'Disable follow' : 'Enable follow',
+            onPressed: () => setState(() => _followDriver = !_followDriver),
+            icon: Icon(
+              _followDriver ? Icons.my_location : Icons.location_disabled,
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: Colors.red.shade700,
@@ -399,7 +547,15 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
           // Map canvas
           Positioned.fill(
             child: FlutterMap(
-              options: MapOptions(center: pickup, zoom: 13),
+              mapController: _map,
+              options: MapOptions(
+                center: pickup,
+                zoom: 13,
+                onTap: (_, __) {
+                  // disable follow if user explores map
+                  if (_followDriver) setState(() => _followDriver = false);
+                },
+              ),
               children: [
                 TileLayer(
                   urlTemplate:
@@ -411,23 +567,41 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                   polylines: [
                     Polyline(
                       points: [pickup, dest],
-                      strokeWidth: 4,
-                      color: _purple,
+                      strokeWidth: 5,
+                      color: Colors.black.withOpacity(0.6),
                     ),
                   ],
                 ),
                 MarkerLayer(
                   markers: [
+                    // Driver car (live)
                     Marker(
-                      point: pickup,
-                      width: 38,
-                      height: 38,
-                      child: const Icon(
-                        Icons.location_on,
-                        color: Colors.green,
-                        size: 38,
+                      point: driverPoint,
+                      width: 48,
+                      height: 56,
+                      alignment: Alignment.center,
+                      child: DriverMarker(
+                        size: 36,
+                        headingDeg: _driverHeading,
+                        active: status == 'en_route' || status == 'accepted',
+                        label: null, // optional plate/name
                       ),
                     ),
+                    // Passenger: show live self if available; else pickup
+                    Marker(
+                      point: _selfLive ?? pickup,
+                      width: 36,
+                      height: 44,
+                      child:
+                          _selfLive == null
+                              ? const Icon(
+                                Icons.location_on,
+                                color: Colors.green,
+                                size: 38,
+                              )
+                              : const PassengerMarker(size: 26, ripple: true),
+                    ),
+                    // Destination
                     Marker(
                       point: dest,
                       width: 38,
@@ -513,7 +687,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
 
                     const SizedBox(height: 8),
 
-                    // Fare row
+                    // Fare row + center button
                     Row(
                       children: [
                         const Icon(
@@ -525,6 +699,17 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                         Text(
                           'Fare: ₱${fare.toStringAsFixed(2)}',
                           style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const Spacer(),
+                        TextButton.icon(
+                          onPressed: () {
+                            final p = _driverInterp ?? _driverNext;
+                            if (p != null)
+                              _map.move(p, math.max(_map.camera.zoom, 15));
+                            setState(() => _followDriver = true);
+                          },
+                          icon: const Icon(Icons.center_focus_strong, size: 16),
+                          label: const Text('Center'),
                         ),
                       ],
                     ),
@@ -595,4 +780,9 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
       ),
     );
   }
+}
+
+// tiny extension so we can do _channel?.let(removeChannel)
+extension _Chan on RealtimeChannel {
+  void let(void Function(RealtimeChannel ch) f) => f(this);
 }
