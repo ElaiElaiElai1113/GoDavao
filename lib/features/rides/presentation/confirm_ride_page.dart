@@ -30,6 +30,10 @@ class ConfirmRidePage extends StatefulWidget {
 }
 
 class _ConfirmRidePageState extends State<ConfirmRidePage> {
+  // UI theme (align with GoDavao)
+  static const _purple = Color(0xFF6A27F7);
+  static const _purpleDark = Color(0xFF4B18C9);
+
   bool _loading = true;
   String? _error;
 
@@ -144,11 +148,16 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
               .from('driver_routes')
               .select('capacity_total, capacity_available')
               .eq('id', widget.routeId)
-              .single(); // returns Map<String, dynamic>
+              .single();
 
       setState(() {
         _capacityTotal = (route['capacity_total'] as num?)?.toInt();
         _capacityAvailable = (route['capacity_available'] as num?)?.toInt();
+        // clamp requested seats if > available
+        if (_capacityAvailable != null &&
+            _seatsRequested > _capacityAvailable!) {
+          _seatsRequested = max(1, _capacityAvailable!);
+        }
       });
     } on PostgrestException catch (e) {
       _snack(e.message);
@@ -179,6 +188,11 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  int get _maxSelectableSeats {
+    final avail = _capacityAvailable ?? 6;
+    return max(1, min(6, avail));
+  }
+
   Future<void> _confirmRide() async {
     setState(() => _loading = true);
     final sb = Supabase.instance.client;
@@ -191,7 +205,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       return;
     }
 
-    // Pre-check: capacity on client (server will re-check atomically in RPC)
+    // Client-side pre-check (server RPC will re-check)
     final available = _capacityAvailable ?? 0;
     if (_seatsRequested > available) {
       _snack('Not enough seats available for your request.');
@@ -225,7 +239,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       }
 
       // 2) **Atomic seat allocation** via RPC
-      // This will create/ensure a pending match row and decrement capacity.
       await sb.rpc(
         'allocate_seats',
         params: {
@@ -235,7 +248,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         },
       );
 
-      // 3) Put payment on HOLD (GCash sim)
+      // 3) Payment hold (GCash sim)
       final payments = PaymentsService(sb);
       await payments.upsertOnHoldSafe(
         rideId: rideReqId,
@@ -245,15 +258,13 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         payeeUserId: widget.driverId,
       );
 
-      // 4) Optional: mark method on ride_requests
+      // 4) Optional: mark payment_method
       try {
         await sb
             .from('ride_requests')
             .update({'payment_method': 'gcash'})
             .eq('id', rideReqId);
-      } catch (_) {
-        /* non-fatal */
-      }
+      } catch (_) {}
 
       await _showNotification(
         'Ride Requested',
@@ -262,7 +273,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/passenger_rides');
     } on PostgrestException catch (e) {
-      // Eg: "Not enough seats available" from RPC or RLS issue
       _snack(e.message);
       await _showNotification('Request Failed', e.message);
     } catch (e) {
@@ -272,6 +282,8 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       if (mounted) setState(() => _loading = false);
     }
   }
+
+  // ---------------- UI ----------------
 
   @override
   Widget build(BuildContext context) {
@@ -285,10 +297,12 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     final notEnough = _seatsRequested > capAvail;
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF7F7FB),
       appBar: AppBar(title: const Text('Confirm Your Ride')),
-      body: Column(
+      body: Stack(
         children: [
-          Expanded(
+          // Map background with route
+          Positioned.fill(
             child: FlutterMap(
               options: MapOptions(center: center, zoom: 13),
               children: [
@@ -326,99 +340,197 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                if (_error != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(
-                      _error!,
-                      style: TextStyle(color: Colors.orange.shade700),
-                    ),
-                  ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Distance: ${_distanceKm.toStringAsFixed(2)} km'),
-                    Text('Time: ${_durationMin.toStringAsFixed(0)} min'),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Estimated Fare: ₱${_fare.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 12),
 
-                // Seats UI
-                Row(
-                  children: [
-                    const Text('Seats needed:'),
-                    const SizedBox(width: 12),
-                    DropdownButton<int>(
-                      value: _seatsRequested,
-                      items:
-                          [1, 2, 3, 4, 5, 6]
-                              .map(
-                                (n) => DropdownMenuItem(
-                                  value: n,
-                                  child: Text('$n'),
-                                ),
-                              )
-                              .toList(),
-                      onChanged:
-                          _loading
-                              ? null
-                              : (v) => setState(() => _seatsRequested = v ?? 1),
+          // Bottom summary card
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: SafeArea(
+              top: false,
+              child: Container(
+                width: double.infinity,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 10,
+                      offset: Offset(0, -4),
                     ),
-                    const Spacer(),
-                    Chip(label: Text('Avail: $capAvail / $capTotal')),
                   ],
                 ),
-                if (notEnough)
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        'Not enough seats available',
-                        style: const TextStyle(color: Colors.red),
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(
+                          _error!,
+                          style: TextStyle(color: Colors.orange.shade700),
+                        ),
+                      ),
+
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Distance: ${_distanceKm.toStringAsFixed(2)} km'),
+                        Text('Time: ${_durationMin.toStringAsFixed(0)} min'),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Text(
+                          'Estimated Fare: ',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        Text(
+                          '₱${_fare.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: _purple,
+                          ),
+                        ),
+                        const Spacer(),
+                        PaymentStatusChip(status: 'on_hold'),
+                      ],
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // Seats stepper + capacity chip
+                    Row(
+                      children: [
+                        const Text('Passengers'),
+                        const SizedBox(width: 12),
+                        _Stepper(
+                          value: _seatsRequested,
+                          min: 1,
+                          max: _maxSelectableSeats,
+                          onChanged:
+                              _loading
+                                  ? null
+                                  : (v) => setState(() => _seatsRequested = v),
+                        ),
+                        const Spacer(),
+                        Chip(label: Text('Avail: $capAvail / $capTotal')),
+                      ],
+                    ),
+                    if (notEnough)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: const Text(
+                            'Not enough seats available',
+                            style: TextStyle(color: Colors.red),
+                          ),
+                        ),
+                      ),
+
+                    const SizedBox(height: 14),
+
+                    // Big purple CTA (gradient)
+                    SizedBox(
+                      height: 52,
+                      width: double.infinity,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          gradient: const LinearGradient(
+                            colors: [_purple, _purpleDark],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _purple.withOpacity(0.25),
+                              blurRadius: 16,
+                              offset: const Offset(0, 10),
+                            ),
+                          ],
+                        ),
+                        child: ElevatedButton(
+                          onPressed:
+                              (_loading || notEnough) ? null : _confirmRide,
+                          style: ElevatedButton.styleFrom(
+                            elevation: 0,
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          child:
+                              _loading
+                                  ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                  : Text(
+                                    'Confirm & Hold ₱${_fare.toStringAsFixed(2)} (GCash)',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                        ),
                       ),
                     ),
-                  ),
-
-                const SizedBox(height: 8),
-                const PaymentStatusChip(status: 'on_hold'),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _loading || notEnough ? null : _confirmRide,
-                    child:
-                        _loading
-                            ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                            : Text(
-                              'Confirm & Hold ₱${_fare.toStringAsFixed(2)} (GCash)',
-                            ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Small reusable stepper control (— 1 2 3 +)
+class _Stepper extends StatelessWidget {
+  final int value;
+  final int min;
+  final int max;
+  final ValueChanged<int>? onChanged;
+
+  const _Stepper({
+    required this.value,
+    required this.min,
+    required this.max,
+    this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final canDec = value > min;
+    final canInc = value < max;
+    return Row(
+      children: [
+        IconButton(
+          icon: const Icon(Icons.remove_circle_outline),
+          onPressed:
+              (onChanged == null || !canDec)
+                  ? null
+                  : () => onChanged!(value - 1),
+        ),
+        Text('$value', style: const TextStyle(fontWeight: FontWeight.w700)),
+        IconButton(
+          icon: const Icon(Icons.add_circle_outline),
+          onPressed:
+              (onChanged == null || !canInc)
+                  ? null
+                  : () => onChanged!(value + 1),
+        ),
+      ],
     );
   }
 }
