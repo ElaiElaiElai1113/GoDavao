@@ -1,16 +1,12 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:godavao/features/rides/presentation/confirm_ride_page.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
-// Decode Google-style encoded polylines
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 
-import 'package:godavao/main.dart' show localNotify;
-
-// OSRM service for fetching real routes
 import 'package:godavao/core/osrm_service.dart';
+import 'package:godavao/features/rides/presentation/confirm_ride_page.dart';
 
 class DriverRoute {
   final String id;
@@ -33,6 +29,12 @@ class PassengerMapPage extends StatefulWidget {
 class _PassengerMapPageState extends State<PassengerMapPage> {
   final supabase = Supabase.instance.client;
   final _polyDecoder = PolylinePoints();
+  final MapController _map = MapController();
+
+  // Brand tokens (matches your Figma)
+  static const _purple = Color(0xFF6A27F7);
+  static const _purpleDark = Color(0xFF4B18C9);
+  static const _bg = Color(0xFFF7F7FB);
 
   bool _loadingRoutes = true;
   String? _routesError;
@@ -41,7 +43,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
   DriverRoute? _selectedRoute;
   List<LatLng> _routePoints = [];
 
-  // OSRM-computed segment for passenger
+  // OSRM-computed segment for passenger selection
   Polyline? _osrmRoute;
 
   LatLng? _pickupLocation;
@@ -64,11 +66,17 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
       final data = await supabase
           .from('driver_routes')
           .select('id, driver_id, route_polyline');
+
       _routes =
           (data as List)
               .map((m) => DriverRoute.fromMap(m as Map<String, dynamic>))
               .toList();
-      if (_routes.isEmpty) throw 'No routes available';
+
+      if (_routes.isEmpty) {
+        _routesError = 'No active routes right now.';
+        setState(() => _loadingRoutes = false);
+        return;
+      }
       _selectRoute(_routes.first);
     } catch (e) {
       _routesError = 'Error loading routes: $e';
@@ -83,21 +91,27 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
         pts
             .map((p) => LatLng(p.latitude.toDouble(), p.longitude.toDouble()))
             .toList();
+
     setState(() {
       _selectedRoute = r;
       _pickupLocation = null;
       _dropoffLocation = null;
       _osrmRoute = null;
     });
+
+    if (_routePoints.isNotEmpty) {
+      _map.move(_routePoints.first, 13);
+    }
   }
 
+  // Tap to snap to nearest segment of the selected route
   void _onMapTap(TapPosition _, LatLng tap) async {
     if (_routePoints.isEmpty) return;
 
-    // snap tap to nearest segment:
+    // Project tap onto nearest segment (quick & robust)
     late LatLng snapped;
     double bestD = double.infinity;
-    final dist = Distance();
+    final dist = const Distance();
     for (var i = 0; i < _routePoints.length - 1; i++) {
       final a = _routePoints[i], b = _routePoints[i + 1];
       final dx = b.longitude - a.longitude;
@@ -105,12 +119,12 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
       final len2 = dx * dx + dy * dy;
       if (len2 == 0) continue;
       final t =
-          ((tap.longitude - a.longitude) * dx +
-              (tap.latitude - a.latitude) * dy) /
+          (((tap.longitude - a.longitude) * dx) +
+              ((tap.latitude - a.latitude) * dy)) /
           len2;
       final ct = t.clamp(0.0, 1.0);
       final proj = LatLng(a.latitude + ct * dy, a.longitude + ct * dx);
-      final d = dist(proj, tap);
+      final d = dist(tap, proj);
       if (d < bestD) {
         bestD = d;
         snapped = proj;
@@ -124,7 +138,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
         _dropoffLocation = snapped;
         _osrmRoute = null;
       });
-      // fetch OSRM segment
       try {
         final fetched = await fetchOsrmRoute(
           start: _pickupLocation!,
@@ -132,12 +145,13 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
         );
         setState(() => _osrmRoute = fetched);
       } catch (e) {
+        if (!mounted) return;
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Routing failed: $e')));
       }
     } else {
-      // reset for new selection
+      // Start new selection
       setState(() {
         _pickupLocation = snapped;
         _dropoffLocation = null;
@@ -146,17 +160,12 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     }
   }
 
-  Future<void> _onRequestRide() async {
-    if (_pickupLocation == null || _dropoffLocation == null || _sending) return;
-
-    if (_selectedRoute == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a driver route first')),
-      );
+  void _openConfirm() {
+    if (_pickupLocation == null ||
+        _dropoffLocation == null ||
+        _selectedRoute == null) {
       return;
     }
-
-    // No DB writes here. Just go to the confirm screen.
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -171,82 +180,73 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     );
   }
 
+  // ---------------- UI ----------------
+
   @override
   Widget build(BuildContext context) {
     if (_loadingRoutes) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    if (_routesError != null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Join a Driver Route')),
-        body: Center(child: Text(_routesError!)),
-      );
-    }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Join a Driver Route')),
-      body: Column(
+      backgroundColor: _bg,
+      appBar: AppBar(
+        title: const Text('Join a Driver Route'),
+        centerTitle: true,
+      ),
+      body: Stack(
         children: [
-          // Route selector
-          SizedBox(
-            height: 60,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children:
-                  _routes.map((r) {
-                    final sel = r.id == _selectedRoute?.id;
-                    return Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              sel ? Colors.blue : Colors.grey.shade200,
-                        ),
-                        onPressed: () => _selectRoute(r),
-                        child: Text(sel ? 'Selected' : 'Route'),
-                      ),
-                    );
-                  }).toList(),
-            ),
-          ),
-
-          // Map + polylines/markers
-          Expanded(
+          // Map
+          Positioned.fill(
             child: FlutterMap(
+              mapController: _map,
               options: MapOptions(
                 center:
                     _routePoints.isNotEmpty
                         ? _routePoints.first
-                        : LatLng(7.1907, 125.4553),
+                        : const LatLng(7.19, 125.45),
                 zoom: 13,
                 onTap: _onMapTap,
               ),
               children: [
                 TileLayer(
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.godavao.app',
                 ),
+                // Driver route polyline
                 if (_routePoints.isNotEmpty)
                   PolylineLayer(
                     polylines: [
                       Polyline(
                         points: _routePoints,
-                        strokeWidth: 4,
-                        color: Colors.red,
+                        strokeWidth: 5,
+                        color: Colors.black.withOpacity(0.6),
                       ),
                     ],
                   ),
-                if (_osrmRoute != null) PolylineLayer(polylines: [_osrmRoute!]),
+                // Passenger segment
+                if (_osrmRoute != null)
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(
+                        points: _osrmRoute!.points,
+                        strokeWidth: 6,
+                        color: _purple,
+                      ),
+                    ],
+                  ),
+                // Pick & Drop markers
                 if (_pickupLocation != null)
                   MarkerLayer(
                     markers: [
                       Marker(
                         point: _pickupLocation!,
-                        width: 30,
-                        height: 30,
+                        width: 34,
+                        height: 34,
                         child: const Icon(
                           Icons.location_pin,
                           color: Colors.green,
-                          size: 30,
+                          size: 34,
                         ),
                       ),
                     ],
@@ -256,8 +256,8 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     markers: [
                       Marker(
                         point: _dropoffLocation!,
-                        width: 30,
-                        height: 30,
+                        width: 34,
+                        height: 34,
                         child: const Icon(
                           Icons.flag,
                           color: Colors.red,
@@ -270,31 +270,278 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
             ),
           ),
 
-          // Request Ride button
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: ElevatedButton(
-              onPressed:
-                  (_pickupLocation != null &&
-                          _dropoffLocation != null &&
-                          !_sending)
-                      ? _onRequestRide
-                      : null,
-              child:
-                  _sending
-                      ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
+          // Top route carousel / chips
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: SizedBox(
+                height: 56,
+                child:
+                    _routesError != null
+                        ? _EmptyRoutesBar(
+                          message: _routesError!,
+                          onRetry: _loadRoutes,
+                        )
+                        : ListView.separated(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _routes.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 8),
+                          itemBuilder: (context, i) {
+                            final r = _routes[i];
+                            final sel = r.id == _selectedRoute?.id;
+                            return _RouteChip(
+                              index: i + 1,
+                              selected: sel,
+                              onTap: () => _selectRoute(r),
+                            );
+                          },
                         ),
-                      )
-                      : const Text('Review Fare'),
+              ),
+            ),
+          ),
+
+          // Bottom sheet: step hints + CTA
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: SafeArea(
+              top: false,
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 12,
+                      offset: Offset(0, -6),
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Step helper
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.touch_app,
+                          size: 18,
+                          color: Colors.black54,
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            _selectedRoute == null
+                                ? 'Choose a route to start'
+                                : (_pickupLocation == null
+                                    ? 'Tap the map to set PICKUP on the route'
+                                    : (_dropoffLocation == null
+                                        ? 'Tap again to set DROPOFF'
+                                        : 'Tap once more to change PICKUP')),
+                            style: const TextStyle(color: Colors.black54),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+
+                    // Small status row (pill chips)
+                    Row(
+                      children: [
+                        _Pill(
+                          icon: Icons.alt_route,
+                          label:
+                              _selectedRoute == null
+                                  ? 'Route: —'
+                                  : 'Route: ${_routes.indexWhere((r) => r.id == _selectedRoute!.id) + 1}',
+                        ),
+                        const SizedBox(width: 8),
+                        _Pill(
+                          icon: Icons.location_pin,
+                          label:
+                              _pickupLocation == null
+                                  ? 'Pickup: —'
+                                  : 'Pickup set',
+                        ),
+                        const SizedBox(width: 8),
+                        _Pill(
+                          icon: Icons.flag,
+                          label:
+                              _dropoffLocation == null
+                                  ? 'Dropoff: —'
+                                  : 'Dropoff set',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Primary CTA (gradient button)
+                    SizedBox(
+                      height: 52,
+                      width: double.infinity,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          gradient: const LinearGradient(
+                            colors: [_purple, _purpleDark],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _purple.withOpacity(0.25),
+                              blurRadius: 16,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            elevation: 0,
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          onPressed:
+                              (_pickupLocation != null &&
+                                      _dropoffLocation != null &&
+                                      !_sending)
+                                  ? _openConfirm
+                                  : null,
+                          child:
+                              _sending
+                                  ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                  : const Text(
+                                    'Review Fare',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+// ---------- Small UI widgets ----------
+
+class _RouteChip extends StatelessWidget {
+  const _RouteChip({
+    required this.index,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final int index;
+  final bool selected;
+  final VoidCallback onTap;
+
+  static const _purple = Color(0xFF6A27F7);
+
+  @override
+  Widget build(BuildContext context) {
+    return ChoiceChip(
+      label: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Text(
+          'Route $index',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: selected ? Colors.white : null,
+          ),
+        ),
+      ),
+      selected: selected,
+      selectedColor: _purple,
+      backgroundColor: Colors.white,
+      shape: StadiumBorder(
+        side: BorderSide(color: selected ? _purple : Colors.black12),
+      ),
+      onSelected: (_) => onTap(),
+    );
+  }
+}
+
+class _Pill extends StatelessWidget {
+  const _Pill({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: Colors.black54),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyRoutesBar extends StatelessWidget {
+  const _EmptyRoutesBar({required this.message, required this.onRetry});
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const SizedBox(width: 12),
+        Expanded(
+          child: Container(
+            height: 48,
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.black12),
+            ),
+            child: Text(message, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        ),
+        const SizedBox(width: 8),
+        OutlinedButton.icon(
+          onPressed: onRetry,
+          icon: const Icon(Icons.refresh, size: 18),
+          label: const Text('Retry'),
+        ),
+        const SizedBox(width: 12),
+      ],
     );
   }
 }

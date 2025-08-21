@@ -10,7 +10,7 @@ class VehicleSwitcher extends StatefulWidget {
     this.runSpacing = 8,
   });
 
-  /// Called with the selected vehicle row after switching default.
+  /// Called with the selected vehicle row after switching default or after initial load.
   final void Function(Map<String, dynamic> vehicle)? onChanged;
 
   final EdgeInsets chipPadding;
@@ -57,23 +57,41 @@ class _VehicleSwitcherState extends State<VehicleSwitcher> {
 
       final res = await _sb
           .from('vehicles')
-          .select('id, make, model, plate, seats, is_default')
+          .select('id, make, model, plate, seats, is_default, created_at')
           .eq('driver_id', uid)
-          .order('is_default', ascending: false);
+          .order('is_default', ascending: false)
+          .order('created_at', ascending: false);
 
       _vehicles = (res as List).cast<Map<String, dynamic>>();
-      _selectedId =
-          _vehicles.firstWhere(
-                (v) => v['is_default'] == true,
-                orElse: () => _vehicles.isNotEmpty ? _vehicles.first : {},
-              )['id']
-              as String?;
-    } on PostgrestException catch (e) {
-      _error = e.message;
-    } catch (e) {
-      _error = e.toString();
-    } finally {
+
+      // Pick initial: default → first
+      if (_vehicles.isNotEmpty) {
+        final def = _vehicles.firstWhere(
+          (v) => v['is_default'] == true,
+          orElse: () => _vehicles.first,
+        );
+        _selectedId = def['id'] as String?;
+      } else {
+        _selectedId = null;
+      }
+
       if (mounted) setState(() => _loading = false);
+
+      // 🔑 Auto-inform parent on first load
+      if (_vehicles.isNotEmpty && _selectedId != null) {
+        final selected = _vehicles.firstWhere((v) => v['id'] == _selectedId);
+        widget.onChanged?.call(selected);
+      }
+    } on PostgrestException catch (e) {
+      setState(() {
+        _error = e.message;
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
     }
   }
 
@@ -81,34 +99,34 @@ class _VehicleSwitcherState extends State<VehicleSwitcher> {
     if (_selectedId == vehicleId) return;
 
     final prev = _selectedId;
-    setState(() => _selectedId = vehicleId); // optimistic
+    setState(() => _selectedId = vehicleId); // optimistic UI
 
     try {
       final uid = _sb.auth.currentUser!.id;
 
-      // Set selected as default…
+      // Make the selected one default…
       await _sb
           .from('vehicles')
           .update({'is_default': true})
-          .eq('id', vehicleId)
-          .eq('driver_id', uid);
+          .eq('driver_id', uid)
+          .eq('id', vehicleId);
 
-      // …and unset others explicitly (safety)
+      // …and unset others
       await _sb
           .from('vehicles')
           .update({'is_default': false})
           .eq('driver_id', uid)
           .neq('id', vehicleId);
 
-      // Notify parent
+      // Notify parent immediately
       final selected = _vehicles.firstWhere((v) => v['id'] == vehicleId);
       widget.onChanged?.call(selected);
 
-      // Refresh list to reflect DB state
+      // Refresh to reflect DB state (optional but nice)
       await _loadVehicles();
     } catch (e) {
-      if (mounted) setState(() => _selectedId = prev);
       if (!mounted) return;
+      setState(() => _selectedId = prev);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Failed to switch vehicle: $e')));
@@ -169,7 +187,7 @@ class _VehicleSwitcherState extends State<VehicleSwitcher> {
               if (plate.isNotEmpty) '($plate)',
               if (seats > 0) '· $seats',
             ].join(' ');
-            if (label.isEmpty) label = 'Vehicle ${id.substring(0, 6)}';
+            if (label.trim().isEmpty) label = 'Vehicle ${id.substring(0, 6)}';
 
             return ChoiceChip(
               label: Padding(
