@@ -6,7 +6,6 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'features/auth/presentation/auth_page.dart';
 import 'features/dashboard/presentation/dashboard_page.dart';
-import 'features/dashboard/presentation/testing_dashboard_page.dart';
 import 'features/maps/passenger_map_page.dart';
 import 'features/ride_status/presentation/driver_rides_page.dart';
 import 'features/ride_status/presentation/passenger_rides_page.dart';
@@ -76,7 +75,6 @@ class GoDavaoApp extends StatelessWidget {
         '/dashboard': (_) => const DashboardPage(),
         '/driver_rides': (_) => const DriverRidesPage(),
         '/passenger_rides': (_) => const PassengerRidesPage(),
-        '/testing': (_) => const TestingDashboardPage(),
         '/passenger_map': (_) => const PassengerMapPage(),
         '/driver_route': (_) => const DriverRoutePage(),
       },
