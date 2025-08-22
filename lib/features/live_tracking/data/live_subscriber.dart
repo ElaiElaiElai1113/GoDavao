@@ -1,57 +1,71 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:flutter_map/flutter_map.dart';
 
 class LiveSubscriber {
   final SupabaseClient sb;
-  final String rideId;
+  final String userId; // the user we follow
   final void Function(LatLng pos, double? heading) onUpdate;
 
   RealtimeChannel? _chan;
 
-  LiveSubscriber(this.sb, {required this.rideId, required this.onUpdate});
+  LiveSubscriber(this.sb, {required this.userId, required this.onUpdate});
 
-  void listenDriver() {
+  void listen() {
     _chan =
-        sb.channel('live_locations:$rideId')
+        sb.channel('live_locations_user_$userId')
           ..onPostgresChanges(
-            event: PostgresChangeEvent.all,
             schema: 'public',
             table: 'live_locations',
+            event: PostgresChangeEvent.insert,
             filter: PostgresChangeFilter(
               type: PostgresChangeFilterType.eq,
-              column: 'ride_id',
-              value: rideId,
+              column: 'user_id',
+              value: userId,
             ),
-            callback: (payload) {
-              final row = payload.newRecord ?? payload.oldRecord;
-              if (row == null) return;
-              if ((row['actor'] as String?) != 'driver') return;
-              onUpdate(
-                LatLng(row['lat'] as double, row['lng'] as double),
-                (row['heading'] as num?)?.toDouble(),
-              );
-            },
+            callback: _handle, // 👈 no type on the function
+          )
+          ..onPostgresChanges(
+            schema: 'public',
+            table: 'live_locations',
+            event: PostgresChangeEvent.update,
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'user_id',
+              value: userId,
+            ),
+            callback: _handle,
           )
           ..subscribe();
 
-    // seed (pull latest)
-    _fetchSeed();
+    _seed();
   }
 
-  Future<void> _fetchSeed() async {
+  // Accept dynamic so it works with both v1 and v2 payload types
+  void _handle(dynamic payload) {
+    final row = payload.newRecord ?? payload.oldRecord;
+    if (row == null) return;
+
+    final lat = (row['lat'] as num?)?.toDouble();
+    final lng = (row['lng'] as num?)?.toDouble();
+    if (lat == null || lng == null) return;
+
+    onUpdate(LatLng(lat, lng), (row['heading'] as num?)?.toDouble());
+  }
+
+  Future<void> _seed() async {
     final res =
         await sb
             .from('live_locations')
             .select('lat,lng,heading')
-            .eq('ride_id', rideId)
-            .eq('actor', 'driver')
+            .eq('user_id', userId)
             .maybeSingle();
+
     if (res != null) {
-      onUpdate(
-        LatLng((res['lat'] as num).toDouble(), (res['lng'] as num).toDouble()),
-        (res['heading'] as num?)?.toDouble(),
-      );
+      final lat = (res['lat'] as num?)?.toDouble();
+      final lng = (res['lng'] as num?)?.toDouble();
+      if (lat != null && lng != null) {
+        onUpdate(LatLng(lat, lng), (res['heading'] as num?)?.toDouble());
+      }
     }
   }
 

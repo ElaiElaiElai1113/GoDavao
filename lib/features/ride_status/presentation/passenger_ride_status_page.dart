@@ -39,7 +39,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   LatLng? _pendingCenter;
   double? _pendingZoom;
 
-  // Call this instead of _map.move(...)
+  // Safe move that waits for map readiness
   void _safeMove(LatLng center, double zoom) {
     if (_mapReady) {
       _map.move(center, zoom);
@@ -271,11 +271,15 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
             .onPostgresChanges(
               schema: 'public',
               table: 'live_locations',
-              event: PostgresChangeEvent.insert,
+              event: PostgresChangeEvent.insert, // 👈 also listen INSERT
+              filter: PostgresChangeFilter(
+                type: PostgresChangeFilterType.eq,
+                column: 'user_id',
+                value: driverUserId,
+              ),
               callback: (payload) {
                 final rec = payload.newRecord;
                 if (rec == null) return;
-                if (rec['user_id']?.toString() != driverUserId) return;
                 _consumeDriverLocation(rec);
               },
             )
@@ -283,10 +287,14 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
               schema: 'public',
               table: 'live_locations',
               event: PostgresChangeEvent.update,
+              filter: PostgresChangeFilter(
+                type: PostgresChangeFilterType.eq,
+                column: 'user_id',
+                value: driverUserId,
+              ),
               callback: (payload) {
                 final rec = payload.newRecord;
                 if (rec == null) return;
-                if (rec['user_id']?.toString() != driverUserId) return;
                 _consumeDriverLocation(rec);
               },
             )
@@ -300,11 +308,33 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
             .onPostgresChanges(
               schema: 'public',
               table: 'live_locations',
-              event: PostgresChangeEvent.update,
+              event: PostgresChangeEvent.insert, // 👈 add INSERT too
+              filter: PostgresChangeFilter(
+                type: PostgresChangeFilterType.eq,
+                column: 'user_id',
+                value: selfUserId,
+              ),
               callback: (payload) {
                 final rec = payload.newRecord;
                 if (rec == null) return;
-                if (rec['user_id']?.toString() != selfUserId) return;
+                final lat = (rec['lat'] as num?)?.toDouble();
+                final lng = (rec['lng'] as num?)?.toDouble();
+                if (lat == null || lng == null) return;
+                setState(() => _selfLive = LatLng(lat, lng));
+              },
+            )
+            .onPostgresChanges(
+              schema: 'public',
+              table: 'live_locations',
+              event: PostgresChangeEvent.update,
+              filter: PostgresChangeFilter(
+                type: PostgresChangeFilterType.eq,
+                column: 'user_id',
+                value: selfUserId,
+              ),
+              callback: (payload) {
+                final rec = payload.newRecord;
+                if (rec == null) return;
                 final lat = (rec['lat'] as num?)?.toDouble();
                 final lng = (rec['lng'] as num?)?.toDouble();
                 if (lat == null || lng == null) return;
