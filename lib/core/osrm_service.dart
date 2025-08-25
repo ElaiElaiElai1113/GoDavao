@@ -51,7 +51,7 @@ Future<OsrmRouteDetailed> fetchOsrmRouteDetailed({
   required LatLng end,
   Duration timeout = const Duration(seconds: 8),
 }) async {
-  Future<OsrmRouteDetailed?> _tryOnce({required String overview}) async {
+  Future<OsrmRouteDetailed?> tryOnce({required String overview}) async {
     final base = getOsrmBaseUrl();
     // OSRM requires lon,lat order in the URL
     final uri = Uri.parse(
@@ -95,12 +95,12 @@ Future<OsrmRouteDetailed> fetchOsrmRouteDetailed({
 
   try {
     // Smaller, faster payload first
-    final a = await _tryOnce(overview: 'simplified');
+    final a = await tryOnce(overview: 'simplified');
     if (a != null) return a;
 
     // Brief backoff then try full once
     await Future.delayed(const Duration(milliseconds: 300));
-    final b = await _tryOnce(overview: 'full');
+    final b = await tryOnce(overview: 'full');
     if (b != null) return b;
   } catch (_) {
     // swallow – we’ll return a fallback below

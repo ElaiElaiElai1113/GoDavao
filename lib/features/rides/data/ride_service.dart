@@ -156,7 +156,6 @@ class RideService {
               table: 'driver_routes',
               callback: (payload) {
                 final newRec = payload.newRecord;
-                if (newRec == null) return;
                 final rec = (newRec as Map).cast<String, dynamic>();
                 if (rec['id'] == routeId) {
                   onChange(rec);
@@ -180,7 +179,7 @@ class RideService {
             table: 'ride_matches',
             callback: (payload) {
               final rec = payload.newRecord;
-              if (rec != null && (rec as Map)['driver_route_id'] == routeId) {
+              if ((rec as Map)['driver_route_id'] == routeId) {
                 onAnyChange();
               }
             },
@@ -191,7 +190,7 @@ class RideService {
             table: 'ride_matches',
             callback: (payload) {
               final rec = payload.newRecord;
-              if (rec != null && (rec as Map)['driver_route_id'] == routeId) {
+              if ((rec as Map)['driver_route_id'] == routeId) {
                 onAnyChange();
               }
             },
@@ -202,8 +201,7 @@ class RideService {
             table: 'ride_matches',
             callback: (payload) {
               final oldRec = payload.oldRecord;
-              if (oldRec != null &&
-                  (oldRec as Map)['driver_route_id'] == routeId) {
+              if ((oldRec as Map)['driver_route_id'] == routeId) {
                 onAnyChange();
               }
             },

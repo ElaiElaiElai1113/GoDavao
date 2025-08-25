@@ -236,9 +236,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               table: 'ride_matches',
               event: PostgresChangeEvent.insert,
               callback: (payload) {
-                final newRec = payload.newRecord;
-                if (newRec == null) return;
-                final rec = (newRec as Map).cast<String, dynamic>();
+                final rec = (payload.newRecord as Map).cast<String, dynamic>();
                 if (rec['driver_id']?.toString() != driverId) return;
 
                 setState(() => _newMatchIds.add(rec['id']?.toString() ?? ''));
@@ -255,7 +253,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               event: PostgresChangeEvent.update,
               callback: (payload) {
                 final newRec = payload.newRecord;
-                if (newRec == null) return;
                 final rec = (newRec as Map).cast<String, dynamic>();
                 if (rec['driver_id']?.toString() != driverId) return;
                 _loadMatches();

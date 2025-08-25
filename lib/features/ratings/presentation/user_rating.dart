@@ -68,7 +68,7 @@ class _UserRatingBadgeState extends State<UserRatingBadge> {
       children: [
         Icon(Icons.star, size: widget.iconSize, color: Colors.amber),
         const SizedBox(width: 2),
-        Text('${_avg!.toStringAsFixed(2)} (${_count})'),
+        Text('${_avg!.toStringAsFixed(2)} ($_count)'),
       ],
     );
   }

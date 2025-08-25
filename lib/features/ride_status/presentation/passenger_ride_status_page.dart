@@ -229,7 +229,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
               event: PostgresChangeEvent.update,
               callback: (payload) async {
                 final newRec = payload.newRecord;
-                if (newRec == null) return;
                 final updated = (newRec as Map).cast<String, dynamic>();
                 if (updated['id'] != widget.rideId) return;
 
@@ -279,7 +278,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
               ),
               callback: (payload) {
                 final rec = payload.newRecord;
-                if (rec == null) return;
                 _consumeDriverLocation(rec);
               },
             )
@@ -294,7 +292,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
               ),
               callback: (payload) {
                 final rec = payload.newRecord;
-                if (rec == null) return;
                 _consumeDriverLocation(rec);
               },
             )
@@ -316,7 +313,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
               ),
               callback: (payload) {
                 final rec = payload.newRecord;
-                if (rec == null) return;
                 final lat = (rec['lat'] as num?)?.toDouble();
                 final lng = (rec['lng'] as num?)?.toDouble();
                 if (lat == null || lng == null) return;
@@ -334,7 +330,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
               ),
               callback: (payload) {
                 final rec = payload.newRecord;
-                if (rec == null) return;
                 final lat = (rec['lat'] as num?)?.toDouble();
                 final lng = (rec['lng'] as num?)?.toDouble();
                 if (lat == null || lng == null) return;
