@@ -109,7 +109,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
 
       if (!mounted) return;
       setState(() {
-        _routePolyline = d.toPolyline(color: Colors.blue, width: 4);
+        _routePolyline = d.toPolyline(color: Color(0xFF6A27F7), width: 4);
         _distanceKm = double.parse(km.toStringAsFixed(2));
         _durationMin = double.parse(mins.toStringAsFixed(0));
         _fare = total.roundToDouble();
@@ -130,7 +130,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         _routePolyline = Polyline(
           points: [widget.pickup, widget.destination],
           strokeWidth: 4,
-          color: Colors.blue,
+          color: Color(0xFF6A27F7),
         );
         _distanceKm = double.parse(km.toStringAsFixed(2));
         _durationMin = double.parse(mins.toStringAsFixed(0));
@@ -297,14 +297,14 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     final notEnough = _seatsRequested > capAvail;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7FB),
+      backgroundColor: Colors.white,
       appBar: AppBar(title: const Text('Confirm Your Ride')),
       body: Stack(
         children: [
           // Map background with route
           Positioned.fill(
             child: FlutterMap(
-              options: MapOptions(center: center, zoom: 13),
+              options: MapOptions(initialCenter: center, initialZoom: 15),
               children: [
                 TileLayer(
                   urlTemplate:
@@ -322,7 +322,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                       child: const Icon(
                         Icons.location_pin,
                         color: Colors.green,
-                        size: 40,
+                        size: 30,
                       ),
                     ),
                     Marker(
@@ -330,9 +330,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                       width: 40,
                       height: 40,
                       child: const Icon(
-                        Icons.location_pin,
+                        Icons.pin_drop,
                         color: Colors.red,
-                        size: 40,
+                        size: 30,
                       ),
                     ),
                   ],
@@ -415,7 +415,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                                   : (v) => setState(() => _seatsRequested = v),
                         ),
                         const Spacer(),
-                        Chip(label: Text('Avail: $capAvail / $capTotal')),
+                        Chip(label: Text('Seats: $capAvail / $capTotal')),
                       ],
                     ),
                     if (notEnough)

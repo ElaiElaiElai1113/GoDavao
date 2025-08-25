@@ -238,9 +238,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
               table: 'ride_requests',
               event: PostgresChangeEvent.update,
               callback: (payload) async {
-                final rec = payload.newRecord;
-                if (rec == null) return;
-                final updated = (rec as Map).cast<String, dynamic>();
+                final newRec = payload.newRecord;
+                final updated = (newRec as Map).cast<String, dynamic>();
                 if (updated['id'] != widget.rideId) return;
 
                 if (!mounted) return;
@@ -276,9 +275,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                 column: 'user_id',
                 value: driverUserId,
               ),
-              callback: (p) {
-                final rec = p.newRecord;
-                if (rec == null) return;
+              callback: (payload) {
+                final rec = payload.newRecord;
                 _consumeDriverLocation(rec);
               },
             )
@@ -291,9 +289,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                 column: 'user_id',
                 value: driverUserId,
               ),
-              callback: (p) {
-                final rec = p.newRecord;
-                if (rec == null) return;
+              callback: (payload) {
+                final rec = payload.newRecord;
                 _consumeDriverLocation(rec);
               },
             )
@@ -313,9 +310,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                 column: 'user_id',
                 value: selfUserId,
               ),
-              callback: (p) {
-                final rec = p.newRecord;
-                if (rec == null) return;
+              callback: (payload) {
+                final rec = payload.newRecord;
                 final lat = (rec['lat'] as num?)?.toDouble();
                 final lng = (rec['lng'] as num?)?.toDouble();
                 if (lat == null || lng == null) return;
@@ -332,9 +328,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                 column: 'user_id',
                 value: selfUserId,
               ),
-              callback: (p) {
-                final rec = p.newRecord;
-                if (rec == null) return;
+              callback: (payload) {
+                final rec = payload.newRecord;
                 final lat = (rec['lat'] as num?)?.toDouble();
                 final lng = (rec['lng'] as num?)?.toDouble();
                 if (lat == null || lng == null) return;

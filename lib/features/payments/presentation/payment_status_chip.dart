@@ -15,7 +15,7 @@ class PaymentStatusChip extends StatelessWidget {
 
     switch (status) {
       case 'on_hold':
-        bg = Colors.amber.shade100;
+        bg = Color(0xFF6A27F7);
         icon = Icons.lock_clock;
         label = 'ON HOLD';
         break;

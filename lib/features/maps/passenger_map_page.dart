@@ -34,7 +34,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
   // Brand tokens (matches your Figma)
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
-  static const _bg = Color(0xFFF7F7FB);
 
   bool _loadingRoutes = true;
   String? _routesError;
@@ -189,11 +188,8 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     }
 
     return Scaffold(
-      backgroundColor: _bg,
-      appBar: AppBar(
-        title: const Text('Join a Driver Route'),
-        centerTitle: true,
-      ),
+      backgroundColor: Colors.white,
+      appBar: AppBar(title: const Text('Catch a Ride'), centerTitle: true),
       body: Stack(
         children: [
           // Map
@@ -201,11 +197,11 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
             child: FlutterMap(
               mapController: _map,
               options: MapOptions(
-                center:
+                initialCenter:
                     _routePoints.isNotEmpty
                         ? _routePoints.first
                         : const LatLng(7.19, 125.45),
-                zoom: 13,
+                initialZoom: 15,
                 onTap: _onMapTap,
               ),
               children: [
@@ -220,7 +216,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                       Polyline(
                         points: _routePoints,
                         strokeWidth: 5,
-                        color: Colors.black.withOpacity(0.6),
+                        color: Colors.grey.shade500,
                       ),
                     ],
                   ),
@@ -246,7 +242,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                         child: const Icon(
                           Icons.location_pin,
                           color: Colors.green,
-                          size: 34,
+                          size: 30,
                         ),
                       ),
                     ],
@@ -259,7 +255,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                         width: 34,
                         height: 34,
                         child: const Icon(
-                          Icons.flag,
+                          Icons.pin_drop,
                           color: Colors.red,
                           size: 30,
                         ),
@@ -271,35 +267,35 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
           ),
 
           // Top route carousel / chips
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: SizedBox(
-                height: 56,
-                child:
-                    _routesError != null
-                        ? _EmptyRoutesBar(
-                          message: _routesError!,
-                          onRetry: _loadRoutes,
-                        )
-                        : ListView.separated(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          scrollDirection: Axis.horizontal,
-                          itemCount: _routes.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 8),
-                          itemBuilder: (context, i) {
-                            final r = _routes[i];
-                            final sel = r.id == _selectedRoute?.id;
-                            return _RouteChip(
-                              index: i + 1,
-                              selected: sel,
-                              onTap: () => _selectRoute(r),
-                            );
-                          },
-                        ),
-              ),
-            ),
-          ),
+          // SafeArea(
+          //   child: Padding(
+          //     padding: const EdgeInsets.only(top: 8),
+          //     child: SizedBox(
+          //       height: 56,
+          //       child:
+          //           _routesError != null
+          //               ? _EmptyRoutesBar(
+          //                 message: _routesError!,
+          //                 onRetry: _loadRoutes,
+          //               )
+          //               : ListView.separated(
+          //                 padding: const EdgeInsets.symmetric(horizontal: 12),
+          //                 scrollDirection: Axis.horizontal,
+          //                 itemCount: _routes.length,
+          //                 separatorBuilder: (_, __) => const SizedBox(width: 8),
+          //                 itemBuilder: (context, i) {
+          //                   final r = _routes[i];
+          //                   final sel = r.id == _selectedRoute?.id;
+          //                   return _RouteChip(
+          //                     index: i + 1,
+          //                     selected: sel,
+          //                     onTap: () => _selectRoute(r),
+          //                   );
+          //                 },
+          //               ),
+          //     ),
+          //   ),
+          // ),
 
           // Bottom sheet: step hints + CTA
           Align(
@@ -318,122 +314,161 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     ),
                   ],
                 ),
+                constraints: BoxConstraints(
+                  maxHeight:
+                      MediaQuery.of(context).size.height *
+                      0.6, // 👈 limit height
+                ),
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Step helper
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.touch_app,
-                          size: 18,
-                          color: Colors.black54,
-                        ),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            _selectedRoute == null
-                                ? 'Choose a route to start'
-                                : (_pickupLocation == null
-                                    ? 'Tap the map to set PICKUP on the route'
-                                    : (_dropoffLocation == null
-                                        ? 'Tap again to set DROPOFF'
-                                        : 'Tap once more to change PICKUP')),
-                            style: const TextStyle(color: Colors.black54),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-
-                    // Small status row (pill chips)
-                    Row(
-                      children: [
-                        _Pill(
-                          icon: Icons.alt_route,
-                          label:
-                              _selectedRoute == null
-                                  ? 'Route: —'
-                                  : 'Route: ${_routes.indexWhere((r) => r.id == _selectedRoute!.id) + 1}',
-                        ),
-                        const SizedBox(width: 8),
-                        _Pill(
-                          icon: Icons.location_pin,
-                          label:
-                              _pickupLocation == null
-                                  ? 'Pickup: —'
-                                  : 'Pickup set',
-                        ),
-                        const SizedBox(width: 8),
-                        _Pill(
-                          icon: Icons.flag,
-                          label:
-                              _dropoffLocation == null
-                                  ? 'Dropoff: —'
-                                  : 'Dropoff set',
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Primary CTA (gradient button)
-                    SizedBox(
-                      height: 52,
-                      width: double.infinity,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(14),
-                          gradient: const LinearGradient(
-                            colors: [_purple, _purpleDark],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _purple.withOpacity(0.25),
-                              blurRadius: 16,
-                              offset: const Offset(0, 8),
-                            ),
-                          ],
-                        ),
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            elevation: 0,
-                            backgroundColor: Colors.transparent,
-                            shadowColor: Colors.transparent,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                          onPressed:
-                              (_pickupLocation != null &&
-                                      _dropoffLocation != null &&
-                                      !_sending)
-                                  ? _openConfirm
-                                  : null,
-                          child:
-                              _sending
-                                  ? const SizedBox(
-                                    width: 22,
-                                    height: 22,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                  : const Text(
-                                    'Review Fare',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 16,
-                                    ),
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // 🔽 Route carousel stays scrollable horizontally
+                      SizedBox(
+                        height: 56,
+                        child:
+                            _routesError != null
+                                ? _EmptyRoutesBar(
+                                  message: _routesError!,
+                                  onRetry: _loadRoutes,
+                                )
+                                : ListView.separated(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
                                   ),
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: _routes.length,
+                                  separatorBuilder:
+                                      (_, __) => const SizedBox(width: 8),
+                                  itemBuilder: (context, i) {
+                                    final r = _routes[i];
+                                    final sel = r.id == _selectedRoute?.id;
+                                    return _RouteChip(
+                                      index: i + 1,
+                                      selected: sel,
+                                      onTap: () => _selectRoute(r),
+                                    );
+                                  },
+                                ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Step helper
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.touch_app,
+                            size: 18,
+                            color: Colors.black54,
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              _selectedRoute == null
+                                  ? 'Choose a route to start'
+                                  : (_pickupLocation == null
+                                      ? 'Tap the map to set PICKUP on the route'
+                                      : (_dropoffLocation == null
+                                          ? 'Tap again to set DROPOFF'
+                                          : 'Tap once more to change PICKUP')),
+                              style: const TextStyle(color: Colors.black54),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Small status row (pill chips)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _Pill(
+                            icon: Icons.alt_route,
+                            label:
+                                _selectedRoute == null
+                                    ? 'Route: —'
+                                    : 'Route: ${_routes.indexWhere((r) => r.id == _selectedRoute!.id) + 1}',
+                          ),
+                          const SizedBox(width: 8),
+                          _Pill(
+                            icon: Icons.location_pin,
+                            label:
+                                _pickupLocation == null
+                                    ? 'Pickup: —'
+                                    : 'Pickup set',
+                          ),
+                          const SizedBox(width: 8),
+                          _Pill(
+                            icon: Icons.pin_drop,
+                            label:
+                                _dropoffLocation == null
+                                    ? 'Dropoff: —'
+                                    : 'Dropoff set',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Primary CTA (gradient button)
+                      SizedBox(
+                        height: 52,
+                        width: double.infinity,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            gradient: const LinearGradient(
+                              colors: [_purple, _purpleDark],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: _purple.withOpacity(0.25),
+                                blurRadius: 16,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              elevation: 0,
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            onPressed:
+                                (_pickupLocation != null &&
+                                        _dropoffLocation != null &&
+                                        !_sending)
+                                    ? _openConfirm
+                                    : null,
+                            child:
+                                _sending
+                                    ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                    : const Text(
+                                      'Review Fare',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -531,14 +566,14 @@ class _EmptyRoutesBar extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.black12),
             ),
-            child: Text(message, maxLines: 1, overflow: TextOverflow.ellipsis),
+            child: Text(message, maxLines: 5, overflow: TextOverflow.ellipsis),
           ),
         ),
         const SizedBox(width: 8),
         OutlinedButton.icon(
           onPressed: onRetry,
           icon: const Icon(Icons.refresh, size: 18),
-          label: const Text('Retry'),
+          label: const Text('Refresh'),
         ),
         const SizedBox(width: 12),
       ],

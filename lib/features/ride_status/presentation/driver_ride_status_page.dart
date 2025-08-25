@@ -258,7 +258,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
             event: PostgresChangeEvent.insert,
             callback: (p) {
               final rec = p.newRecord;
-              if (rec == null) return;
               if (rec['ride_id']?.toString() != rideId) return;
               if (rec['actor']?.toString() != 'driver') return;
               _consumeDriverLocation(rec);
@@ -270,7 +269,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
             event: PostgresChangeEvent.update,
             callback: (p) {
               final rec = p.newRecord;
-              if (rec == null) return;
               if (rec['ride_id']?.toString() != rideId) return;
               if (rec['actor']?.toString() != 'driver') return;
               _consumeDriverLocation(rec);
@@ -326,7 +324,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
             ),
             callback: (payload) {
               final rec = payload.newRecord;
-              if (rec == null) return;
               final lat = (rec['lat'] as num?)?.toDouble();
               final lng = (rec['lng'] as num?)?.toDouble();
               if (lat == null || lng == null) return;
@@ -435,8 +432,8 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
             child: FlutterMap(
               mapController: _map,
               options: MapOptions(
-                center: pickup,
-                zoom: 13,
+                initialCenter: pickup,
+                initialZoom: 13,
                 onMapReady: () {
                   setState(() => _mapReady = true);
                   if (_pendingCenter != null) {
