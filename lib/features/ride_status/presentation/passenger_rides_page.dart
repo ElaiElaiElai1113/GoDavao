@@ -485,15 +485,17 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
                   controller: _tabController,
                   indicator: BoxDecoration(
                     color: _purple,
-                    borderRadius: BorderRadius.circular(999),
+                    borderRadius: BorderRadius.circular(
+                      30,
+                    ), // Makes the indicator rounded
                   ),
+                  indicatorSize:
+                      TabBarIndicatorSize
+                          .tab, // <-- Important! Fills the whole tab
                   labelColor: Colors.white,
                   unselectedLabelColor: Colors.black87,
                   dividerColor: Colors.transparent,
-                  tabs: [
-                    const Tab(text: 'Upcoming'),
-                    const Tab(text: 'History'),
-                  ],
+                  tabs: const [Tab(text: 'Upcoming'), Tab(text: 'History')],
                 ),
               ),
             ),
