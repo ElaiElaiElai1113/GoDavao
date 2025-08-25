@@ -518,6 +518,8 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                   child: Text(
                     '${m['pickup_address']} → ${m['destination_address']}',
                     style: const TextStyle(fontWeight: FontWeight.w700),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 if (isNew)
@@ -588,10 +590,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     icon: Icons.payments,
                   ),
                 const Spacer(),
-                PaymentStatusChip(
-                  status: _paymentByRide[rideRequestId]?['status'] as String?,
-                  amount: _paymentByRide[rideRequestId]?['amount'] as double?,
-                ),
               ],
             ),
 
@@ -609,24 +607,24 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                 ),
                 const Spacer(),
 
-                // actions
                 if (status == 'pending') ...[
-                  SizedBox(
-                    width: 120,
+                  Flexible(
                     child: _primaryButton(
                       child: const Text('Accept'),
                       onPressed: () => _acceptViaRpc(id, rideRequestId),
                     ),
                   ),
                   const SizedBox(width: 8),
-                  TextButton(
-                    onPressed:
-                        () => _updateMatchStatus(id, rideRequestId, 'declined'),
-                    child: const Text('Decline'),
+                  Flexible(
+                    child: TextButton(
+                      onPressed:
+                          () =>
+                              _updateMatchStatus(id, rideRequestId, 'declined'),
+                      child: const Text('Decline'),
+                    ),
                   ),
                 ] else if (status == 'accepted') ...[
-                  SizedBox(
-                    width: 150,
+                  Flexible(
                     child: _primaryButton(
                       child: const Text('Start Ride'),
                       onPressed:
@@ -635,8 +633,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     ),
                   ),
                 ] else if (status == 'en_route') ...[
-                  SizedBox(
-                    width: 170,
+                  Flexible(
                     child: _primaryButton(
                       child: const Text('Complete Ride'),
                       onPressed:
@@ -648,14 +645,24 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     ),
                   ),
                 ] else if (status == 'completed' && passengerId != null) ...[
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.star),
-                    label: const Text('Rate passenger'),
-                    onPressed: () => _ratePassenger(m),
+                  Flexible(
+                    flex: 2,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.star),
+                      label: const Text('Rate passenger'),
+                      onPressed: () => _ratePassenger(m),
+                    ),
                   ),
                 ],
+              ],
+            ),
 
-                const SizedBox(width: 8),
+            Row(
+              children: [
+                PaymentStatusChip(
+                  status: _paymentByRide[rideRequestId]?['status'] as String?,
+                  amount: _paymentByRide[rideRequestId]?['amount'] as double?,
+                ),
                 IconButton(
                   tooltip: 'Open chat',
                   icon: const Icon(Icons.message_outlined),
@@ -673,6 +680,184 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       ),
     );
   }
+
+  // Widget _buildCard(Map<String, dynamic> m) {
+  //   final id = m['match_id'] as String;
+  //   final status = (m['status'] as String).toLowerCase();
+  //   final dt = DateFormat(
+  //     'MMM d, y • h:mm a',
+  //   ).format(DateTime.parse(m['created_at']));
+  //   final passengerId = m['passenger_id'] as String?;
+  //   final rideRequestId = m['ride_request_id'] as String;
+  //   final isNew = _newMatchIds.remove(id);
+
+  //   return Card(
+  //     elevation: 0,
+  //     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+  //     color: Colors.white,
+  //     child: Padding(
+  //       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+  //       child: Column(
+  //         crossAxisAlignment: CrossAxisAlignment.start,
+  //         children: [
+  //           // top row: route + NEW
+  //           Row(
+  //             children: [
+  //               Expanded(
+  //                 child: Text(
+  //                   '${m['pickup_address']} → ${m['destination_address']}',
+  //                   style: const TextStyle(fontWeight: FontWeight.w700),
+  //                 ),
+  //               ),
+  //               if (isNew)
+  //                 Container(
+  //                   padding: const EdgeInsets.symmetric(
+  //                     horizontal: 8,
+  //                     vertical: 2,
+  //                   ),
+  //                   decoration: BoxDecoration(
+  //                     color: Colors.red.shade400,
+  //                     borderRadius: BorderRadius.circular(999),
+  //                   ),
+  //                   child: const Text(
+  //                     'NEW',
+  //                     style: TextStyle(
+  //                       color: Colors.white,
+  //                       fontSize: 10,
+  //                       fontWeight: FontWeight.w700,
+  //                     ),
+  //                   ),
+  //                 ),
+  //             ],
+  //           ),
+  //           const SizedBox(height: 6),
+
+  //           // meta row
+  //           Row(
+  //             children: [
+  //               if (m['driver_route_id'] != null)
+  //                 _pill(
+  //                   'Route ${m['driver_route_id'].toString().substring(0, 8)}',
+  //                   icon: Icons.alt_route,
+  //                 ),
+  //               const SizedBox(width: 8),
+  //               Expanded(
+  //                 child: Row(
+  //                   children: [
+  //                     const Icon(Icons.person, size: 14, color: Colors.black54),
+  //                     const SizedBox(width: 4),
+  //                     Expanded(
+  //                       child: Text(
+  //                         m['passenger'] ?? 'Passenger',
+  //                         maxLines: 1,
+  //                         overflow: TextOverflow.ellipsis,
+  //                       ),
+  //                     ),
+  //                     if (passengerId != null) ...[
+  //                       const SizedBox(width: 6),
+  //                       VerifiedBadge(userId: passengerId, size: 16),
+  //                       const SizedBox(width: 6),
+  //                       UserRatingBadge(userId: passengerId, iconSize: 14),
+  //                     ],
+  //                   ],
+  //                 ),
+  //               ),
+  //             ],
+  //           ),
+  //           const SizedBox(height: 6),
+
+  //           // time + fare
+  //           Row(
+  //             children: [
+  //               _pill(dt, icon: Icons.access_time),
+  //               const SizedBox(width: 8),
+  //               if (m['fare'] != null)
+  //                 _pill(
+  //                   '₱${(m['fare'] as num).toDouble().toStringAsFixed(2)}',
+  //                   icon: Icons.payments,
+  //                 ),
+  //               const Spacer(),
+  //               PaymentStatusChip(
+  //                 status: _paymentByRide[rideRequestId]?['status'] as String?,
+  //                 amount: _paymentByRide[rideRequestId]?['amount'] as double?,
+  //               ),
+  //             ],
+  //           ),
+
+  //           const Divider(height: 18),
+
+  //           // status + actions
+  //           Row(
+  //             children: [
+  //               Text(
+  //                 status.toUpperCase(),
+  //                 style: TextStyle(
+  //                   color: _statusColor(status),
+  //                   fontWeight: FontWeight.w700,
+  //                 ),
+  //               ),
+  //               const Spacer(),
+  //               if (status == 'pending') ...[
+  //                 Flexible(
+  //                   child: _primaryButton(
+  //                     child: const Text('Accept'),
+  //                     onPressed: () => _acceptViaRpc(id, rideRequestId),
+  //                   ),
+  //                 ),
+  //                 const SizedBox(width: 8),
+  //                 TextButton(
+  //                   onPressed:
+  //                       () => _updateMatchStatus(id, rideRequestId, 'declined'),
+  //                   child: const Text('Decline'),
+  //                 ),
+  //               ] else if (status == 'accepted') ...[
+  //                 Flexible(
+  //                   child: _primaryButton(
+  //                     child: const Text('Start Ride'),
+  //                     onPressed:
+  //                         () =>
+  //                             _updateMatchStatus(id, rideRequestId, 'en_route'),
+  //                   ),
+  //                 ),
+  //               ] else if (status == 'en_route') ...[
+  //                 Flexible(
+  //                   child: _primaryButton(
+  //                     child: const Text('Complete Ride'),
+  //                     onPressed:
+  //                         () => _updateMatchStatus(
+  //                           id,
+  //                           rideRequestId,
+  //                           'completed',
+  //                         ),
+  //                   ),
+  //                 ),
+  //               ] else if (status == 'completed' && passengerId != null) ...[
+  //                 Flexible(
+  //                   child: OutlinedButton.icon(
+  //                     icon: const Icon(Icons.star),
+  //                     label: const Text('Rate passenger'),
+  //                     onPressed: () => _ratePassenger(m),
+  //                   ),
+  //                 ),
+  //               ],
+  //               const SizedBox(width: 8),
+  //               IconButton(
+  //                 tooltip: 'Open chat',
+  //                 icon: const Icon(Icons.message_outlined),
+  //                 onPressed: () {
+  //                   Navigator.push(
+  //                     context,
+  //                     MaterialPageRoute(builder: (_) => ChatPage(matchId: id)),
+  //                   );
+  //                 },
+  //               ),
+  //             ],
+  //           ),
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
 
   // --- Scaffold --------------------------------------------------------------
 
@@ -703,30 +888,25 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(999),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+                color: Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(30),
               ),
               child: TabBar(
                 controller: _tabController,
                 indicator: BoxDecoration(
                   color: _purple,
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: BorderRadius.circular(30),
                 ),
+                indicatorSize: TabBarIndicatorSize.tab,
                 labelColor: Colors.white,
                 unselectedLabelColor: Colors.black87,
                 dividerColor: Colors.transparent,
-                tabs: [
-                  _segTab('Upcoming', counters[0]),
-                  _segTab('Declined', counters[1]),
-                  _segTab('Completed', counters[2]),
+                tabs: const [
+                  Tab(text: 'Upcoming'),
+                  Tab(text: 'Declined'),
+                  Tab(text: 'Completed'),
                 ],
               ),
             ),
