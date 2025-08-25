@@ -237,7 +237,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               event: PostgresChangeEvent.insert,
               callback: (payload) {
                 final newRec = payload.newRecord;
-                if (newRec == null) return;
                 final rec = (newRec as Map).cast<String, dynamic>();
                 if (rec['driver_id']?.toString() != driverId) return;
 
@@ -255,7 +254,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               event: PostgresChangeEvent.update,
               callback: (payload) {
                 final newRec = payload.newRecord;
-                if (newRec == null) return;
                 final rec = (newRec as Map).cast<String, dynamic>();
                 if (rec['driver_id']?.toString() != driverId) return;
                 _loadMatches();
@@ -267,7 +265,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               event: PostgresChangeEvent.delete,
               callback: (payload) {
                 final oldRec = payload.oldRecord;
-                if (oldRec == null) return;
                 final rec = (oldRec as Map).cast<String, dynamic>();
                 if (rec['driver_id']?.toString() != driverId) return;
                 _loadMatches();
