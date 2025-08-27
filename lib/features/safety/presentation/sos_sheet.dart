@@ -91,10 +91,11 @@ class _SosSheetState extends State<SosSheet> {
       lng: lng,
       message: 'In-app SOS triggered',
     );
-    if (mounted)
+    if (mounted) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('In-app alert sent')));
+    }
   }
 
   @override

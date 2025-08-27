@@ -293,6 +293,16 @@ class _DashboardPageState extends State<DashboardPage> {
                                           '/passenger_rides',
                                         ),
                                   ),
+                                  _ActionItem(
+                                    title: 'Settings',
+                                    subtitle: 'Manage your preferences',
+                                    icon: Icons.settings,
+                                    onTap:
+                                        () => Navigator.pushNamed(
+                                          context,
+                                          '/profile',
+                                        ),
+                                  ),
                                 ],
                               ),
                     ),

@@ -102,23 +102,22 @@ class _RateUserSheetState extends State<RateUserSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final tagChip =
-        (String label, {bool negative = false}) => Padding(
-          padding: const EdgeInsets.only(right: 6, bottom: 6),
-          child: FilterChip(
-            label: Text(label),
-            selected: _selected.contains(label),
-            onSelected:
-                (sel) => setState(() {
-                  if (sel)
-                    _selected.add(label);
-                  else
-                    _selected.remove(label);
-                }),
-            selectedColor:
-                negative ? Colors.red.shade100 : Colors.green.shade100,
-          ),
-        );
+    Padding tagChip(String label, {bool negative = false}) => Padding(
+      padding: const EdgeInsets.only(right: 6, bottom: 6),
+      child: FilterChip(
+        label: Text(label),
+        selected: _selected.contains(label),
+        onSelected:
+            (sel) => setState(() {
+              if (sel) {
+                _selected.add(label);
+              } else {
+                _selected.remove(label);
+              }
+            }),
+        selectedColor: negative ? Colors.red.shade100 : Colors.green.shade100,
+      ),
+    );
 
     return SafeArea(
       child: Padding(

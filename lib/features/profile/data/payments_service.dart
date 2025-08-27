@@ -113,19 +113,25 @@ class PaymentsService {
   /// Optional helper: friendly error mapping for SnackBars/Toasts.
   static String mapPaymentError(Object e) {
     final s = e.toString();
-    if (s.contains('insufficient funds'))
+    if (s.contains('insufficient funds')) {
       return 'Insufficient wallet balance to place the hold.';
-    if (s.contains('ride not in a payable state'))
+    }
+    if (s.contains('ride not in a payable state')) {
       return 'Wait until the driver accepts the ride.';
-    if (s.contains('payment not capturable'))
+    }
+    if (s.contains('payment not capturable')) {
       return 'Payment isn’t ready to capture yet.';
-    if (s.contains('payment not voidable'))
+    }
+    if (s.contains('payment not voidable')) {
       return 'Payment can’t be voided in its current state.';
-    if (s.contains('cannot void after completion'))
+    }
+    if (s.contains('cannot void after completion')) {
       return 'Ride already completed; cannot void.';
+    }
     if (s.contains('not authenticated')) return 'Please log in again.';
-    if (s.contains('not authorized'))
+    if (s.contains('not authorized')) {
       return 'Only the ride’s passenger or driver can perform this.';
+    }
     return 'Something went wrong. Please try again.';
   }
 }

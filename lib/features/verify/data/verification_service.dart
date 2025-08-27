@@ -40,8 +40,9 @@ class VerificationService {
     final selfieKey = await _upload(selfiePath, prefix: 'selfie');
     final frontKey = await _upload(idFrontPath, prefix: 'id-front');
     String? backKey;
-    if (idBackPath != null)
+    if (idBackPath != null) {
       backKey = await _upload(idBackPath, prefix: 'id-back');
+    }
 
     await supabase.from('verification_requests').insert({
       'user_id': uid,

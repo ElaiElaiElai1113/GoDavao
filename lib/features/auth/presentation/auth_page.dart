@@ -240,8 +240,9 @@ class _AuthPageState extends State<AuthPage> {
                             ),
                           ),
                           validator: (v) {
-                            if (v == null || v.isEmpty)
+                            if (v == null || v.isEmpty) {
                               return 'Enter your password';
+                            }
                             if (v.length < 6) return 'Password too short';
                             return null;
                           },
