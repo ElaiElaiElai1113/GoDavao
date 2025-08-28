@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
+import 'package:godavao/features/profile/presentation/app_drawer.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -65,13 +66,11 @@ class _ProfilePageState extends State<ProfilePage> {
     final supabase = Supabase.instance.client;
     final au = supabase.auth.currentUser!;
     try {
-      // Update public.users (name, phone)
       await supabase
           .from('users')
           .update({'name': _name.text.trim(), 'phone': _phone.text.trim()})
           .eq('id', au.id);
 
-      // Optionally update email/password via auth
       if (_email.text.trim().isNotEmpty &&
           _email.text.trim() != (au.email ?? '')) {
         await supabase.auth.updateUser(
@@ -110,150 +109,153 @@ class _ProfilePageState extends State<ProfilePage> {
     final uid = Supabase.instance.client.auth.currentUser!.id;
 
     return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.menu),
-          onPressed:
-              () => ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Menu button (drawer opens on main screens)'),
+      backgroundColor: const Color(0xFFF7F7FB),
+      drawer: const AppDrawer(), // ✅ Drawer added
+      body: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          // HERO HEADER (same style as Dashboard)
+          Builder(
+            builder:
+                (ctx) => _HeroHeader(
+                  purple: purple,
+                  purpleDark: purpleDark,
+                  onMenu: () => Scaffold.of(ctx).openDrawer(),
                 ),
-              ),
-        ),
-        title: const Text('User Profile'),
-        centerTitle: true,
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Avatar + verified badge inline
-              Center(
-                child: Stack(
-                  alignment: Alignment.bottomRight,
-                  children: [
-                    const CircleAvatar(
-                      radius: 42,
-                      backgroundImage: AssetImage(
-                        'assets/images/avatar_placeholder.png',
+          ),
+
+          // PROFILE FORM
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Avatar + verified badge
+                Center(
+                  child: Stack(
+                    alignment: Alignment.bottomRight,
+                    children: [
+                      const CircleAvatar(
+                        radius: 42,
+                        backgroundImage: AssetImage(
+                          'assets/images/avatar_placeholder.png',
+                        ),
                       ),
-                    ),
-                    Positioned(
-                      right: 0,
-                      bottom: 0,
-                      child: VerifiedBadge(userId: uid, size: 20),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              _label('Full name'),
-              TextField(
-                controller: _name,
-                decoration: const InputDecoration(
-                  hintText: 'Your name',
-                  border: UnderlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              _label('Email address'),
-              TextField(
-                controller: _email,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                  hintText: 'name@example.com',
-                  border: UnderlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              _label('Phone number'),
-              TextField(
-                controller: _phone,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  hintText: '09xxxxxxxxx',
-                  border: UnderlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              _label('Password'),
-              TextField(
-                controller: _password,
-                obscureText: _obscure,
-                decoration: InputDecoration(
-                  hintText: '••••••••',
-                  border: const UnderlineInputBorder(),
-                  suffixIcon: IconButton(
-                    onPressed: () => setState(() => _obscure = !_obscure),
-                    icon: Icon(
-                      _obscure ? Icons.visibility_off : Icons.visibility,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // Save button with purple gradient
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    gradient: const LinearGradient(
-                      colors: [purple, purpleDark],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: purple.withOpacity(0.28),
-                        blurRadius: 12,
-                        offset: const Offset(0, 6),
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: VerifiedBadge(userId: uid, size: 20),
                       ),
                     ],
                   ),
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.transparent,
-                      shadowColor: Colors.transparent,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    onPressed: _saving ? null : _save,
-                    child:
-                        _saving
-                            ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  Colors.white,
-                                ),
-                              ),
-                            )
-                            : const Text(
-                              'Save',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 16,
-                              ),
-                            ),
+                ),
+                const SizedBox(height: 24),
+
+                _label('Full name'),
+                TextField(
+                  controller: _name,
+                  decoration: const InputDecoration(
+                    hintText: 'Your name',
+                    border: UnderlineInputBorder(),
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 16),
+
+                _label('Email address'),
+                TextField(
+                  controller: _email,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    hintText: 'name@example.com',
+                    border: UnderlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                _label('Phone number'),
+                TextField(
+                  controller: _phone,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    hintText: '09xxxxxxxxx',
+                    border: UnderlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                _label('Password'),
+                TextField(
+                  controller: _password,
+                  obscureText: _obscure,
+                  decoration: InputDecoration(
+                    hintText: '••••••••',
+                    border: const UnderlineInputBorder(),
+                    suffixIcon: IconButton(
+                      onPressed: () => setState(() => _obscure = !_obscure),
+                      icon: Icon(
+                        _obscure ? Icons.visibility_off : Icons.visibility,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Save button with gradient
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      gradient: const LinearGradient(
+                        colors: [purple, purpleDark],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: purple.withOpacity(0.28),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: _saving ? null : _save,
+                      child:
+                          _saving
+                              ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
+                              )
+                              : const Text(
+                                'Save',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 16,
+                                ),
+                              ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -269,4 +271,48 @@ class _ProfilePageState extends State<ProfilePage> {
       ),
     ),
   );
+}
+
+/// Custom Hero-style header (like DashboardPage)
+class _HeroHeader extends StatelessWidget {
+  final Color purple;
+  final Color purpleDark;
+  final VoidCallback onMenu;
+
+  const _HeroHeader({
+    required this.purple,
+    required this.purpleDark,
+    required this.onMenu,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 48, 16, 24),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [purple, purpleDark],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.menu, color: Colors.white),
+            onPressed: onMenu,
+          ),
+          const SizedBox(width: 8),
+          const Text(
+            'Profile',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

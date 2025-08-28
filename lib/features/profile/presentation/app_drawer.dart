@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:godavao/features/dashboard/presentation/dashboard_page.dart';
 import 'package:godavao/features/history/presentation/booking_history_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
@@ -78,6 +79,13 @@ class AppDrawer extends StatelessWidget {
               child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 children: [
+                  _item(context, Icons.dashboard, 'Dashboard', () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => DashboardPage()),
+                    );
+                  }),
                   _item(context, Icons.credit_card, 'Payment methods', () {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
