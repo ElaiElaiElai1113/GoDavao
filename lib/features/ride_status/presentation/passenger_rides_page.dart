@@ -270,7 +270,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
                                 Polyline(
                                   points: snap.data!.points,
                                   strokeWidth: 3,
-                                  color: Colors.green.shade700,
+                                  color: Colors.purple.shade700,
                                 ),
                               ],
                             )
@@ -282,7 +282,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
                                     LatLng(dLat, dLng),
                                   ],
                                   strokeWidth: 3,
-                                  color: Colors.green.shade700,
+                                  color: Colors.purple.shade700,
                                 ),
                               ],
                             );
@@ -309,7 +309,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
                               height: 28,
                               child: const Icon(
                                 Icons.location_on,
-                                color: Colors.green,
+                                color: Colors.purple,
                               ),
                             ),
                             Marker(
@@ -369,9 +369,9 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
                 const SizedBox(width: 4),
                 Text(dt, style: const TextStyle(color: Colors.black54)),
                 const Spacer(),
-                _statusPill(status),
               ],
             ),
+            _statusPill(status),
 
             const SizedBox(height: 10),
 
