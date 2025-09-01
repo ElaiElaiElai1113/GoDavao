@@ -204,7 +204,7 @@ class _AuthPageState extends State<AuthPage> {
                           const SizedBox(height: 24),
 
                           Text(
-                            _isLogin ? 'Welcome Back' : 'Create Account',
+                            _isLogin ? 'WELCOME' : 'Create Account',
                             style: const TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
