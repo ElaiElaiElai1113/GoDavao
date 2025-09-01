@@ -5,7 +5,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 // Otherwise replace the navigations below with your own.
 import 'package:godavao/features/dashboard/presentation/dashboard_page.dart';
 import 'package:godavao/features/auth/presentation/vehicle_form.dart';
-import 'package:godavao/assets/Logo.jpg';
 
 class AuthPage extends StatefulWidget {
   const AuthPage({super.key});
@@ -389,8 +388,8 @@ class _AuthPageState extends State<AuthPage> {
                               GestureDetector(
                                 onTap:
                                     () => setState(() => _isLogin = !_isLogin),
-                                child: const Text(
-                                  'Switch',
+                                child: Text(
+                                  _isLogin ? 'Register' : 'Login',
                                   style: TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w700,
