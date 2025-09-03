@@ -4,6 +4,7 @@ class AdminVerificationService {
   AdminVerificationService(this.client);
   final SupabaseClient client;
 
+  /// Watch for pending requests
   Stream<List<Map<String, dynamic>>> watchPending() {
     return client
         .from('verification_requests')
@@ -11,6 +12,23 @@ class AdminVerificationService {
         .eq('status', 'pending');
   }
 
+  /// Watch for approved requests
+  Stream<List<Map<String, dynamic>>> watchApproved() {
+    return client
+        .from('verification_requests')
+        .stream(primaryKey: ['id'])
+        .eq('status', 'approved');
+  }
+
+  /// Watch for rejected requests
+  Stream<List<Map<String, dynamic>>> watchRejected() {
+    return client
+        .from('verification_requests')
+        .stream(primaryKey: ['id'])
+        .eq('status', 'rejected');
+  }
+
+  /// Fetch requests (optionally by status)
   Future<List<Map<String, dynamic>>> fetch({String? status}) async {
     var q = client
         .from('verification_requests')
@@ -19,6 +37,7 @@ class AdminVerificationService {
     return await q.order('created_at');
   }
 
+  /// Approve a request
   Future<void> approve(String id, {String? notes}) async {
     final uid = client.auth.currentUser!.id;
     await client
@@ -32,6 +51,7 @@ class AdminVerificationService {
         .eq('id', id);
   }
 
+  /// Reject a request
   Future<void> reject(String id, {String? notes}) async {
     final uid = client.auth.currentUser!.id;
     await client
