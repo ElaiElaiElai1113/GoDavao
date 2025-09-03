@@ -460,7 +460,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
                 showModalBottomSheet(
                   context: context,
                   isScrollControlled: true,
-                  builder: (_) => const VerifyIdentitySheet(),
+                  builder: (_) => const VerifyIdentitySheet(role: 'passenger'),
                 );
               },
             ),

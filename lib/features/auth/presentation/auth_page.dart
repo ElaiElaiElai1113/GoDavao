@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// If you use these routes, keep the imports.
-// Otherwise replace the navigations below with your own.
+// Routes you already have
 import 'package:godavao/features/dashboard/presentation/dashboard_page.dart';
 import 'package:godavao/features/auth/presentation/vehicle_form.dart';
 
+// New: Verification sheet
+import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
+
 class AuthPage extends StatefulWidget {
   const AuthPage({super.key});
-
   @override
   State<AuthPage> createState() => _AuthPageState();
 }
@@ -29,7 +30,6 @@ class _AuthPageState extends State<AuthPage> {
 
   final _sb = Supabase.instance.client;
 
-  // Brand palette to match your mock
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
   static const _bg = Color(0xFFF7F7FB);
@@ -78,6 +78,51 @@ class _AuthPageState extends State<AuthPage> {
     }
   }
 
+  // ---- Verification helpers -------------------------------------------------
+
+  Future<void> _ensureUserRow({
+    required String userId,
+    required String role,
+    String? name,
+    String? phone,
+  }) async {
+    await _sb.from('users').upsert({
+      'id': userId,
+      if (name != null) 'name': name,
+      if (phone != null) 'phone': phone,
+      'role': role,
+      // the DB default for verification_status may be 'pending'; safe to set:
+      'verification_status': 'pending',
+    });
+  }
+
+  Future<String?> _getVerificationStatus(String userId) async {
+    final row =
+        await _sb
+            .from('users')
+            .select('verification_status')
+            .eq('id', userId)
+            .maybeSingle();
+    return row?['verification_status'] as String?;
+  }
+
+  Future<String?> _getRole(String userId) async {
+    final row =
+        await _sb.from('users').select('role').eq('id', userId).maybeSingle();
+    return row?['role'] as String?;
+  }
+
+  Future<void> _promptVerify(String role) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => VerifyIdentitySheet(role: role),
+    );
+  }
+
+  // ---- Submit (login / signup) ---------------------------------------------
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_loading) return;
@@ -89,12 +134,22 @@ class _AuthPageState extends State<AuthPage> {
 
     try {
       if (_isLogin) {
-        // LOGIN (email + password)
+        // LOGIN
         final res = await _sb.auth.signInWithPassword(
           email: _emailCtrl.text.trim(),
           password: _passwordCtrl.text.trim(),
         );
-        if (res.session == null) throw 'Login failed';
+        final user = res.user;
+        if (user == null) throw 'Login failed';
+
+        final role = await _getRole(user.id) ?? 'passenger';
+        await _ensureUserRow(userId: user.id, role: role);
+
+        final v = await _getVerificationStatus(user.id);
+        if (v != 'approved') {
+          await _promptVerify(role);
+        }
+
         if (!mounted) return;
         Navigator.pushReplacement(
           context,
@@ -106,20 +161,21 @@ class _AuthPageState extends State<AuthPage> {
           email: _emailCtrl.text.trim(),
           password: _passwordCtrl.text.trim(),
         );
-        if (res.user == null) throw 'Signup failed';
+        final user = res.user;
+        if (user == null) throw 'Signup failed';
 
-        // Insert profile row
-        await _sb.from('users').insert({
-          'id': res.user!.id,
-          'name': _nameCtrl.text.trim(),
-          'phone': _phoneCtrl.text.trim(),
-          'role': _role,
-          'verified': false,
-        });
+        await _ensureUserRow(
+          userId: user.id,
+          role: _role,
+          name: _nameCtrl.text.trim(),
+          phone: _phoneCtrl.text.trim(),
+        );
+
+        // Immediately prompt for verification
+        await _promptVerify(_role);
 
         if (!mounted) return;
 
-        // Drivers go to vehicle onboarding
         if (_role == 'driver') {
           Navigator.pushReplacement(
             context,
@@ -142,6 +198,8 @@ class _AuthPageState extends State<AuthPage> {
       if (mounted) setState(() => _loading = false);
     }
   }
+
+  // ---- UI -------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -166,7 +224,6 @@ class _AuthPageState extends State<AuthPage> {
                     child: Column(
                       children: [
                         const SizedBox(height: 8),
-                        // Round Logo (like your mock)
                         Container(
                           padding: const EdgeInsets.all(4),
                           decoration: const BoxDecoration(
@@ -189,7 +246,6 @@ class _AuthPageState extends State<AuthPage> {
                         ),
                         const SizedBox(height: 24),
 
-                        // Headline + subtitle
                         Text(
                           _isLogin ? 'Welcome back' : 'Create your account',
                           style: Theme.of(context).textTheme.titleLarge
@@ -206,7 +262,6 @@ class _AuthPageState extends State<AuthPage> {
                         ),
                         const SizedBox(height: 24),
 
-                        // Email (login uses email only)
                         TextFormField(
                           controller: _emailCtrl,
                           keyboardType: TextInputType.emailAddress,
@@ -222,7 +277,6 @@ class _AuthPageState extends State<AuthPage> {
                         ),
                         const SizedBox(height: 12),
 
-                        // Password
                         TextFormField(
                           controller: _passwordCtrl,
                           obscureText: _obscure,
@@ -240,15 +294,12 @@ class _AuthPageState extends State<AuthPage> {
                             ),
                           ),
                           validator: (v) {
-                            if (v == null || v.isEmpty) {
+                            if (v == null || v.isEmpty)
                               return 'Enter your password';
-                            }
                             if (v.length < 6) return 'Password too short';
                             return null;
                           },
                         ),
-
-                        // Forgot password (like the mock)
                         Align(
                           alignment: Alignment.centerRight,
                           child: TextButton(
@@ -258,7 +309,6 @@ class _AuthPageState extends State<AuthPage> {
                         ),
                         const SizedBox(height: 8),
 
-                        // Signup-only fields (Name, Phone, Role)
                         if (!_isLogin) ...[
                           TextFormField(
                             controller: _nameCtrl,
@@ -294,14 +344,12 @@ class _AuthPageState extends State<AuthPage> {
                                 child: Text('Driver'),
                               ),
                             ],
-                            onChanged: (v) {
-                              if (v != null) setState(() => _role = v);
-                            },
+                            onChanged:
+                                (v) => setState(() => _role = v ?? 'passenger'),
                           ),
                           const SizedBox(height: 8),
                         ],
 
-                        // Primary CTA (purple gradient)
                         const SizedBox(height: 16),
                         SizedBox(
                           width: double.infinity,
@@ -318,7 +366,7 @@ class _AuthPageState extends State<AuthPage> {
                                 BoxShadow(
                                   color: _purple.withOpacity(0.25),
                                   blurRadius: 16,
-                                  offset: const Offset(0, 10),
+                                  offset: Offset(0, 10),
                                 ),
                               ],
                             ),

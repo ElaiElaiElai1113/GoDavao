@@ -877,7 +877,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               showModalBottomSheet(
                 context: context,
                 isScrollControlled: true,
-                builder: (_) => const VerifyIdentitySheet(),
+                builder: (_) => VerifyIdentitySheet(role: 'driver'),
               );
             },
           ),

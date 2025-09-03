@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:godavao/features/profile/presentation/app_drawer.dart';
@@ -81,7 +82,6 @@ class _DashboardPageState extends State<DashboardPage> {
 
     try {
       if (role == 'driver') {
-        // Active routes
         final activeRoutes = await _sb
             .from('driver_routes')
             .select('id')
@@ -89,7 +89,6 @@ class _DashboardPageState extends State<DashboardPage> {
             .eq('is_active', true);
         final activeCount = (activeRoutes as List).length;
 
-        // Pending matches
         final pendingMatches = await _sb
             .from('ride_matches')
             .select('id')
@@ -102,7 +101,6 @@ class _DashboardPageState extends State<DashboardPage> {
           _driverPendingRequests = pendingCount;
         });
       } else {
-        // Passenger upcoming
         final upcoming = await _sb
             .from('ride_requests')
             .select('id')
@@ -110,7 +108,6 @@ class _DashboardPageState extends State<DashboardPage> {
             .inFilter('status', ['pending', 'accepted', 'en_route']);
         final upcomingCount = (upcoming as List).length;
 
-        // Passenger history
         final history = await _sb
             .from('ride_requests')
             .select('id')
@@ -151,6 +148,9 @@ class _DashboardPageState extends State<DashboardPage> {
     final vehicleInfo = _user?['vehicle_info'] as String?;
     final isDriver = role == 'driver';
 
+    final verificationStatus = _user?['verification_status'] as String?;
+    final isVerified = verificationStatus == 'approved';
+
     final overviewLeftLabel = isDriver ? 'Active Routes' : 'Upcoming';
     final overviewLeftValue =
         isDriver
@@ -177,7 +177,6 @@ class _DashboardPageState extends State<DashboardPage> {
                 : ListView(
                   padding: EdgeInsets.zero,
                   children: [
-                    // HERO HEADER (now contains menu + actions; replaces AppBar)
                     Builder(
                       builder:
                           (ctx) => _HeroHeader(
@@ -206,8 +205,76 @@ class _DashboardPageState extends State<DashboardPage> {
 
                     const SizedBox(height: 16),
 
-                    // DRIVER VEHICLE SUMMARY
-                    if (isDriver)
+                    // Verification Banner
+                    if (!isVerified)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade100,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.orange.shade300),
+                          ),
+                          padding: const EdgeInsets.all(14),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.warning,
+                                color: Colors.orange,
+                                size: 28,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  role == 'driver'
+                                      ? (verificationStatus == 'pending'
+                                          ? 'Your driver verification is pending. You cannot accept rides until approved.'
+                                          : verificationStatus == 'rejected'
+                                          ? 'Your driver verification was rejected. Please resubmit.'
+                                          : 'You must complete verification before driving.')
+                                      : (verificationStatus == 'pending'
+                                          ? 'Your verification is pending.'
+                                          : verificationStatus == 'rejected'
+                                          ? 'Your verification was rejected. Please resubmit.'
+                                          : 'Please verify your account.'),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              ElevatedButton(
+                                onPressed: () {
+                                  showModalBottomSheet(
+                                    context: context,
+                                    isScrollControlled: true,
+                                    useSafeArea: true,
+                                    builder: (_) {
+                                      final role =
+                                          (_user?['role'] as String?) ??
+                                          'passenger';
+                                      return VerifyIdentitySheet(role: role);
+                                    },
+                                  );
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.orange,
+                                  foregroundColor: Colors.white,
+                                ),
+                                child: const Text('Verify'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                    const SizedBox(height: 16),
+
+                    // DRIVER VEHICLE SUMMARY (only if verified)
+                    if (isDriver && isVerified)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: _VehicleCard(
@@ -238,36 +305,46 @@ class _DashboardPageState extends State<DashboardPage> {
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child:
                           isDriver
-                              ? _ActionGrid(
-                                items: [
-                                  _ActionItem(
-                                    title: 'Set Driver Route',
-                                    subtitle: 'Go online',
-                                    icon: Icons.alt_route,
-                                    onTap:
-                                        () => Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder:
-                                                (_) => const DriverRoutePage(),
-                                          ),
-                                        ),
-                                  ),
-                                  _ActionItem(
-                                    title: 'Ride Matches',
-                                    subtitle: 'Requests & trips',
-                                    icon: Icons.groups_2,
-                                    onTap:
-                                        () => Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder:
-                                                (_) => const DriverRidesPage(),
-                                          ),
-                                        ),
-                                  ),
-                                ],
-                              )
+                              ? (isVerified
+                                  ? _ActionGrid(
+                                    items: [
+                                      _ActionItem(
+                                        title: 'Set Driver Route',
+                                        subtitle: 'Go online',
+                                        icon: Icons.alt_route,
+                                        onTap:
+                                            () => Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder:
+                                                    (_) =>
+                                                        const DriverRoutePage(),
+                                              ),
+                                            ),
+                                      ),
+                                      _ActionItem(
+                                        title: 'Ride Matches',
+                                        subtitle: 'Requests & trips',
+                                        icon: Icons.groups_2,
+                                        onTap:
+                                            () => Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder:
+                                                    (_) =>
+                                                        const DriverRidesPage(),
+                                              ),
+                                            ),
+                                      ),
+                                    ],
+                                  )
+                                  : Container(
+                                    padding: const EdgeInsets.all(16),
+                                    child: const Text(
+                                      'Driver features are locked until your verification is approved.',
+                                      style: TextStyle(color: Colors.black54),
+                                    ),
+                                  ))
                               : _ActionGrid(
                                 items: [
                                   _ActionItem(
@@ -307,40 +384,43 @@ class _DashboardPageState extends State<DashboardPage> {
                               ),
                     ),
 
-                    // OVERVIEW
-                    const SizedBox(height: 16),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        'Overview',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
+                    // OVERVIEW (only if driver is verified or passenger)
+                    if (!isDriver || isVerified) ...[
+                      const SizedBox(height: 16),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          'Overview',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: _StatCard(
-                              label: overviewLeftLabel,
-                              value: _loadingOverview ? '—' : overviewLeftValue,
-                              icon: Icons.event_available,
+                      const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _StatCard(
+                                label: overviewLeftLabel,
+                                value:
+                                    _loadingOverview ? '—' : overviewLeftValue,
+                                icon: Icons.event_available,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _StatCard(
-                              label: overviewRightLabel,
-                              value:
-                                  _loadingOverview ? '—' : overviewRightValue,
-                              icon: Icons.history,
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _StatCard(
+                                label: overviewRightLabel,
+                                value:
+                                    _loadingOverview ? '—' : overviewRightValue,
+                                icon: Icons.history,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
+                    ],
 
                     const SizedBox(height: 24),
                   ],

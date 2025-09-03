@@ -1,117 +1,87 @@
 import 'dart:io';
-import 'package:mime/mime.dart';
-import 'package:path/path.dart' as p;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class VerificationService {
-  final SupabaseClient supabase;
-  VerificationService(this.supabase);
+  final SupabaseClient _sb;
 
-  Future<String> _upload(String localPath, {required String prefix}) async {
-    final uid = supabase.auth.currentUser!.id;
-    final ext = p.extension(localPath);
-    final object = '$uid/$prefix-${DateTime.now().millisecondsSinceEpoch}$ext';
+  VerificationService(this._sb);
 
-    final file = File(localPath);
-    if (!await file.exists()) {
-      throw Exception('File not found: $localPath');
+  /// Get current user ID
+  String get _userId {
+    final u = _sb.auth.currentUser;
+    if (u == null) {
+      throw Exception('Not logged in');
+    }
+    return u.id;
+  }
+
+  /// Build storage path like "userId/filename"
+  String _path(String filename) => '$_userId/$filename';
+
+  /// Upload file to Supabase Storage (skip if null)
+  Future<String> _uploadFile(String filename, File? file) async {
+    if (file == null) return '';
+    final key = _path(filename);
+    await _sb.storage
+        .from('verifications')
+        .upload(key, file, fileOptions: const FileOptions(upsert: true));
+    return key;
+  }
+
+  /// Submit or update verification request
+  Future<void> submitOrUpdate({
+    required String role,
+    File? idFront,
+    File? idBack,
+    File? selfie,
+    File? driverLicense,
+    File? orcr,
+  }) async {
+    // Upload provided docs
+    await _uploadFile('id_front.jpg', idFront);
+    await _uploadFile('id_back.jpg', idBack);
+    await _uploadFile('selfie.jpg', selfie);
+
+    if (role == 'driver') {
+      await _uploadFile('license.jpg', driverLicense);
+      await _uploadFile('orcr.jpg', orcr);
     }
 
-    final mime = lookupMimeType(localPath) ?? 'application/octet-stream';
-
-    // If an object with the same name could exist from retries, set upsert:true.
-    await supabase.storage
-        .from('id_docs')
-        .upload(
-          object,
-          file,
-          fileOptions: FileOptions(contentType: mime, upsert: true),
-        );
-
-    return object;
-  }
-
-  Future<void> submitRequest({
-    required String selfiePath,
-    required String idFrontPath,
-    String? idBackPath,
-  }) async {
-    final uid = supabase.auth.currentUser!.id;
-    final selfieKey = await _upload(selfiePath, prefix: 'selfie');
-    final frontKey = await _upload(idFrontPath, prefix: 'id-front');
-    String? backKey;
-    if (idBackPath != null) {
-      backKey = await _upload(idBackPath, prefix: 'id-back');
-    }
-
-    await supabase.from('verification_requests').insert({
-      'user_id': uid,
-      'selfie_url': selfieKey,
-      'id_front_url': frontKey,
-      'id_back_url': backKey,
-      'status': 'pending',
-    });
-  }
-
-  Future<Map<String, dynamic>?> myLatest() async {
-    final uid = supabase.auth.currentUser!.id;
-    final row =
-        await supabase
-            .from('verification_requests')
-            .select(
-              'id,status,reason,created_at,selfie_url,id_front_url,id_back_url',
-            )
-            .eq('user_id', uid)
-            .order('created_at', ascending: false)
-            .limit(1)
-            .maybeSingle();
-    return row == null ? null : Map<String, dynamic>.from(row as Map);
-  }
-
-  // Signed URL for private file
-  Future<String> signUrl(String key, {int expiresInSeconds = 3600}) async {
-    final res = await supabase.storage
-        .from('id_docs')
-        .createSignedUrl(key, expiresInSeconds);
-    return res;
-  }
-
-  // Admin
-  Future<List<Map<String, dynamic>>> adminListPending() async {
-    final rows = await supabase
-        .from('verification_requests')
-        .select(
-          'id,user_id,created_at,selfie_url,id_front_url,id_back_url,status,reason',
-        )
-        .eq('status', 'pending')
-        .order('created_at', ascending: true);
-    return (rows as List).map((e) => Map<String, dynamic>.from(e)).toList();
-  }
-
-  Future<void> adminSetStatus({
-    required String requestId,
-    required String status, // 'approved' | 'rejected'
-    String? reason,
-  }) async {
-    await supabase
-        .from('verification_requests')
+    // Update users table (set to pending review)
+    await _sb
+        .from('users')
         .update({
-          'status': status,
-          'reason': reason,
-          'reviewed_at': DateTime.now().toUtc().toIso8601String(),
-          'reviewed_by': supabase.auth.currentUser!.id,
+          'verification_status': 'pending',
+          'verified_role': role,
+          'verified_at': DateTime.now().toIso8601String(),
         })
-        .eq('id', requestId);
-    // trigger flips profiles.verified via trigger
+        .eq('id', _userId);
   }
 
-  Future<bool> isVerified(String userId) async {
-    final row =
-        await supabase
-            .from('users')
-            .select('verified')
-            .eq('id', userId)
-            .maybeSingle();
-    return (row != null) && ((row as Map)['verified'] == true);
+  /// Mark user as approved (admin side)
+  Future<void> approveUser(String userId) async {
+    await _sb
+        .from('users')
+        .update({
+          'verification_status': 'approved',
+          'verified_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', userId);
+  }
+
+  /// Mark user as rejected (admin side)
+  Future<void> rejectUser(String userId) async {
+    await _sb
+        .from('users')
+        .update({
+          'verification_status': 'rejected',
+          'verified_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', userId);
+  }
+
+  /// Get a public URL for preview/download
+  String publicUrl(String key) {
+    return _sb.storage.from('verifications').getPublicUrl(key);
   }
 }
