@@ -186,20 +186,20 @@ class _DashboardPageState extends State<DashboardPage> {
                             purpleDark: _purpleDark,
                             onMenu: () => Scaffold.of(ctx).openDrawer(),
                             onLogout: _logout,
-                            onNotifications: () {
-                              ScaffoldMessenger.of(ctx).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Notifications coming soon'),
-                                ),
-                              );
-                            },
-                            onSettings: () {
-                              ScaffoldMessenger.of(ctx).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Settings coming soon'),
-                                ),
-                              );
-                            },
+                            // onNotifications: () {
+                            //   ScaffoldMessenger.of(ctx).showSnackBar(
+                            //     const SnackBar(
+                            //       content: Text('Notifications coming soon'),
+                            //     ),
+                            //   );
+                            // },
+                            // onSettings: () {
+                            //   ScaffoldMessenger.of(ctx).showSnackBar(
+                            //     const SnackBar(
+                            //       content: Text('Settings coming soon'),
+                            //     ),
+                            //   );
+                            // },
                           ),
                     ),
 
@@ -440,8 +440,8 @@ class _HeroHeader extends StatelessWidget {
 
   final VoidCallback onMenu;
   final VoidCallback onLogout;
-  final VoidCallback onNotifications;
-  final VoidCallback onSettings;
+  // final VoidCallback onNotifications;
+  // final VoidCallback onSettings;
 
   const _HeroHeader({
     required this.name,
@@ -450,8 +450,8 @@ class _HeroHeader extends StatelessWidget {
     required this.purpleDark,
     required this.onMenu,
     required this.onLogout,
-    required this.onNotifications,
-    required this.onSettings,
+    // required this.onNotifications,
+    // required this.onSettings,
   });
 
   @override
@@ -475,36 +475,43 @@ class _HeroHeader extends StatelessWidget {
       ),
       child: Column(
         children: [
+          // Row(
+          //   children: [
+          //     IconButton(
+          //       icon: const Icon(Icons.menu, color: Colors.white),
+          //       onPressed: onMenu,
+          //       tooltip: 'Menu',
+          //     ),
+          //     const Spacer(),
+          //     // IconButton(
+          //     //   icon: const Icon(Icons.notifications_none, color: Colors.white),
+          //     //   onPressed: onNotifications,
+          //     //   tooltip: 'Notifications',
+          //     // ),
+          //     // IconButton(
+          //     //   icon: const Icon(Icons.settings, color: Colors.white),
+          //     //   onPressed: onSettings,
+          //     //   tooltip: 'Settings',
+          //     // ),
+          //     IconButton(
+          //       icon: const Icon(Icons.logout, color: Colors.white),
+          //       onPressed: onLogout,
+          //       tooltip: 'Logout',
+          //     ),
+          //   ],
+          // ),
+          const SizedBox(height: 25),
+
+          // Identity row
           Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.start,
             children: [
               IconButton(
                 icon: const Icon(Icons.menu, color: Colors.white),
                 onPressed: onMenu,
                 tooltip: 'Menu',
               ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.notifications_none, color: Colors.white),
-                onPressed: onNotifications,
-                tooltip: 'Notifications',
-              ),
-              IconButton(
-                icon: const Icon(Icons.settings, color: Colors.white),
-                onPressed: onSettings,
-                tooltip: 'Settings',
-              ),
-              IconButton(
-                icon: const Icon(Icons.logout, color: Colors.white),
-                onPressed: onLogout,
-                tooltip: 'Logout',
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-
-          // Identity row
-          Row(
-            children: [
               CircleAvatar(
                 radius: 26,
                 backgroundColor: Colors.white,
@@ -531,7 +538,7 @@ class _HeroHeader extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       name,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.w800,
                       ),
@@ -546,7 +553,7 @@ class _HeroHeader extends StatelessWidget {
                 ),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(.15),
-                  borderRadius: BorderRadius.circular(22),
+                  borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: Colors.white24),
                 ),
                 child: Row(
@@ -568,6 +575,11 @@ class _HeroHeader extends StatelessWidget {
                     ),
                   ],
                 ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.logout, color: Colors.white),
+                onPressed: onLogout,
+                tooltip: 'Logout',
               ),
             ],
           ),
@@ -601,7 +613,7 @@ class _ActionGrid extends StatelessWidget {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
+        crossAxisCount: 3,
         mainAxisExtent: 120,
         mainAxisSpacing: 12,
         crossAxisSpacing: 12,

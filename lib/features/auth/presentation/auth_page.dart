@@ -32,7 +32,6 @@ class _AuthPageState extends State<AuthPage> {
 
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
-  static const _bg = Color(0xFFF7F7FB);
 
   @override
   void dispose() {
@@ -47,9 +46,17 @@ class _AuthPageState extends State<AuthPage> {
     return InputDecoration(
       hintText: hint,
       labelText: label,
-      border: const UnderlineInputBorder(),
-      focusedBorder: const UnderlineInputBorder(
-        borderSide: BorderSide(color: _purple, width: 2),
+      labelStyle: const TextStyle(color: Colors.white70),
+      filled: true,
+      fillColor: Colors.white.withOpacity(0.15),
+      hintStyle: const TextStyle(color: Colors.white54),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Colors.white, width: 1.5),
       ),
       suffixIcon: suffix,
     );
@@ -156,7 +163,6 @@ class _AuthPageState extends State<AuthPage> {
           MaterialPageRoute(builder: (_) => const DashboardPage()),
         );
       } else {
-        // SIGNUP
         final res = await _sb.auth.signUp(
           email: _emailCtrl.text.trim(),
           password: _passwordCtrl.text.trim(),
@@ -204,243 +210,253 @@ class _AuthPageState extends State<AuthPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bg,
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, c) {
-            final maxW = c.maxWidth;
-            final contentW = maxW > 420 ? 420.0 : maxW;
+      backgroundColor: Colors.transparent,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [_purple, _purpleDark],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, c) {
+              final maxW = c.maxWidth;
+              final contentW = maxW > 420 ? 420.0 : maxW;
 
-            return Center(
-              child: ConstrainedBox(
-                constraints: BoxConstraints.tightFor(width: contentW),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 16,
-                  ),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black12,
-                                blurRadius: 12,
-                                offset: Offset(0, 6),
-                              ),
-                            ],
-                          ),
-                          child: const CircleAvatar(
-                            radius: 60,
-                            backgroundImage: AssetImage(
-                              'assets/images/godavao_logo.png',
-                            ),
-                            backgroundColor: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-
-                        Text(
-                          _isLogin ? 'Welcome back' : 'Create your account',
-                          style: Theme.of(context).textTheme.titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _isLogin
-                              ? 'Sign in to book rides around Davao.'
-                              : 'Join GoDavao to start riding or driving.',
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(color: Colors.black54),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 24),
-
-                        TextFormField(
-                          controller: _emailCtrl,
-                          keyboardType: TextInputType.emailAddress,
-                          decoration: _fieldDecor(
-                            label: 'Email',
-                            hint: 'Enter your email',
-                          ),
-                          validator:
-                              (v) =>
-                                  (v == null || v.trim().isEmpty)
-                                      ? 'Enter your email'
-                                      : null,
-                        ),
-                        const SizedBox(height: 12),
-
-                        TextFormField(
-                          controller: _passwordCtrl,
-                          obscureText: _obscure,
-                          decoration: _fieldDecor(
-                            label: 'Password',
-                            hint: 'Enter your password',
-                            suffix: IconButton(
-                              icon: Icon(
-                                _obscure
-                                    ? Icons.visibility_off
-                                    : Icons.visibility,
-                              ),
-                              onPressed:
-                                  () => setState(() => _obscure = !_obscure),
-                            ),
-                          ),
-                          validator: (v) {
-                            if (v == null || v.isEmpty)
-                              return 'Enter your password';
-                            if (v.length < 6) return 'Password too short';
-                            return null;
-                          },
-                        ),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: _forgotPassword,
-                            child: const Text('Forgot Password?'),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-
-                        if (!_isLogin) ...[
-                          TextFormField(
-                            controller: _nameCtrl,
-                            decoration: _fieldDecor(label: 'Full Name'),
-                            validator:
-                                (v) =>
-                                    (v == null || v.trim().isEmpty)
-                                        ? 'Enter your name'
-                                        : null,
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: _phoneCtrl,
-                            keyboardType: TextInputType.phone,
-                            decoration: _fieldDecor(label: 'Phone Number'),
-                            validator:
-                                (v) =>
-                                    (v == null || v.trim().isEmpty)
-                                        ? 'Enter your phone'
-                                        : null,
-                          ),
-                          const SizedBox(height: 12),
-                          DropdownButtonFormField<String>(
-                            value: _role,
-                            decoration: _fieldDecor(label: 'Role'),
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'passenger',
-                                child: Text('Passenger'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'driver',
-                                child: Text('Driver'),
-                              ),
-                            ],
-                            onChanged:
-                                (v) => setState(() => _role = v ?? 'passenger'),
-                          ),
+              return Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints.tightFor(width: contentW),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 16,
+                    ),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        children: [
                           const SizedBox(height: 8),
-                        ],
-
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 52,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(14),
-                              gradient: const LinearGradient(
-                                colors: [_purple, _purpleDark],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
                               boxShadow: [
                                 BoxShadow(
-                                  color: _purple.withOpacity(0.25),
-                                  blurRadius: 16,
-                                  offset: Offset(0, 10),
+                                  color: Colors.black12,
+                                  blurRadius: 12,
+                                  offset: Offset(0, 6),
                                 ),
                               ],
                             ),
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                elevation: 0,
-                                backgroundColor: Colors.transparent,
-                                shadowColor: Colors.transparent,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
+                            child: const CircleAvatar(
+                              radius: 60,
+                              backgroundImage: AssetImage(
+                                'assets/images/godavao_logo.png',
                               ),
-                              onPressed: _loading ? null : _submit,
-                              child:
-                                  _loading
-                                      ? const SizedBox(
-                                        width: 22,
-                                        height: 22,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          valueColor: AlwaysStoppedAnimation(
-                                            Colors.white,
+                              backgroundColor: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+
+                          Text(
+                            _isLogin ? 'Welcome back' : 'Create your account',
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _isLogin
+                                ? 'Sign in to book rides around Davao.'
+                                : 'Join GoDavao to start riding or driving.',
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: Colors.black54),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 24),
+
+                          TextFormField(
+                            controller: _emailCtrl,
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: _fieldDecor(
+                              label: 'Email',
+                              hint: 'Enter your email',
+                            ),
+                            validator:
+                                (v) =>
+                                    (v == null || v.trim().isEmpty)
+                                        ? 'Enter your email'
+                                        : null,
+                          ),
+                          const SizedBox(height: 12),
+
+                          TextFormField(
+                            controller: _passwordCtrl,
+                            obscureText: _obscure,
+                            decoration: _fieldDecor(
+                              label: 'Password',
+                              hint: 'Enter your password',
+                              suffix: IconButton(
+                                icon: Icon(
+                                  _obscure
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                ),
+                                onPressed:
+                                    () => setState(() => _obscure = !_obscure),
+                              ),
+                            ),
+                            validator: (v) {
+                              if (v == null || v.isEmpty)
+                                return 'Enter your password';
+                              if (v.length < 6) return 'Password too short';
+                              return null;
+                            },
+                          ),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _forgotPassword,
+                              child: const Text('Forgot Password?'),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+
+                          if (!_isLogin) ...[
+                            TextFormField(
+                              controller: _nameCtrl,
+                              decoration: _fieldDecor(label: 'Full Name'),
+                              validator:
+                                  (v) =>
+                                      (v == null || v.trim().isEmpty)
+                                          ? 'Enter your name'
+                                          : null,
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _phoneCtrl,
+                              keyboardType: TextInputType.phone,
+                              decoration: _fieldDecor(label: 'Phone Number'),
+                              validator:
+                                  (v) =>
+                                      (v == null || v.trim().isEmpty)
+                                          ? 'Enter your phone'
+                                          : null,
+                            ),
+                            const SizedBox(height: 12),
+                            DropdownButtonFormField<String>(
+                              value: _role,
+                              decoration: _fieldDecor(label: 'Role'),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 'passenger',
+                                  child: Text('Passenger'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'driver',
+                                  child: Text('Driver'),
+                                ),
+                              ],
+                              onChanged:
+                                  (v) =>
+                                      setState(() => _role = v ?? 'passenger'),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 52,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(14),
+                                gradient: const LinearGradient(
+                                  colors: [_purple, _purpleDark],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _purple.withOpacity(0.25),
+                                    blurRadius: 16,
+                                    offset: Offset(0, 10),
+                                  ),
+                                ],
+                              ),
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  elevation: 0,
+                                  backgroundColor: Colors.transparent,
+                                  shadowColor: Colors.transparent,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                onPressed: _loading ? null : _submit,
+                                child:
+                                    _loading
+                                        ? const SizedBox(
+                                          width: 22,
+                                          height: 22,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor: AlwaysStoppedAnimation(
+                                              Colors.white,
+                                            ),
+                                          ),
+                                        )
+                                        : Text(
+                                          _isLogin ? 'Login' : 'Register',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 16,
                                           ),
                                         ),
-                                      )
-                                      : Text(
-                                        _isLogin ? 'Login' : 'Register',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 16,
-                                        ),
-                                      ),
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 14),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              _isLogin ? 'or ' : 'Already have an account? ',
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(color: Colors.black54),
-                            ),
-                            GestureDetector(
-                              onTap: () => setState(() => _isLogin = !_isLogin),
-                              child: const Text(
-                                'Switch',
-                                style: TextStyle(
-                                  color: _purple,
-                                  fontWeight: FontWeight.w700,
-                                ),
                               ),
                             ),
-                          ],
-                        ),
-
-                        if (_error != null) ...[
-                          const SizedBox(height: 12),
-                          Text(
-                            _error!,
-                            style: const TextStyle(color: Colors.red),
                           ),
+
+                          const SizedBox(height: 14),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                _isLogin ? 'or ' : 'Already have an account? ',
+                                style: const TextStyle(color: Colors.white70),
+                              ),
+                              GestureDetector(
+                                onTap:
+                                    () => setState(() => _isLogin = !_isLogin),
+                                child: Text(
+                                  _isLogin ? 'Register' : 'Login',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          if (_error != null) ...[
+                            const SizedBox(height: 12),
+                            Text(
+                              _error!,
+                              style: const TextStyle(color: Colors.redAccent),
+                            ),
+                          ],
+                          const SizedBox(height: 8),
                         ],
-                        const SizedBox(height: 8),
-                      ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );
