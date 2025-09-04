@@ -87,20 +87,39 @@ class _AuthPageState extends State<AuthPage> {
 
   // ---- Verification helpers -------------------------------------------------
 
+  /// Insert the users row on first signup.
+  /// On login, DO NOT reset verification_status.
   Future<void> _ensureUserRow({
     required String userId,
     required String role,
     String? name,
     String? phone,
+    required bool isSignup,
   }) async {
-    await _sb.from('users').upsert({
-      'id': userId,
-      if (name != null) 'name': name,
-      if (phone != null) 'phone': phone,
-      'role': role,
-      // the DB default for verification_status may be 'pending'; safe to set:
-      'verification_status': 'pending',
-    });
+    // Check if row exists
+    final existing =
+        await _sb.from('users').select('id').eq('id', userId).maybeSingle();
+
+    if (existing == null) {
+      // First-time insert (signup): start as pending
+      await _sb.from('users').insert({
+        'id': userId,
+        'role': role,
+        if (name != null) 'name': name,
+        if (phone != null) 'phone': phone,
+        'verification_status': 'pending',
+      });
+    } else {
+      // Login path: update non-sensitive fields only, NEVER touch verification_status
+      await _sb
+          .from('users')
+          .update({
+            'role': role,
+            if (name != null) 'name': name,
+            if (phone != null) 'phone': phone,
+          })
+          .eq('id', userId);
+    }
   }
 
   Future<String?> _getVerificationStatus(String userId) async {
@@ -149,11 +168,17 @@ class _AuthPageState extends State<AuthPage> {
         final user = res.user;
         if (user == null) throw 'Login failed';
 
+        // Get role from DB (fallback passenger)
         final role = await _getRole(user.id) ?? 'passenger';
-        await _ensureUserRow(userId: user.id, role: role);
 
-        final v = await _getVerificationStatus(user.id);
-        if (v != 'approved') {
+        // Ensure row exists, but DO NOT reset verification_status on login
+        await _ensureUserRow(userId: user.id, role: role, isSignup: false);
+
+        // Check status; treat 'verified' and legacy 'approved' as verified
+        final v = (await _getVerificationStatus(user.id))?.toLowerCase();
+        final isVerified = v == 'verified' || v == 'approved';
+
+        if (!isVerified) {
           await _promptVerify(role);
         }
 
@@ -163,6 +188,7 @@ class _AuthPageState extends State<AuthPage> {
           MaterialPageRoute(builder: (_) => const DashboardPage()),
         );
       } else {
+        // SIGNUP
         final res = await _sb.auth.signUp(
           email: _emailCtrl.text.trim(),
           password: _passwordCtrl.text.trim(),
@@ -170,14 +196,16 @@ class _AuthPageState extends State<AuthPage> {
         final user = res.user;
         if (user == null) throw 'Signup failed';
 
+        // Insert new users row (pending)
         await _ensureUserRow(
           userId: user.id,
           role: _role,
           name: _nameCtrl.text.trim(),
           phone: _phoneCtrl.text.trim(),
+          isSignup: true,
         );
 
-        // Immediately prompt for verification
+        // Immediately prompt for verification for new accounts
         await _promptVerify(_role);
 
         if (!mounted) return;
@@ -381,7 +409,7 @@ class _AuthPageState extends State<AuthPage> {
                                   BoxShadow(
                                     color: _purple.withOpacity(0.25),
                                     blurRadius: 16,
-                                    offset: Offset(0, 10),
+                                    offset: const Offset(0, 10),
                                   ),
                                 ],
                               ),
@@ -432,7 +460,7 @@ class _AuthPageState extends State<AuthPage> {
                                     () => setState(() => _isLogin = !_isLogin),
                                 child: Text(
                                   _isLogin ? 'Register' : 'Login',
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w700,
                                   ),
