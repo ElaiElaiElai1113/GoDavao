@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:godavao/features/verify/presentation/admin_vehicle_verification_page.dart';
 
 import 'package:godavao/features/dashboard/presentation/dashboard_page.dart';
 import 'package:godavao/features/history/presentation/booking_history_page.dart';
@@ -181,6 +182,21 @@ class AppDrawer extends StatelessWidget {
                               context,
                               MaterialPageRoute(
                                 builder: (_) => const AdminVerificationPage(),
+                              ),
+                            );
+                          },
+                        ),
+                        _item(
+                          context,
+                          Icons.verified_user,
+                          'Vehicle Verification',
+                          () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder:
+                                    (_) => const AdminVehicleVerificationPage(),
                               ),
                             );
                           },

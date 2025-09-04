@@ -36,11 +36,6 @@ class _VehicleFormState extends State<VehicleForm> {
     super.dispose();
   }
 
-  Future<void> _pickOrcr() async {
-    final x = await _picker.pickImage(source: ImageSource.gallery);
-    if (x != null) setState(() => _orcrFile = File(x.path));
-  }
-
   InputDecoration _decor(String label) => InputDecoration(
     labelText: label,
     filled: true,
@@ -55,6 +50,25 @@ class _VehicleFormState extends State<VehicleForm> {
       borderSide: const BorderSide(color: _purple, width: 2),
     ),
   );
+
+  Future<void> _pickOrcr() async {
+    final x = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (x != null) setState(() => _orcrFile = File(x.path));
+  }
+
+  Future<String> _uploadOrcr({
+    required String uid,
+    required String vehicleId,
+  }) async {
+    final key = '$uid/vehicle/$vehicleId/orcr.jpg';
+    await Supabase.instance.client.storage
+        .from('verifications')
+        .upload(key, _orcrFile!, fileOptions: const FileOptions(upsert: true));
+    return key;
+  }
 
   Future<void> _save() async {
     if (_loading) return;
@@ -75,17 +89,51 @@ class _VehicleFormState extends State<VehicleForm> {
       final sb = Supabase.instance.client;
       final uid = sb.auth.currentUser!.id;
 
-      await sb.from('vehicles').insert({
-        'driver_id': uid,
-        'make': _make.text.trim(),
-        'model': _model.text.trim(),
-        'plate': _plate.text.trim(),
-        'color': _color.text.trim(),
-        'seats': _seats,
-        'is_default': true,
-        // optionally save file path here if you integrate upload
-        'orcr_path': '${uid}/orcr.jpg',
-      });
+      // 1) Create a vehicle row (placeholder orcr_key to be set after upload)
+      final inserted =
+          await sb
+              .from('vehicles')
+              .insert({
+                'driver_id': uid,
+                'make': _make.text.trim(),
+                'model': _model.text.trim(),
+                'plate': _plate.text.trim(),
+                'color': _color.text.trim(),
+                'seats': _seats,
+                'is_default': false, // can't be default until approved
+                'verification_status': 'pending',
+                'submitted_at': DateTime.now().toIso8601String(),
+              })
+              .select('id')
+              .single();
+
+      final vehicleId = (inserted['id'] as String);
+
+      // 2) Upload OR/CR and save storage key
+      final orcrKey = await _uploadOrcr(uid: uid, vehicleId: vehicleId);
+      await sb
+          .from('vehicles')
+          .update({'orcr_key': orcrKey})
+          .eq('id', vehicleId);
+
+      if (!mounted) return;
+      // 3) Done → show next steps
+      await showDialog(
+        context: context,
+        builder:
+            (_) => AlertDialog(
+              title: const Text('Vehicle submitted'),
+              content: const Text(
+                'Your vehicle is now pending verification. You’ll be notified when it’s approved.',
+              ),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+      );
 
       if (!mounted) return;
       Navigator.pushAndRemoveUntil(
@@ -119,7 +167,6 @@ class _VehicleFormState extends State<VehicleForm> {
             key: _formKey,
             child: Column(
               children: [
-                // Form fields inside cards
                 Card(
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
@@ -193,7 +240,6 @@ class _VehicleFormState extends State<VehicleForm> {
                   ),
                 ),
 
-                // ORCR Upload card
                 Card(
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
@@ -208,19 +254,19 @@ class _VehicleFormState extends State<VehicleForm> {
                     ),
                     subtitle: Text(
                       _orcrFile == null
-                          ? 'Required for driver verification'
+                          ? 'Required for vehicle verification'
                           : _orcrFile!.path.split('/').last,
                     ),
                     trailing: IconButton(
                       icon: const Icon(Icons.upload_file, color: _purple),
                       onPressed: _pickOrcr,
+                      tooltip: 'Choose file',
                     ),
                   ),
                 ),
 
                 const SizedBox(height: 20),
 
-                // Save button
                 SizedBox(
                   width: double.infinity,
                   height: 52,
@@ -263,7 +309,7 @@ class _VehicleFormState extends State<VehicleForm> {
                                 ),
                               )
                               : const Text(
-                                'Save & Continue',
+                                'Submit for Verification',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w700,
