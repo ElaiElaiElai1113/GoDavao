@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// If you use these routes, keep the imports.
-// Otherwise replace the navigations below with your own.
+// Routes you already have
 import 'package:godavao/features/dashboard/presentation/dashboard_page.dart';
 import 'package:godavao/features/auth/presentation/vehicle_form.dart';
 
+// New: Verification sheet
+import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
+
 class AuthPage extends StatefulWidget {
   const AuthPage({super.key});
-
   @override
   State<AuthPage> createState() => _AuthPageState();
 }
@@ -29,7 +30,6 @@ class _AuthPageState extends State<AuthPage> {
 
   final _sb = Supabase.instance.client;
 
-  // Brand palette
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
 
@@ -85,6 +85,70 @@ class _AuthPageState extends State<AuthPage> {
     }
   }
 
+  // ---- Verification helpers -------------------------------------------------
+
+  /// Insert the users row on first signup.
+  /// On login, DO NOT reset verification_status.
+  Future<void> _ensureUserRow({
+    required String userId,
+    required String role,
+    String? name,
+    String? phone,
+    required bool isSignup,
+  }) async {
+    // Check if row exists
+    final existing =
+        await _sb.from('users').select('id').eq('id', userId).maybeSingle();
+
+    if (existing == null) {
+      // First-time insert (signup): start as pending
+      await _sb.from('users').insert({
+        'id': userId,
+        'role': role,
+        if (name != null) 'name': name,
+        if (phone != null) 'phone': phone,
+        'verification_status': 'pending',
+      });
+    } else {
+      // Login path: update non-sensitive fields only, NEVER touch verification_status
+      await _sb
+          .from('users')
+          .update({
+            'role': role,
+            if (name != null) 'name': name,
+            if (phone != null) 'phone': phone,
+          })
+          .eq('id', userId);
+    }
+  }
+
+  Future<String?> _getVerificationStatus(String userId) async {
+    final row =
+        await _sb
+            .from('users')
+            .select('verification_status')
+            .eq('id', userId)
+            .maybeSingle();
+    return row?['verification_status'] as String?;
+  }
+
+  Future<String?> _getRole(String userId) async {
+    final row =
+        await _sb.from('users').select('role').eq('id', userId).maybeSingle();
+    return row?['role'] as String?;
+  }
+
+  Future<void> _promptVerify(String role) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => VerifyIdentitySheet(role: role),
+    );
+  }
+
+  // ---- Submit (login / signup) ---------------------------------------------
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_loading) return;
@@ -96,30 +160,53 @@ class _AuthPageState extends State<AuthPage> {
 
     try {
       if (_isLogin) {
+        // LOGIN
         final res = await _sb.auth.signInWithPassword(
           email: _emailCtrl.text.trim(),
           password: _passwordCtrl.text.trim(),
         );
-        if (res.session == null) throw 'Login failed';
+        final user = res.user;
+        if (user == null) throw 'Login failed';
+
+        // Get role from DB (fallback passenger)
+        final role = await _getRole(user.id) ?? 'passenger';
+
+        // Ensure row exists, but DO NOT reset verification_status on login
+        await _ensureUserRow(userId: user.id, role: role, isSignup: false);
+
+        // Check status; treat 'verified' and legacy 'approved' as verified
+        final v = (await _getVerificationStatus(user.id))?.toLowerCase();
+        final isVerified = v == 'verified' || v == 'approved';
+
+        if (!isVerified) {
+          await _promptVerify(role);
+        }
+
         if (!mounted) return;
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const DashboardPage()),
         );
       } else {
+        // SIGNUP
         final res = await _sb.auth.signUp(
           email: _emailCtrl.text.trim(),
           password: _passwordCtrl.text.trim(),
         );
-        if (res.user == null) throw 'Signup failed';
+        final user = res.user;
+        if (user == null) throw 'Signup failed';
 
-        await _sb.from('users').insert({
-          'id': res.user!.id,
-          'name': _nameCtrl.text.trim(),
-          'phone': _phoneCtrl.text.trim(),
-          'role': _role,
-          'verified': false,
-        });
+        // Insert new users row (pending)
+        await _ensureUserRow(
+          userId: user.id,
+          role: _role,
+          name: _nameCtrl.text.trim(),
+          phone: _phoneCtrl.text.trim(),
+          isSignup: true,
+        );
+
+        // Immediately prompt for verification for new accounts
+        await _promptVerify(_role);
 
         if (!mounted) return;
 
@@ -145,6 +232,8 @@ class _AuthPageState extends State<AuthPage> {
       if (mounted) setState(() => _loading = false);
     }
   }
+
+  // ---- UI -------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -177,16 +266,13 @@ class _AuthPageState extends State<AuthPage> {
                       child: Column(
                         children: [
                           const SizedBox(height: 8),
-
-                          // Logo
                           Container(
                             padding: const EdgeInsets.all(4),
                             decoration: const BoxDecoration(
                               shape: BoxShape.circle,
-                              color: Colors.white,
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black26,
+                                  color: Colors.black12,
                                   blurRadius: 12,
                                   offset: Offset(0, 6),
                                 ),
@@ -195,36 +281,31 @@ class _AuthPageState extends State<AuthPage> {
                             child: const CircleAvatar(
                               radius: 60,
                               backgroundImage: AssetImage(
-                                'lib/assets/Logo.jpg',
+                                'assets/images/godavao_logo.png',
                               ),
                               backgroundColor: Colors.white,
                             ),
                           ),
-
                           const SizedBox(height: 24),
 
                           Text(
-                            _isLogin ? 'WELCOME' : 'Create Account',
-                            style: const TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
+                            _isLogin ? 'Welcome back' : 'Create your account',
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w700),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 4),
                           Text(
                             _isLogin
-                                ? 'Sign in to access your account'
-                                : 'Join GoDavao to get started',
-                            style: const TextStyle(color: Colors.white70),
+                                ? 'Sign in to book rides around Davao.'
+                                : 'Join GoDavao to start riding or driving.',
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: Colors.black54),
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 24),
 
-                          // Email
                           TextFormField(
                             controller: _emailCtrl,
-                            style: const TextStyle(color: Colors.white),
                             keyboardType: TextInputType.emailAddress,
                             decoration: _fieldDecor(
                               label: 'Email',
@@ -238,10 +319,8 @@ class _AuthPageState extends State<AuthPage> {
                           ),
                           const SizedBox(height: 12),
 
-                          // Password
                           TextFormField(
                             controller: _passwordCtrl,
-                            style: const TextStyle(color: Colors.white),
                             obscureText: _obscure,
                             decoration: _fieldDecor(
                               label: 'Password',
@@ -251,36 +330,30 @@ class _AuthPageState extends State<AuthPage> {
                                   _obscure
                                       ? Icons.visibility_off
                                       : Icons.visibility,
-                                  color: Colors.white70,
                                 ),
                                 onPressed:
                                     () => setState(() => _obscure = !_obscure),
                               ),
                             ),
                             validator: (v) {
-                              if (v == null || v.isEmpty) {
+                              if (v == null || v.isEmpty)
                                 return 'Enter your password';
-                              }
                               if (v.length < 6) return 'Password too short';
                               return null;
                             },
                           ),
-
                           Align(
                             alignment: Alignment.centerRight,
                             child: TextButton(
                               onPressed: _forgotPassword,
-                              child: const Text(
-                                'Forgot Password?',
-                                style: TextStyle(color: Colors.white),
-                              ),
+                              child: const Text('Forgot Password?'),
                             ),
                           ),
+                          const SizedBox(height: 8),
 
                           if (!_isLogin) ...[
                             TextFormField(
                               controller: _nameCtrl,
-                              style: const TextStyle(color: Colors.white),
                               decoration: _fieldDecor(label: 'Full Name'),
                               validator:
                                   (v) =>
@@ -291,7 +364,6 @@ class _AuthPageState extends State<AuthPage> {
                             const SizedBox(height: 12),
                             TextFormField(
                               controller: _phoneCtrl,
-                              style: const TextStyle(color: Colors.white),
                               keyboardType: TextInputType.phone,
                               decoration: _fieldDecor(label: 'Phone Number'),
                               validator:
@@ -302,9 +374,7 @@ class _AuthPageState extends State<AuthPage> {
                             ),
                             const SizedBox(height: 12),
                             DropdownButtonFormField<String>(
-                              dropdownColor: Colors.deepPurple[700],
                               value: _role,
-                              style: const TextStyle(color: Colors.white),
                               decoration: _fieldDecor(label: 'Role'),
                               items: const [
                                 DropdownMenuItem(
@@ -316,9 +386,9 @@ class _AuthPageState extends State<AuthPage> {
                                   child: Text('Driver'),
                                 ),
                               ],
-                              onChanged: (v) {
-                                if (v != null) setState(() => _role = v);
-                              },
+                              onChanged:
+                                  (v) =>
+                                      setState(() => _role = v ?? 'passenger'),
                             ),
                             const SizedBox(height: 8),
                           ],
@@ -337,9 +407,9 @@ class _AuthPageState extends State<AuthPage> {
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: _purpleDark.withOpacity(0.3),
+                                    color: _purple.withOpacity(0.25),
                                     blurRadius: 16,
-                                    offset: const Offset(0, 8),
+                                    offset: const Offset(0, 10),
                                   ),
                                 ],
                               ),
@@ -369,7 +439,7 @@ class _AuthPageState extends State<AuthPage> {
                                           _isLogin ? 'Login' : 'Register',
                                           style: const TextStyle(
                                             color: Colors.white,
-                                            fontWeight: FontWeight.bold,
+                                            fontWeight: FontWeight.w700,
                                             fontSize: 16,
                                           ),
                                         ),
@@ -390,7 +460,7 @@ class _AuthPageState extends State<AuthPage> {
                                     () => setState(() => _isLogin = !_isLogin),
                                 child: Text(
                                   _isLogin ? 'Register' : 'Login',
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w700,
                                   ),

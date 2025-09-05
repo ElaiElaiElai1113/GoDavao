@@ -10,7 +10,7 @@ class VehicleSwitcher extends StatefulWidget {
     this.runSpacing = 8,
   });
 
-  /// Called with the selected vehicle row after switching default or after initial load.
+  /// Called with the selected (APPROVED) vehicle row after switching default or initial load.
   final void Function(Map<String, dynamic> vehicle)? onChanged;
 
   final EdgeInsets chipPadding;
@@ -30,6 +30,7 @@ class _VehicleSwitcherState extends State<VehicleSwitcher> {
   String? _selectedId;
 
   static const _purple = Color(0xFF6A27F7);
+  static const _purpleDark = Color(0xFF4B18C9);
 
   @override
   void initState() {
@@ -55,30 +56,53 @@ class _VehicleSwitcherState extends State<VehicleSwitcher> {
         return;
       }
 
+      // Pull verification status so we can gate selection
       final res = await _sb
           .from('vehicles')
-          .select('id, make, model, plate, seats, is_default, created_at')
+          .select('''
+            id, make, model, plate, seats,
+            is_default,
+            verification_status,
+            review_notes,
+            orcr_key,
+            created_at, submitted_at, reviewed_at
+          ''')
           .eq('driver_id', uid)
           .order('is_default', ascending: false)
           .order('created_at', ascending: false);
 
-      _vehicles = (res as List).cast<Map<String, dynamic>>();
+      _vehicles =
+          (res as List)
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
 
-      // Pick initial: default → first
-      if (_vehicles.isNotEmpty) {
-        final def = _vehicles.firstWhere(
-          (v) => v['is_default'] == true,
-          orElse: () => _vehicles.first,
-        );
-        _selectedId = def['id'] as String?;
+      // Determine initial selection:
+      // 1) default vehicle if APPROVED
+      // 2) else first APPROVED
+      // 3) else none (no approved vehicles yet)
+      String? initial;
+      final def = _vehicles.firstWhere(
+        (v) =>
+            v['is_default'] == true && v['verification_status'] == 'approved',
+        orElse: () => {},
+      );
+      if (def.isNotEmpty) {
+        initial = def['id'] as String?;
       } else {
-        _selectedId = null;
+        final firstApproved = _vehicles.firstWhere(
+          (v) => v['verification_status'] == 'approved',
+          orElse: () => {},
+        );
+        if (firstApproved.isNotEmpty) {
+          initial = firstApproved['id'] as String?;
+        }
       }
 
+      _selectedId = initial;
       if (mounted) setState(() => _loading = false);
 
-      // 🔑 Auto-inform parent on first load
-      if (_vehicles.isNotEmpty && _selectedId != null) {
+      // Inform parent if we have an approved selection
+      if (_selectedId != null) {
         final selected = _vehicles.firstWhere((v) => v['id'] == _selectedId);
         widget.onChanged?.call(selected);
       }
@@ -98,8 +122,24 @@ class _VehicleSwitcherState extends State<VehicleSwitcher> {
   Future<void> _setDefault(String vehicleId) async {
     if (_selectedId == vehicleId) return;
 
+    // Check status locally first to give instant feedback
+    final row = _vehicles.firstWhere((v) => v['id'] == vehicleId);
+    final status = (row['verification_status'] as String?) ?? 'pending';
+    if (status != 'approved') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            status == 'pending'
+                ? 'This vehicle is still pending verification.'
+                : 'This vehicle was rejected. Please re-submit OR/CR.',
+          ),
+        ),
+      );
+      return;
+    }
+
     final prev = _selectedId;
-    setState(() => _selectedId = vehicleId); // optimistic UI
+    setState(() => _selectedId = vehicleId); // optimistic
 
     try {
       final uid = _sb.auth.currentUser!.id;
@@ -119,13 +159,21 @@ class _VehicleSwitcherState extends State<VehicleSwitcher> {
           .neq('id', vehicleId);
 
       // Notify parent immediately
-      final selected = _vehicles.firstWhere((v) => v['id'] == vehicleId);
-      widget.onChanged?.call(selected);
+      widget.onChanged?.call(row);
 
-      // Refresh to reflect DB state (optional but nice)
+      // Refresh to reflect DB state (optional)
       await _loadVehicles();
+    } on PostgrestException catch (e) {
+      // Database trigger may still block selection if not approved
+      final friendly =
+          e.message.contains('not approved')
+              ? 'This vehicle isn’t approved yet. Please wait for verification or select another vehicle.'
+              : e.message;
+      setState(() => _selectedId = prev);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendly)));
     } catch (e) {
-      if (!mounted) return;
       setState(() => _selectedId = prev);
       ScaffoldMessenger.of(
         context,
@@ -180,6 +228,8 @@ class _VehicleSwitcherState extends State<VehicleSwitcher> {
             final model = (v['model'] ?? '').toString();
             final plate = (v['plate'] ?? '').toString();
             final seats = (v['seats'] as int?) ?? 0;
+            final status = (v['verification_status'] as String?) ?? 'pending';
+            final notes = (v['review_notes'] as String?)?.trim();
 
             String label = [
               if (make.isNotEmpty) make,
@@ -189,26 +239,106 @@ class _VehicleSwitcherState extends State<VehicleSwitcher> {
             ].join(' ');
             if (label.trim().isEmpty) label = 'Vehicle ${id.substring(0, 6)}';
 
-            return ChoiceChip(
+            final isApproved = status == 'approved';
+            final isPending = status == 'pending';
+            final isRejected = status == 'rejected';
+
+            final statusChip = _StatusChip(status: status);
+
+            final chip = ChoiceChip(
               label: Padding(
                 padding: widget.chipPadding,
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: selected ? Colors.white : null,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (!isApproved) ...[
+                      Icon(
+                        isPending ? Icons.lock_clock : Icons.lock_outline,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    Flexible(
+                      child: Text(
+                        label,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: selected ? Colors.white : null,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    statusChip,
+                  ],
                 ),
               ),
               selected: selected,
               selectedColor: _purple,
-              onSelected: (_) => _setDefault(id),
+              onSelected: isApproved ? (_) => _setDefault(id) : null,
               shape: StadiumBorder(
                 side: BorderSide(color: selected ? _purple : Colors.black12),
               ),
               backgroundColor: Colors.grey.shade100,
+              disabledColor: Colors.grey.shade200,
             );
+
+            if (isApproved) return chip;
+
+            // Add tooltip context for pending/rejected
+            final tipText =
+                isPending
+                    ? 'Awaiting admin verification.'
+                    : (notes?.isNotEmpty == true
+                        ? 'Rejected: $notes'
+                        : 'Rejected. Please re-submit documents.');
+            return Tooltip(message: tipText, preferBelow: false, child: chip);
           }).toList(),
+    );
+  }
+}
+
+/* ---------------- UI bits ---------------- */
+
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({required this.status});
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    late final Color c;
+    late final String text;
+
+    switch (status) {
+      case 'approved':
+        c = Colors.green;
+        text = 'Approved';
+        break;
+      case 'rejected':
+        c = Colors.red;
+        text = 'Rejected';
+        break;
+      default:
+        c = Colors.orange;
+        text = 'Pending';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: c.withOpacity(.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: c.withOpacity(.2)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: c,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: .2,
+        ),
+      ),
     );
   }
 }

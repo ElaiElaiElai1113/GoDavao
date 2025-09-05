@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
 import 'package:godavao/features/profile/presentation/app_drawer.dart';
 import 'package:godavao/features/auth/presentation/auth_page.dart';
 import 'package:godavao/features/maps/passenger_map_page.dart';
 import 'package:godavao/features/routes/presentation/pages/driver_route_page.dart';
 import 'package:godavao/features/ride_status/presentation/driver_rides_page.dart';
+import 'package:godavao/features/verify/data/verification_service.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -28,6 +31,11 @@ class _DashboardPageState extends State<DashboardPage> {
   int? _passengerUpcoming;
   int? _passengerHistory;
 
+  // Verification realtime
+  final _verifSvc = VerificationService(Supabase.instance.client);
+  VerificationStatus _verifStatus = VerificationStatus.unknown;
+  StreamSubscription<VerificationStatus>? _verifSub;
+
   // Theme
   static const _bg = Color(0xFFF7F7FB);
   static const _purple = Color(0xFF6A27F7);
@@ -37,6 +45,12 @@ class _DashboardPageState extends State<DashboardPage> {
   void initState() {
     super.initState();
     _fetch();
+  }
+
+  @override
+  void dispose() {
+    _verifSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _fetch() async {
@@ -55,13 +69,43 @@ class _DashboardPageState extends State<DashboardPage> {
       return;
     }
     try {
-      final res = await _sb.from('users').select().eq('id', u.id).single();
+      // Keep the selection tight
+      final res =
+          await _sb
+              .from('users')
+              .select('id, name, role, vehicle_info, verification_status')
+              .eq('id', u.id)
+              .single();
+
+      if (!mounted) return;
       setState(() {
         _user = res;
+
+        // Seed enum from snapshot to prevent "pending" flash
+        final vs = (res['verification_status'] ?? '').toString().toLowerCase();
+        if (vs == 'verified' || vs == 'approved') {
+          _verifStatus = VerificationStatus.verified; // backward-compatible
+        } else if (vs == 'pending') {
+          _verifStatus = VerificationStatus.pending;
+        } else if (vs == 'rejected') {
+          _verifStatus = VerificationStatus.rejected;
+        } else {
+          _verifStatus = VerificationStatus.unknown;
+        }
+
         _loading = false;
       });
+
+      // Start/restart realtime watcher
+      _verifSub?.cancel();
+      _verifSub = _verifSvc.watchStatus(userId: u.id).listen((s) {
+        if (!mounted) return;
+        setState(() => _verifStatus = s);
+      });
+
       await _loadOverview();
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = 'Failed to load profile.';
         _loading = false;
@@ -81,7 +125,6 @@ class _DashboardPageState extends State<DashboardPage> {
 
     try {
       if (role == 'driver') {
-        // Active routes
         final activeRoutes = await _sb
             .from('driver_routes')
             .select('id')
@@ -89,7 +132,6 @@ class _DashboardPageState extends State<DashboardPage> {
             .eq('is_active', true);
         final activeCount = (activeRoutes as List).length;
 
-        // Pending matches
         final pendingMatches = await _sb
             .from('ride_matches')
             .select('id')
@@ -97,12 +139,12 @@ class _DashboardPageState extends State<DashboardPage> {
             .eq('status', 'pending');
         final pendingCount = (pendingMatches as List).length;
 
+        if (!mounted) return;
         setState(() {
           _driverActiveRoutes = activeCount;
           _driverPendingRequests = pendingCount;
         });
       } else {
-        // Passenger upcoming
         final upcoming = await _sb
             .from('ride_requests')
             .select('id')
@@ -110,7 +152,6 @@ class _DashboardPageState extends State<DashboardPage> {
             .inFilter('status', ['pending', 'accepted', 'en_route']);
         final upcomingCount = (upcoming as List).length;
 
-        // Passenger history
         final history = await _sb
             .from('ride_requests')
             .select('id')
@@ -123,12 +164,14 @@ class _DashboardPageState extends State<DashboardPage> {
             ]);
         final historyCount = (history as List).length;
 
+        if (!mounted) return;
         setState(() {
           _passengerUpcoming = upcomingCount;
           _passengerHistory = historyCount;
         });
       }
     } catch (_) {
+      // log or ignore
     } finally {
       if (mounted) setState(() => _loadingOverview = false);
     }
@@ -151,6 +194,9 @@ class _DashboardPageState extends State<DashboardPage> {
     final vehicleInfo = _user?['vehicle_info'] as String?;
     final isDriver = role == 'driver';
 
+    // Drive UI from enum
+    final isVerified = _verifStatus == VerificationStatus.verified;
+
     final overviewLeftLabel = isDriver ? 'Active Routes' : 'Upcoming';
     final overviewLeftValue =
         isDriver
@@ -166,9 +212,7 @@ class _DashboardPageState extends State<DashboardPage> {
       backgroundColor: _bg,
       drawer: const AppDrawer(),
       body: RefreshIndicator(
-        onRefresh: () async {
-          await _fetch();
-        },
+        onRefresh: () async => _fetch(),
         child:
             _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -177,7 +221,6 @@ class _DashboardPageState extends State<DashboardPage> {
                 : ListView(
                   padding: EdgeInsets.zero,
                   children: [
-                    // HERO HEADER (now contains menu + actions; replaces AppBar)
                     Builder(
                       builder:
                           (ctx) => _HeroHeader(
@@ -187,27 +230,67 @@ class _DashboardPageState extends State<DashboardPage> {
                             purpleDark: _purpleDark,
                             onMenu: () => Scaffold.of(ctx).openDrawer(),
                             onLogout: _logout,
-                            // onNotifications: () {
-                            //   ScaffoldMessenger.of(ctx).showSnackBar(
-                            //     const SnackBar(
-                            //       content: Text('Notifications coming soon'),
-                            //     ),
-                            //   );
-                            // },
-                            // onSettings: () {
-                            //   ScaffoldMessenger.of(ctx).showSnackBar(
-                            //     const SnackBar(
-                            //       content: Text('Settings coming soon'),
-                            //     ),
-                            //   );
-                            // },
                           ),
                     ),
 
                     const SizedBox(height: 16),
 
-                    // DRIVER VEHICLE SUMMARY
-                    if (isDriver)
+                    // Verification Banner (shows unless verified)
+                    if (!isVerified)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade100,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.orange.shade300),
+                          ),
+                          padding: const EdgeInsets.all(14),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.warning,
+                                color: Colors.orange,
+                                size: 28,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  _statusText(_verifStatus, role),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              ElevatedButton(
+                                onPressed: () {
+                                  showModalBottomSheet(
+                                    context: context,
+                                    isScrollControlled: true,
+                                    useSafeArea: true,
+                                    builder:
+                                        (_) => VerifyIdentitySheet(role: role),
+                                  );
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.orange,
+                                  foregroundColor: Colors.white,
+                                ),
+                                child: const Text('Verify'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                    const SizedBox(height: 16),
+
+                    // DRIVER VEHICLE SUMMARY (only if verified)
+                    if (isDriver && isVerified)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: _VehicleCard(
@@ -238,36 +321,46 @@ class _DashboardPageState extends State<DashboardPage> {
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child:
                           isDriver
-                              ? _ActionGrid(
-                                items: [
-                                  _ActionItem(
-                                    title: 'Set Driver Route',
-                                    subtitle: 'Go online',
-                                    icon: Icons.alt_route,
-                                    onTap:
-                                        () => Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder:
-                                                (_) => const DriverRoutePage(),
-                                          ),
-                                        ),
-                                  ),
-                                  _ActionItem(
-                                    title: 'Ride Matches',
-                                    subtitle: 'Requests & trips',
-                                    icon: Icons.groups_2,
-                                    onTap:
-                                        () => Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder:
-                                                (_) => const DriverRidesPage(),
-                                          ),
-                                        ),
-                                  ),
-                                ],
-                              )
+                              ? (isVerified
+                                  ? _ActionGrid(
+                                    items: [
+                                      _ActionItem(
+                                        title: 'Set Driver Route',
+                                        subtitle: 'Go online',
+                                        icon: Icons.alt_route,
+                                        onTap:
+                                            () => Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder:
+                                                    (_) =>
+                                                        const DriverRoutePage(),
+                                              ),
+                                            ),
+                                      ),
+                                      _ActionItem(
+                                        title: 'Ride Matches',
+                                        subtitle: 'Requests & trips',
+                                        icon: Icons.groups_2,
+                                        onTap:
+                                            () => Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder:
+                                                    (_) =>
+                                                        const DriverRidesPage(),
+                                              ),
+                                            ),
+                                      ),
+                                    ],
+                                  )
+                                  : Container(
+                                    padding: const EdgeInsets.all(16),
+                                    child: const Text(
+                                      'Driver features are locked until your verification is approved.',
+                                      style: TextStyle(color: Colors.black54),
+                                    ),
+                                  ))
                               : _ActionGrid(
                                 items: [
                                   _ActionItem(
@@ -307,40 +400,43 @@ class _DashboardPageState extends State<DashboardPage> {
                               ),
                     ),
 
-                    // OVERVIEW
-                    const SizedBox(height: 16),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        'Overview',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
+                    // OVERVIEW (only if driver is verified or passenger)
+                    if (!isDriver || isVerified) ...[
+                      const SizedBox(height: 16),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          'Overview',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: _StatCard(
-                              label: overviewLeftLabel,
-                              value: _loadingOverview ? '—' : overviewLeftValue,
-                              icon: Icons.event_available,
+                      const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _StatCard(
+                                label: overviewLeftLabel,
+                                value:
+                                    _loadingOverview ? '—' : overviewLeftValue,
+                                icon: Icons.event_available,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _StatCard(
-                              label: overviewRightLabel,
-                              value:
-                                  _loadingOverview ? '—' : overviewRightValue,
-                              icon: Icons.history,
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _StatCard(
+                                label: overviewRightLabel,
+                                value:
+                                    _loadingOverview ? '—' : overviewRightValue,
+                                icon: Icons.history,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
+                    ],
 
                     const SizedBox(height: 24),
                   ],
@@ -350,6 +446,26 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   String _fmtCount(int? n) => n == null ? '—' : n.toString();
+
+  String _statusText(VerificationStatus s, String role) {
+    switch (s) {
+      case VerificationStatus.pending:
+        return role == 'driver'
+            ? 'Your driver verification is pending. You cannot accept rides until approved.'
+            : 'Your verification is pending.';
+      case VerificationStatus.rejected:
+        return role == 'driver'
+            ? 'Your driver verification was rejected. Please resubmit.'
+            : 'Your verification was rejected. Please resubmit.';
+      case VerificationStatus.verified:
+        return 'Verified';
+      case VerificationStatus.unknown:
+      default:
+        return role == 'driver'
+            ? 'You must complete verification before driving.'
+            : 'Please verify your account.';
+    }
+  }
 }
 
 class _HeroHeader extends StatelessWidget {
@@ -360,8 +476,6 @@ class _HeroHeader extends StatelessWidget {
 
   final VoidCallback onMenu;
   final VoidCallback onLogout;
-  // final VoidCallback onNotifications;
-  // final VoidCallback onSettings;
 
   const _HeroHeader({
     required this.name,
@@ -370,8 +484,6 @@ class _HeroHeader extends StatelessWidget {
     required this.purpleDark,
     required this.onMenu,
     required this.onLogout,
-    // required this.onNotifications,
-    // required this.onSettings,
   });
 
   @override
@@ -395,34 +507,7 @@ class _HeroHeader extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Row(
-          //   children: [
-          //     IconButton(
-          //       icon: const Icon(Icons.menu, color: Colors.white),
-          //       onPressed: onMenu,
-          //       tooltip: 'Menu',
-          //     ),
-          //     const Spacer(),
-          //     // IconButton(
-          //     //   icon: const Icon(Icons.notifications_none, color: Colors.white),
-          //     //   onPressed: onNotifications,
-          //     //   tooltip: 'Notifications',
-          //     // ),
-          //     // IconButton(
-          //     //   icon: const Icon(Icons.settings, color: Colors.white),
-          //     //   onPressed: onSettings,
-          //     //   tooltip: 'Settings',
-          //     // ),
-          //     IconButton(
-          //       icon: const Icon(Icons.logout, color: Colors.white),
-          //       onPressed: onLogout,
-          //       tooltip: 'Logout',
-          //     ),
-          //   ],
-          // ),
           const SizedBox(height: 25),
-
-          // Identity row
           Row(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.start,
@@ -619,7 +704,7 @@ class _StatCard extends StatelessWidget {
               color: const Color(0xFFEFF1FF),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, color: const Color(0xFF3A3F73)),
+            child: const Icon(Icons.analytics, color: Color(0xFF3A3F73)),
           ),
           const SizedBox(width: 12),
           Expanded(
