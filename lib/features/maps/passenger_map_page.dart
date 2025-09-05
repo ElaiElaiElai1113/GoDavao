@@ -31,6 +31,8 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
   final _polyDecoder = PolylinePoints();
   final MapController _map = MapController();
   final Distance _dist = const Distance();
+
+  // destination search input
   final _destCtrl = TextEditingController();
 
   // Brand tokens
@@ -47,19 +49,25 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
   bool _loading = false;
   String? _error;
 
-  LatLng? _destination;
+  LatLng? _searchedDestination; // result of text search (for filtering)
   List<DriverRoute> _allRoutes = []; // raw from DB
   List<DriverRoute> _candidateRoutes = []; // after destination search
   DriverRoute? _selectedRoute;
 
   List<LatLng> _selectedRoutePoints = [];
-  Polyline? _osrmSegment; // from pickup → destination
 
+  // Passenger chosen points (snapped to route)
   LatLng? _pickup;
+  LatLng? _dropoff;
+
+  // OSRM for chosen pickup→dropoff
+  Polyline? _osrmSegment;
+
+  // which point the “Edit” button should change next
+  String _editTarget = 'auto'; // 'pickup' | 'dropoff' | 'auto'
 
   // Config
-  static const double _matchRadiusMeters =
-      600; // how close destination must be to a route
+  static const double _matchRadiusMeters = 600; // route near destination
 
   @override
   void initState() {
@@ -74,20 +82,18 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
   }
 
   Future<void> _primeRoutes() async {
-    // Preload driver routes once (we filter client-side by destination)
     try {
       final data = await supabase
           .from('driver_routes')
           .select('id, driver_id, route_polyline')
-          .eq('is_active', true); // optional if you have this column
-
+          .eq('is_active', true);
       _allRoutes =
           (data as List)
               .map((m) => DriverRoute.fromMap(m as Map<String, dynamic>))
               .toList();
-      setState(() {}); // nothing shown until user searches
-    } catch (e) {
-      // Non-fatal — search can retry
+      if (mounted) setState(() {});
+    } catch (_) {
+      // non-fatal; we’ll surface errors during search
     }
   }
 
@@ -106,12 +112,14 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     setState(() {
       _loading = true;
       _error = null;
-      _destination = null;
+      _searchedDestination = null;
       _candidateRoutes = [];
       _selectedRoute = null;
       _selectedRoutePoints = [];
       _pickup = null;
+      _dropoff = null;
       _osrmSegment = null;
+      _editTarget = 'auto';
     });
 
     try {
@@ -123,11 +131,12 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
         });
         return;
       }
+
       final dest = LatLng(results.first.latitude, results.first.longitude);
-      _destination = dest;
+      _searchedDestination = dest;
       _safeMove(dest, 14);
 
-      // Now filter routes that pass near destination
+      // Filter routes that pass near the searched destination
       final matches = <DriverRoute>[];
       for (final r in _allRoutes) {
         final pts =
@@ -175,10 +184,8 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     return best <= maxMeters;
   }
 
-  // Approximate perpendicular distance from point P to segment AB (meters)
+  // Approx perpendicular distance P→AB in meters
   double _distancePointToSegmentMeters(LatLng p, LatLng a, LatLng b) {
-    // Project using simple lat/lng plane (good enough for small spans),
-    // then convert distances with haversine for endpoints
     final ax = a.longitude, ay = a.latitude;
     final bx = b.longitude, by = b.latitude;
     final px = p.longitude, py = p.latitude;
@@ -197,6 +204,41 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     return _dist(proj, p);
   }
 
+  LatLng _projectOnSegment(LatLng p, LatLng a, LatLng b) {
+    final ax = a.longitude, ay = a.latitude;
+    final bx = b.longitude, by = b.latitude;
+    final px = p.longitude, py = p.latitude;
+
+    final vx = bx - ax, vy = by - ay;
+    final wx = px - ax, wy = py - ay;
+
+    final c1 = vx * wx + vy * wy;
+    final c2 = vx * vx + vy * vy;
+
+    if (c1 <= 0) return a;
+    if (c2 <= c1) return b;
+
+    final t = c1 / c2;
+    return LatLng(ay + t * vy, ax + t * vx);
+  }
+
+  LatLng _snapToPolyline(LatLng p, List<LatLng> polyline) {
+    late LatLng best;
+    double bestD = double.infinity;
+
+    for (var i = 0; i < polyline.length - 1; i++) {
+      final a = polyline[i];
+      final b = polyline[i + 1];
+      final proj = _projectOnSegment(p, a, b);
+      final d = _dist(proj, p);
+      if (d < bestD) {
+        bestD = d;
+        best = proj;
+      }
+    }
+    return best;
+  }
+
   // When the user picks a candidate route
   void _selectRoute(DriverRoute r) {
     final pts =
@@ -205,32 +247,94 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
             .map((p) => LatLng(p.latitude, p.longitude))
             .toList();
 
+    // If there was a searched destination, offer a default drop-off snapped to route
+    LatLng? newDrop =
+        _searchedDestination == null
+            ? null
+            : _snapToPolyline(_searchedDestination!, pts);
+
     setState(() {
       _selectedRoute = r;
       _selectedRoutePoints = pts;
-      _pickup = null;
+      // keep previous pickup if it already existed and makes sense on the new route; otherwise clear
+      _pickup = (_pickup != null) ? _snapToPolyline(_pickup!, pts) : null;
+      _dropoff = newDrop; // pre-populate drop-off if we had a search
       _osrmSegment = null;
+      _editTarget = 'auto';
     });
 
     if (pts.isNotEmpty) {
       _safeMove(pts.first, 13);
     }
+
+    _rebuildOsrmIfReady();
   }
 
-  // Tap on the map:
-  // - If we have a selected route and destination, we interpret as setting/adjusting pickup.
+  // Tap logic:
+  // - If no route selected → ignore
+  // - If pickup is null → set pickup
+  // - Else if dropoff is null → set dropoff
+  // - Else:
+  //     - if _editTarget == 'pickup' → set pickup (keep dropoff)
+  //     - else if _editTarget == 'dropoff' → set dropoff (keep pickup)
+  //     - else (auto): reset flow (new pickup, clear dropoff)
   void _onMapTap(TapPosition _, LatLng tap) async {
-    if (_selectedRoutePoints.isEmpty || _destination == null) return;
+    if (_selectedRoutePoints.isEmpty) return;
 
-    // Snap pickup to nearest segment of the selected route
     final snapped = _snapToPolyline(tap, _selectedRoutePoints);
-    setState(() {
-      _pickup = snapped;
-      _osrmSegment = null;
-    });
 
+    if (_pickup == null) {
+      setState(() {
+        _pickup = snapped;
+        // keep prefilled dropoff if any; user can still change it
+        _editTarget = 'dropoff';
+        _osrmSegment = null;
+      });
+      _rebuildOsrmIfReady();
+      return;
+    }
+
+    if (_dropoff == null) {
+      setState(() {
+        _dropoff = snapped;
+        _editTarget = 'auto';
+        _osrmSegment = null;
+      });
+      _rebuildOsrmIfReady();
+      return;
+    }
+
+    // both set
+    if (_editTarget == 'pickup') {
+      setState(() {
+        _pickup = snapped;
+        _editTarget = 'dropoff';
+        _osrmSegment = null;
+      });
+      _rebuildOsrmIfReady();
+    } else if (_editTarget == 'dropoff') {
+      setState(() {
+        _dropoff = snapped;
+        _editTarget = 'pickup';
+        _osrmSegment = null;
+      });
+      _rebuildOsrmIfReady();
+    } else {
+      // auto: start a new selection
+      setState(() {
+        _pickup = snapped;
+        _dropoff = null;
+        _editTarget = 'dropoff';
+        _osrmSegment = null;
+      });
+      _rebuildOsrmIfReady();
+    }
+  }
+
+  Future<void> _rebuildOsrmIfReady() async {
+    if (_pickup == null || _dropoff == null) return;
     try {
-      final seg = await fetchOsrmRoute(start: snapped, end: _destination!);
+      final seg = await fetchOsrmRoute(start: _pickup!, end: _dropoff!);
       if (!mounted) return;
       setState(() => _osrmSegment = seg);
     } catch (e) {
@@ -241,54 +345,15 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     }
   }
 
-  LatLng _snapToPolyline(LatLng p, List<LatLng> polyline) {
-    late LatLng best;
-    double bestD = double.infinity;
-
-    for (var i = 0; i < polyline.length - 1; i++) {
-      final a = polyline[i];
-      final b = polyline[i + 1];
-      final d = _distancePointToSegmentMeters(p, a, b);
-
-      if (d < bestD) {
-        bestD = d;
-        // compute projection again to get the closest LatLng
-        final ax = a.longitude, ay = a.latitude;
-        final bx = b.longitude, by = b.latitude;
-        final px = p.longitude, py = p.latitude;
-
-        final vx = bx - ax, vy = by - ay;
-        final wx = px - ax, wy = py - ay;
-
-        final c1 = vx * wx + vy * wy;
-        final c2 = vx * vx + vy * vy;
-
-        LatLng proj;
-        if (c1 <= 0) {
-          proj = a;
-        } else if (c2 <= c1) {
-          proj = b;
-        } else {
-          final t = c1 / c2;
-          proj = LatLng(ay + t * vy, ax + t * vx);
-        }
-        best = proj;
-      }
-    }
-    return best;
-  }
-
   void _openConfirm() {
-    if (_pickup == null || _destination == null || _selectedRoute == null) {
-      return;
-    }
+    if (_pickup == null || _dropoff == null || _selectedRoute == null) return;
     Navigator.push(
       context,
       MaterialPageRoute(
         builder:
             (_) => ConfirmRidePage(
               pickup: _pickup!,
-              destination: _destination!,
+              destination: _dropoff!,
               routeId: _selectedRoute!.id,
               driverId: _selectedRoute!.driverId,
             ),
@@ -298,12 +363,12 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
 
   @override
   Widget build(BuildContext context) {
-    final hasDest = _destination != null;
+    final hasDest = _searchedDestination != null;
 
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
-        title: const Text('Find a Route to Your Destination'),
+        title: const Text('Find a Route & Set Your Trip'),
         centerTitle: true,
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(64),
@@ -314,13 +379,15 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
               onSubmit: _searchByAddress,
               onClear: () {
                 setState(() {
-                  _destination = null;
+                  _searchedDestination = null;
                   _candidateRoutes = [];
                   _selectedRoute = null;
                   _selectedRoutePoints = [];
                   _pickup = null;
+                  _dropoff = null;
                   _osrmSegment = null;
                   _error = null;
+                  _editTarget = 'auto';
                 });
               },
             ),
@@ -368,7 +435,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     ],
                   ),
 
-                // Passenger OSRM segment (pickup → destination)
+                // Passenger OSRM segment (pickup → dropoff)
                 if (_osrmSegment != null)
                   PolylineLayer(
                     polylines: [
@@ -380,18 +447,18 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     ],
                   ),
 
-                // Destination marker
-                if (_destination != null)
+                // Optional: marker for the searched destination (as a hint)
+                if (_searchedDestination != null)
                   MarkerLayer(
                     markers: [
                       Marker(
-                        point: _destination!,
-                        width: 34,
-                        height: 34,
+                        point: _searchedDestination!,
+                        width: 30,
+                        height: 30,
                         child: const Icon(
-                          Icons.flag,
-                          color: Colors.red,
-                          size: 30,
+                          Icons.place,
+                          color: Colors.orange,
+                          size: 28,
                         ),
                       ),
                     ],
@@ -403,12 +470,29 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     markers: [
                       Marker(
                         point: _pickup!,
-                        width: 34,
-                        height: 34,
+                        width: 36,
+                        height: 36,
                         child: const Icon(
                           Icons.location_pin,
                           color: Colors.green,
-                          size: 34,
+                          size: 36,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                // Dropoff marker
+                if (_dropoff != null)
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: _dropoff!,
+                        width: 34,
+                        height: 34,
+                        child: const Icon(
+                          Icons.flag,
+                          color: Colors.red,
+                          size: 30,
                         ),
                       ),
                     ],
@@ -489,13 +573,19 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                         const SizedBox(width: 6),
                         Flexible(
                           child: Text(
-                            _destination == null
+                            _searchedDestination == null
                                 ? 'Type an address to find matching driver routes'
                                 : _selectedRoute == null
                                 ? 'Pick a route above'
                                 : _pickup == null
-                                ? 'Tap the map to set your PICKUP on this route'
-                                : 'Tap the map again to adjust your pickup',
+                                ? 'Tap the map to set your PICKUP on the route'
+                                : _dropoff == null
+                                ? 'Tap again to set your DROPOFF'
+                                : _editTarget == 'pickup'
+                                ? 'Tap the map to adjust your PICKUP'
+                                : _editTarget == 'dropoff'
+                                ? 'Tap the map to adjust your DROPOFF'
+                                : 'Tap the map to start over (new pickup)',
                             style: const TextStyle(color: Colors.black54),
                           ),
                         ),
@@ -503,31 +593,68 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     ),
                     const SizedBox(height: 10),
 
-                    // Status pills
-                    Row(
+                    // Status + tiny edit toggles
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
                         _Pill(
                           icon: Icons.flag,
                           label:
-                              _destination == null
-                                  ? 'Destination: —'
+                              _searchedDestination == null
+                                  ? 'Destination (search): —'
                                   : 'Destination set',
                         ),
-                        const SizedBox(width: 8),
-                        _Pill(
-                          icon: Icons.alt_route,
-                          label:
+                        GestureDetector(
+                          onTap:
                               _selectedRoute == null
-                                  ? 'Route: —'
-                                  : 'Route selected',
+                                  ? null
+                                  : () =>
+                                      setState(() => _editTarget = 'pickup'),
+                          child: _Pill(
+                            icon: Icons.location_pin,
+                            label:
+                                _pickup == null
+                                    ? 'Pickup: —'
+                                    : _editTarget == 'pickup'
+                                    ? 'Pickup (editing)'
+                                    : 'Pickup set',
+                            borderEmphasis: _editTarget == 'pickup',
+                          ),
                         ),
-                        const SizedBox(width: 8),
-                        _Pill(
-                          icon: Icons.location_pin,
-                          label: _pickup == null ? 'Pickup: —' : 'Pickup set',
+                        GestureDetector(
+                          onTap:
+                              _selectedRoute == null
+                                  ? null
+                                  : () =>
+                                      setState(() => _editTarget = 'dropoff'),
+                          child: _Pill(
+                            icon: Icons.outbound,
+                            label:
+                                _dropoff == null
+                                    ? 'Dropoff: —'
+                                    : _editTarget == 'dropoff'
+                                    ? 'Dropoff (editing)'
+                                    : 'Dropoff set',
+                            borderEmphasis: _editTarget == 'dropoff',
+                          ),
                         ),
+                        if (_pickup != null || _dropoff != null)
+                          TextButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _pickup = null;
+                                _dropoff = null;
+                                _osrmSegment = null;
+                                _editTarget = 'auto';
+                              });
+                            },
+                            icon: const Icon(Icons.refresh, size: 18),
+                            label: const Text('Reset points'),
+                          ),
                       ],
                     ),
+
                     const SizedBox(height: 12),
 
                     // CTA
@@ -546,7 +673,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                             BoxShadow(
                               color: _purple.withOpacity(0.25),
                               blurRadius: 16,
-                              offset: Offset(0, 8),
+                              offset: const Offset(0, 8),
                             ),
                           ],
                         ),
@@ -561,7 +688,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                           ),
                           onPressed:
                               (_pickup != null &&
-                                      _destination != null &&
+                                      _dropoff != null &&
                                       _selectedRoute != null)
                                   ? _openConfirm
                                   : null,
@@ -632,6 +759,10 @@ class _SearchBar extends StatelessWidget {
                 hintText: 'Enter your destination',
               ),
               onSubmitted: onSubmit,
+              onChanged: (_) {
+                // rebuild to show/hide clear icon
+                (context as Element).markNeedsBuild();
+              },
             ),
           ),
           if (controller.text.isNotEmpty)
@@ -698,20 +829,31 @@ class _RouteChip extends StatelessWidget {
 }
 
 class _Pill extends StatelessWidget {
-  const _Pill({required this.icon, required this.label});
+  const _Pill({
+    required this.icon,
+    required this.label,
+    this.borderEmphasis = false,
+  });
+
   final IconData icon;
   final String label;
+  final bool borderEmphasis;
 
   @override
   Widget build(BuildContext context) {
+    final base = Colors.grey.shade100;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.grey.shade100,
+        color: base,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.black12),
+        border: Border.all(
+          color: borderEmphasis ? const Color(0xFF6A27F7) : Colors.black12,
+          width: borderEmphasis ? 2 : 1,
+        ),
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 14, color: Colors.black54),
           const SizedBox(width: 6),
