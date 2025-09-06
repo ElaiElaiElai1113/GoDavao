@@ -10,7 +10,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 // OSRM
 import 'package:godavao/core/osrm_service.dart';
-
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
 
 class PassengerRidesPage extends StatefulWidget {
@@ -25,6 +24,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
   final supabase = Supabase.instance.client;
   late TabController _tabController;
   bool _loading = true;
+  bool _working = false; // prevents double taps while cancelling
 
   List<Map<String, dynamic>> _upcoming = [];
   List<Map<String, dynamic>> _history = [];
@@ -228,6 +228,76 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
     );
   }
 
+  Future<void> _cancelRide(String rideId, {String? reason}) async {
+    if (_working) return;
+    setState(() => _working = true);
+    try {
+      await supabase.rpc(
+        'cancel_ride',
+        params: {'p_ride_id': rideId, 'p_reason': reason},
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Ride canceled')));
+      await _loadRides();
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Cancel failed: ${e.message}')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Cancel failed: $e')));
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  Future<void> _confirmCancel(String rideId) async {
+    final reasonCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Cancel this ride?'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'You can optionally tell the driver why you’re cancelling.',
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: reasonCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Reason (optional)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Keep Ride'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Cancel Ride'),
+              ),
+            ],
+          ),
+    );
+    if (ok == true) {
+      final reason =
+          reasonCtrl.text.trim().isEmpty ? null : reasonCtrl.text.trim();
+      await _cancelRide(rideId, reason: reason);
+    }
+  }
+
   Widget _buildCard(Map<String, dynamic> ride, {required bool upcoming}) {
     final dt = DateFormat(
       'MMM d, y • h:mm a',
@@ -379,21 +449,16 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
             if (upcoming)
               Row(
                 children: [
-                  if (status == 'pending')
+                  if (status == 'pending' || status == 'accepted')
                     Expanded(
                       child: _primaryGradientButton(
-                        label: 'Cancel Ride',
+                        label: _working ? 'Cancelling…' : 'Cancel Ride',
                         icon: Icons.close,
-                        onPressed: () async {
-                          await supabase
-                              .from('ride_requests')
-                              .update({'status': 'cancelled'})
-                              .eq('id', ride['id']);
-                          _loadRides();
-                        },
+                        onPressed: () => _confirmCancel(ride['id'] as String),
                       ),
                     ),
                   if (status == 'accepted' || status == 'en_route') ...[
+                    const SizedBox(width: 10),
                     Expanded(
                       child: _primaryGradientButton(
                         label: 'Contact Driver',
@@ -485,13 +550,9 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
                   controller: _tabController,
                   indicator: BoxDecoration(
                     color: _purple,
-                    borderRadius: BorderRadius.circular(
-                      30,
-                    ), // Makes the indicator rounded
+                    borderRadius: BorderRadius.circular(30),
                   ),
-                  indicatorSize:
-                      TabBarIndicatorSize
-                          .tab, // <-- Important! Fills the whole tab
+                  indicatorSize: TabBarIndicatorSize.tab,
                   labelColor: Colors.white,
                   unselectedLabelColor: Colors.black87,
                   dividerColor: Colors.transparent,
