@@ -66,7 +66,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   Map<String, dynamic>? _driverAggregate;
   bool _fetchingDriverAgg = false;
 
-  // Live driver state for nice interpolation
+  // Live driver state for interpolation
   LatLng? _driverPrev, _driverNext, _driverInterp;
   double _driverHeading = 0;
 
@@ -111,9 +111,9 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   @override
   void dispose() {
     _publisher.stop();
-    _rideChannel?.let(_sb.removeChannel);
-    _driverLocChannel?.let(_sb.removeChannel);
-    _selfLocChannel?.let(_sb.removeChannel);
+    if (_rideChannel != null) _sb.removeChannel(_rideChannel!);
+    if (_driverLocChannel != null) _sb.removeChannel(_driverLocChannel!);
+    if (_selfLocChannel != null) _sb.removeChannel(_selfLocChannel!);
     _driverAnim.dispose();
     super.dispose();
   }
@@ -196,6 +196,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
       _driverId = (dr as Map)['driver_id']?.toString();
       if (_driverId != null) {
         _subscribeDriverLive(_driverId!);
+        await _seedDriverLive(_driverId!); // ← seed immediate position
         await _fetchDriverAggregate();
       }
     }
@@ -269,29 +270,15 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
             .onPostgresChanges(
               schema: 'public',
               table: 'live_locations',
-              event: PostgresChangeEvent.insert,
+              event: PostgresChangeEvent.all, // insert + update + delete
               filter: PostgresChangeFilter(
                 type: PostgresChangeFilterType.eq,
                 column: 'user_id',
                 value: driverUserId,
               ),
               callback: (payload) {
-                final rec = payload.newRecord;
-                _consumeDriverLocation(rec);
-              },
-            )
-            .onPostgresChanges(
-              schema: 'public',
-              table: 'live_locations',
-              event: PostgresChangeEvent.update,
-              filter: PostgresChangeFilter(
-                type: PostgresChangeFilterType.eq,
-                column: 'user_id',
-                value: driverUserId,
-              ),
-              callback: (payload) {
-                final rec = payload.newRecord;
-                _consumeDriverLocation(rec);
+                final rec = payload.newRecord ?? payload.oldRecord;
+                if (rec != null) _consumeDriverLocation(rec);
               },
             )
             .subscribe();
@@ -304,32 +291,15 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
             .onPostgresChanges(
               schema: 'public',
               table: 'live_locations',
-              event: PostgresChangeEvent.insert,
+              event: PostgresChangeEvent.all,
               filter: PostgresChangeFilter(
                 type: PostgresChangeFilterType.eq,
                 column: 'user_id',
                 value: selfUserId,
               ),
               callback: (payload) {
-                final rec = payload.newRecord;
-                final lat = (rec['lat'] as num?)?.toDouble();
-                final lng = (rec['lng'] as num?)?.toDouble();
-                if (lat == null || lng == null) return;
-                if (!mounted) return;
-                setState(() => _selfLive = LatLng(lat, lng));
-              },
-            )
-            .onPostgresChanges(
-              schema: 'public',
-              table: 'live_locations',
-              event: PostgresChangeEvent.update,
-              filter: PostgresChangeFilter(
-                type: PostgresChangeFilterType.eq,
-                column: 'user_id',
-                value: selfUserId,
-              ),
-              callback: (payload) {
-                final rec = payload.newRecord;
+                final rec = payload.newRecord ?? payload.oldRecord;
+                if (rec == null) return;
                 final lat = (rec['lat'] as num?)?.toDouble();
                 final lng = (rec['lng'] as num?)?.toDouble();
                 if (lat == null || lng == null) return;
@@ -338,6 +308,27 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
               },
             )
             .subscribe();
+  }
+
+  // Seed driver position once (before realtime updates arrive)
+  Future<void> _seedDriverLive(String driverUserId) async {
+    final res =
+        await _sb
+            .from('live_locations')
+            .select('lat,lng,heading')
+            .eq('user_id', driverUserId)
+            .maybeSingle();
+
+    if (res == null) return;
+    final lat = (res['lat'] as num?)?.toDouble();
+    final lng = (res['lng'] as num?)?.toDouble();
+    if (lat == null || lng == null) return;
+
+    _consumeDriverLocation({
+      'lat': lat,
+      'lng': lng,
+      'heading': (res['heading'] as num?)?.toDouble(),
+    });
   }
 
   // -------- driver interpolation ----------
@@ -425,6 +416,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
       ),
       child: Text(
         status.toUpperCase(),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: color,
           fontWeight: FontWeight.w700,
@@ -486,6 +479,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                   : Icon(icon, color: Colors.white),
           label: Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w700,
@@ -701,7 +696,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                         if (_driverId != null)
                           VerifiedBadge(userId: _driverId!, size: 18),
                         const Spacer(),
-                        _statusPill(status),
+                        Flexible(child: _statusPill(status)), // <- safe
                       ],
                     ),
                     const SizedBox(height: 6),
@@ -712,11 +707,16 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                         children: [
                           UserRatingBadge(userId: _driverId!, iconSize: 16),
                           const SizedBox(width: 6),
-                          Text(
-                            driverRatingText,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          Expanded(
+                            child: Text(
+                              driverRatingText,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
-                          const Spacer(),
                           TextButton(
                             onPressed: () {
                               showModalBottomSheet(
@@ -745,8 +745,13 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                           color: Colors.black54,
                         ),
                         const SizedBox(width: 6),
+                        const Text(
+                          'Fare:',
+                          style: TextStyle(color: Colors.black54),
+                        ),
+                        const SizedBox(width: 4),
                         Text(
-                          'Fare: ₱${fare.toStringAsFixed(2)}',
+                          '₱${fare.toStringAsFixed(2)}',
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                         const Spacer(),
@@ -832,9 +837,4 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
       ),
     );
   }
-}
-
-// tiny helpers
-extension _Chan on RealtimeChannel {
-  void let(void Function(RealtimeChannel ch) f) => f(this);
 }
