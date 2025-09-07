@@ -169,6 +169,9 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
       ),
       child: Text(
         status.toUpperCase(),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        softWrap: false,
         style: TextStyle(
           color: c,
           fontWeight: FontWeight.w700,
@@ -210,6 +213,9 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
                   : Icon(icon, color: Colors.white, size: 18),
           label: Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            softWrap: false,
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w700,
@@ -399,9 +405,11 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
 
             const SizedBox(height: 10),
 
-            // Addresses
+            // Addresses (constrain long strings)
             Text(
               '${ride['pickup_address']} → ${ride['destination_address']}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 4),
@@ -418,6 +426,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
                 Expanded(
                   child: Text(
                     'Driver: ${driverId ?? 'unassigned'}',
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -437,10 +446,18 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
                 const SizedBox(width: 10),
                 const Icon(Icons.access_time, size: 14, color: Colors.black54),
                 const SizedBox(width: 4),
-                Text(dt, style: const TextStyle(color: Colors.black54)),
-                const Spacer(),
+                Expanded(
+                  child: Text(
+                    dt,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
+                    style: const TextStyle(color: Colors.black54),
+                  ),
+                ),
               ],
             ),
+            const SizedBox(height: 6),
             _statusPill(status),
 
             const SizedBox(height: 10),
@@ -489,7 +506,11 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
                   );
                 },
                 icon: const Icon(Icons.chevron_right),
-                label: const Text('View details'),
+                label: const Text(
+                  'View details',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 style: TextButton.styleFrom(foregroundColor: _purple),
               ),
             ),

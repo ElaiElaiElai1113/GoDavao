@@ -69,7 +69,6 @@ class _DashboardPageState extends State<DashboardPage> {
       return;
     }
     try {
-      // Keep the selection tight
       final res =
           await _sb
               .from('users')
@@ -81,10 +80,9 @@ class _DashboardPageState extends State<DashboardPage> {
       setState(() {
         _user = res;
 
-        // Seed enum from snapshot to prevent "pending" flash
         final vs = (res['verification_status'] ?? '').toString().toLowerCase();
         if (vs == 'verified' || vs == 'approved') {
-          _verifStatus = VerificationStatus.verified; // backward-compatible
+          _verifStatus = VerificationStatus.verified;
         } else if (vs == 'pending') {
           _verifStatus = VerificationStatus.pending;
         } else if (vs == 'rejected') {
@@ -96,7 +94,7 @@ class _DashboardPageState extends State<DashboardPage> {
         _loading = false;
       });
 
-      // Start/restart realtime watcher
+      // start realtime watcher
       _verifSub?.cancel();
       _verifSub = _verifSvc.watchStatus(userId: u.id).listen((s) {
         if (!mounted) return;
@@ -194,7 +192,6 @@ class _DashboardPageState extends State<DashboardPage> {
     final vehicleInfo = _user?['vehicle_info'] as String?;
     final isDriver = role == 'driver';
 
-    // Drive UI from enum
     final isVerified = _verifStatus == VerificationStatus.verified;
 
     final overviewLeftLabel = isDriver ? 'Active Routes' : 'Upcoming';
@@ -263,6 +260,8 @@ class _DashboardPageState extends State<DashboardPage> {
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w600,
                                   ),
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -280,7 +279,11 @@ class _DashboardPageState extends State<DashboardPage> {
                                   backgroundColor: Colors.orange,
                                   foregroundColor: Colors.white,
                                 ),
-                                child: const Text('Verify'),
+                                child: const Text(
+                                  'Verify',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                             ],
                           ),
@@ -312,6 +315,8 @@ class _DashboardPageState extends State<DashboardPage> {
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Text(
                         'Quick Actions',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(fontWeight: FontWeight.w700),
                       ),
@@ -359,6 +364,8 @@ class _DashboardPageState extends State<DashboardPage> {
                                     child: const Text(
                                       'Driver features are locked until your verification is approved.',
                                       style: TextStyle(color: Colors.black54),
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ))
                               : _ActionGrid(
@@ -407,6 +414,8 @@ class _DashboardPageState extends State<DashboardPage> {
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Text(
                           'Overview',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(fontWeight: FontWeight.w700),
                         ),
@@ -508,8 +517,8 @@ class _HeroHeader extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: 25),
+          // Use default mainAxisSize (max) so Expanded works correctly
           Row(
-            mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.start,
             children: [
               IconButton(
@@ -522,6 +531,7 @@ class _HeroHeader extends StatelessWidget {
                 backgroundColor: Colors.white,
                 child: Text(
                   name.isNotEmpty ? name[0].toUpperCase() : '?',
+                  overflow: TextOverflow.clip,
                   style: TextStyle(
                     color: purpleDark,
                     fontWeight: FontWeight.w800,
@@ -530,12 +540,15 @@ class _HeroHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
+              // Constrain text area
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       'Welcome back,',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(
                         context,
                       ).textTheme.labelLarge?.copyWith(color: Colors.white70),
@@ -543,6 +556,8 @@ class _HeroHeader extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.w800,
@@ -551,6 +566,8 @@ class _HeroHeader extends StatelessWidget {
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
+              // Role chip with safe text
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
@@ -562,6 +579,7 @@ class _HeroHeader extends StatelessWidget {
                   border: Border.all(color: Colors.white24),
                 ),
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
                       role == 'driver'
@@ -571,11 +589,17 @@ class _HeroHeader extends StatelessWidget {
                       size: 18,
                     ),
                     const SizedBox(width: 6),
-                    Text(
-                      role.toUpperCase(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
+                    // Constrain role text to avoid infinite width
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 90),
+                      child: Text(
+                        role.toUpperCase(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ],
@@ -649,6 +673,8 @@ class _ActionGrid extends StatelessWidget {
                   const Spacer(),
                   Text(
                     it.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 15,
@@ -657,6 +683,8 @@ class _ActionGrid extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     it.subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: Colors.black54, fontSize: 12),
                   ),
                 ],
@@ -713,11 +741,15 @@ class _StatCard extends StatelessWidget {
               children: [
                 Text(
                   label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Colors.black54, fontSize: 12),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(
                     context,
                   ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
@@ -783,7 +815,11 @@ class _VehicleCard extends StatelessWidget {
           TextButton.icon(
             onPressed: onManage,
             icon: const Icon(Icons.settings, size: 18),
-            label: const Text('Manage'),
+            label: const Text(
+              'Manage',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ],
       ),
@@ -804,12 +840,22 @@ class _ErrorState extends StatelessWidget {
         const SizedBox(height: 40),
         const Icon(Icons.error_outline, color: Colors.red, size: 64),
         const SizedBox(height: 12),
-        Center(child: Text(message, style: const TextStyle(fontSize: 18))),
+        Center(
+          child: Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 18),
+          ),
+        ),
         const SizedBox(height: 20),
         FilledButton.icon(
           onPressed: onRetry,
           icon: const Icon(Icons.refresh),
-          label: const Text('Retry'),
+          label: const Text(
+            'Retry',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
         const SizedBox(height: 8),
         TextButton.icon(
@@ -821,7 +867,11 @@ class _ErrorState extends StatelessWidget {
             );
           },
           icon: const Icon(Icons.logout),
-          label: const Text('Logout and Re-authenticate'),
+          label: const Text(
+            'Logout and Re-authenticate',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       ],
     );
