@@ -10,12 +10,15 @@ class DriverMarker extends StatelessWidget {
     this.color = const Color(0xFF2962FF),
     this.icon = Icons.directions_car_filled_rounded,
     this.label,
+    this.mapRotationDeg =
+        0, // ← if your map can rotate, pass the map’s rotation
+    this.headingSmoothing = 0.25, // ← 0=none, 0.2–0.35 is mild smoothing
   });
 
   /// Visual size of the marker widget (square).
   final double size;
 
-  /// Heading in degrees (0..360), where 0 is pointing up (north).
+  /// Heading in degrees (0..360), where 0 is geographic north (up).
   final double headingDeg;
 
   /// Whether to show the pulse ring.
@@ -30,26 +33,36 @@ class DriverMarker extends StatelessWidget {
   /// Optional small label under the marker (e.g., plate).
   final String? label;
 
+  /// Degrees of map rotation (0 if north-up). If you rotate the map, set this so
+  /// the icon still points the direction of travel visually.
+  final double mapRotationDeg;
+
+  /// 0..1 — how much to smooth heading frame-to-frame (cheap low-pass in an
+  /// internal stateful wrapper).
+  final double headingSmoothing;
+
   @override
   Widget build(BuildContext context) {
-    final angleRad = headingDeg * math.pi / 180.0;
+    // Normalize + compensate for map rotation
+    final normalized = _norm(headingDeg);
+    final visualHeading = _norm(normalized - mapRotationDeg);
 
-    final marker = Stack(
-      alignment: Alignment.center,
-      children: [
-        // Pulse ring
-        if (active)
-          _PulsingRing(
-            color: color.withOpacity(0.25),
-            maxRadius: size * 0.9,
-            minRadius: size * 0.7,
-            duration: const Duration(seconds: 2),
-          ),
+    final marker = _SmoothedRotation(
+      angleDeg: visualHeading,
+      smoothing: headingSmoothing,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          if (active)
+            _PulsingRing(
+              color: color.withOpacity(0.25),
+              maxRadius: size * 0.9,
+              minRadius: size * 0.7,
+              duration: const Duration(seconds: 2),
+            ),
 
-        // Rotating car icon inside a circular chip
-        Transform.rotate(
-          angle: angleRad,
-          child: Container(
+          // Rotating car icon inside a circular chip
+          Container(
             width: size,
             height: size,
             decoration: BoxDecoration(
@@ -66,8 +79,8 @@ class DriverMarker extends StatelessWidget {
             ),
             child: Icon(icon, color: color, size: size * 0.6),
           ),
-        ),
-      ],
+        ],
+      ),
     );
 
     if (label == null || label!.isEmpty) return marker;
@@ -90,17 +103,31 @@ class DriverMarker extends StatelessWidget {
               ),
             ],
           ),
-          child: Text(
-            label!,
-            style: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: 120,
+            ), // safe on small screens
+            child: Text(
+              label!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
             ),
           ),
         ),
       ],
     );
+  }
+
+  double _norm(double d) {
+    if (d.isNaN || !d.isFinite) return 0;
+    var x = d % 360;
+    if (x < 0) x += 360;
+    return x;
   }
 }
 
@@ -156,5 +183,85 @@ class _PulsingRingState extends State<_PulsingRing>
         );
       },
     );
+  }
+}
+
+/// Smoothly rotates the child to the requested heading.
+/// - Handles wrap-around (359° → 0°) via shortest-arc tweening.
+/// - Optional low-pass to damp jitter from GPS headings.
+class _SmoothedRotation extends StatefulWidget {
+  const _SmoothedRotation({
+    required this.child,
+    required this.angleDeg,
+    required this.smoothing,
+  });
+
+  final Widget child;
+  final double angleDeg;
+  final double smoothing;
+
+  @override
+  State<_SmoothedRotation> createState() => _SmoothedRotationState();
+}
+
+class _SmoothedRotationState extends State<_SmoothedRotation>
+    with SingleTickerProviderStateMixin {
+  late double _displayDeg = widget.angleDeg;
+  late final AnimationController _ac = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+  );
+
+  @override
+  void didUpdateWidget(covariant _SmoothedRotation oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // Low-pass filter on the target angle
+    final a = _displayDeg;
+    final b = widget.angleDeg;
+    final alpha = widget.smoothing.clamp(0.0, 1.0);
+    final target = _lerpAngleDeg(a, b, 1.0 - (1.0 - alpha)); // simple low-pass
+
+    // Animate via shortest arc
+    final delta = _shortestDelta(a, target);
+    _displayDeg = a + delta;
+
+    // Kick a brief animation frame; child is wrapped by Transform.rotate below
+    _ac
+      ..stop()
+      ..forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _ac.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ac,
+      builder: (_, child) {
+        // We only need the final angle; the controller just triggers a rebuild.
+        final angleRad = _displayDeg * math.pi / 180.0;
+        return Transform.rotate(angle: angleRad, child: child);
+      },
+      child: widget.child,
+    );
+  }
+
+  // Returns the shortest angular delta (degrees) to go from a -> b
+  double _shortestDelta(double a, double b) {
+    double d = ((b - a + 540) % 360) - 180;
+    // ease small jumps (prevents micro jitter)
+    if (d.abs() < 0.5) d = 0;
+    return d;
+  }
+
+  // Linear interpolate on a circle (not strictly needed here, but handy)
+  double _lerpAngleDeg(double a, double b, double t) {
+    final d = _shortestDelta(a, b);
+    return a + d * t;
   }
 }
