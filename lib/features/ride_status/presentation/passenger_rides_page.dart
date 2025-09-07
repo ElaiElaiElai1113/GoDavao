@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:godavao/features/ride_status/presentation/passenger_ride_status_page.dart';
-import 'package:godavao/features/verify/presentation/admin_menu_action.dart';
+// import 'package:godavao/features/verify/presentation/admin_menu_action.dart'; // <- remove this import
 import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:intl/intl.dart';
@@ -19,17 +19,17 @@ class PassengerRidesPage extends StatefulWidget {
   State<PassengerRidesPage> createState() => _PassengerRidesPageState();
 }
 
-class _PassengerRidesPageState extends State<PassengerRidesPage>
-    with SingleTickerProviderStateMixin {
+class _PassengerRidesPageState extends State<PassengerRidesPage> {
   final supabase = Supabase.instance.client;
-  late TabController _tabController;
+
   bool _loading = true;
   bool _working = false; // prevents double taps while cancelling
+  String? _error;
 
   List<Map<String, dynamic>> _upcoming = [];
   List<Map<String, dynamic>> _history = [];
 
-  // Theme tokens (match the other pages)
+  // Theme tokens
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
   static const _bg = Color(0xFFF7F7FB);
@@ -37,7 +37,6 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
     _loadRides();
   }
 
@@ -58,9 +57,8 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
   // Safely extract driverId from a ride row (handles map or list)
   String? _extractDriverId(Map<String, dynamic> ride) {
     final rel = ride['driver_routes'];
-    if (rel is Map && rel['driver_id'] != null) {
+    if (rel is Map && rel['driver_id'] != null)
       return rel['driver_id'].toString();
-    }
     if (rel is List &&
         rel.isNotEmpty &&
         rel.first is Map &&
@@ -71,10 +69,16 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
   }
 
   Future<void> _loadRides() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     final user = supabase.auth.currentUser;
     if (user == null) {
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _error = 'You are not signed in.';
+      });
       return;
     }
 
@@ -117,28 +121,36 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
 
       setState(() {
         _upcoming =
-            enriched.where((r) {
-              final st = r['status'] as String;
-              return ['pending', 'accepted', 'en_route'].contains(st);
-            }).toList();
+            enriched
+                .where(
+                  (r) => [
+                    'pending',
+                    'accepted',
+                    'en_route',
+                  ].contains(r['status'] as String),
+                )
+                .toList();
 
         _history =
-            enriched.where((r) {
-              final st = r['status'] as String;
-              return [
-                'completed',
-                'declined',
-                'cancelled',
-                'canceled',
-              ].contains(st);
-            }).toList();
+            enriched
+                .where(
+                  (r) => [
+                    'completed',
+                    'declined',
+                    'cancelled',
+                    'canceled',
+                  ].contains(r['status'] as String),
+                )
+                .toList();
       });
     } catch (e) {
-      debugPrint('Error loading rides: $e');
+      setState(() => _error = 'Failed to load rides.');
     } finally {
       setState(() => _loading = false);
     }
   }
+
+  // -------- UI bits
 
   Color _statusColor(String s) {
     switch (s) {
@@ -171,7 +183,6 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
         status.toUpperCase(),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        softWrap: false,
         style: TextStyle(
           color: c,
           fontWeight: FontWeight.w700,
@@ -215,7 +226,6 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            softWrap: false,
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w700,
@@ -436,7 +446,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
             ),
             const SizedBox(height: 4),
 
-            // Fare + time + status pill
+            // Fare + time
             Row(
               children: [
                 Text(
@@ -451,7 +461,6 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
                     dt,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    softWrap: false,
                     style: const TextStyle(color: Colors.black54),
                   ),
                 ),
@@ -520,12 +529,25 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
     );
   }
 
-  // --- Scaffold --------------------------------------------------------------
+  // ---------------- Scaffold ----------------
 
   @override
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (_error != null) {
+      return Scaffold(
+        backgroundColor: _bg,
+        appBar: AppBar(
+          title: const Text('My Rides'),
+          backgroundColor: Colors.white,
+          elevation: 0,
+          surfaceTintColor: Colors.white,
+        ),
+        body: Center(child: Text(_error!)),
+      );
     }
 
     return DefaultTabController(
@@ -537,54 +559,49 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.white,
           elevation: 0,
-          actions: [
-            AdminMenuAction(),
-            IconButton(
-              icon: const Icon(Icons.verified_user),
-              tooltip: 'Get Verified',
-              onPressed: () {
-                showModalBottomSheet(
-                  context: context,
-                  isScrollControlled: true,
-                  builder: (_) => const VerifyIdentitySheet(role: 'passenger'),
-                );
-              },
-            ),
+          actions: const [
+            _AdminMenuButton(), // <- SAFE replacement
           ],
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(56),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(999),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
+              child: Material(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(999),
+                child: Theme(
+                  data: Theme.of(context).copyWith(
+                    tabBarTheme: const TabBarTheme(
+                      labelColor: Colors.white,
+                      unselectedLabelColor: Colors.black87,
+                      indicatorSize: TabBarIndicatorSize.tab,
                     ),
-                  ],
-                ),
-                child: TabBar(
-                  controller: _tabController,
-                  indicator: BoxDecoration(
-                    color: _purple,
-                    borderRadius: BorderRadius.circular(30),
                   ),
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  labelColor: Colors.white,
-                  unselectedLabelColor: Colors.black87,
-                  dividerColor: Colors.transparent,
-                  tabs: const [Tab(text: 'Upcoming'), Tab(text: 'History')],
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(999),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: const TabBar(
+                      indicator: BoxDecoration(
+                        color: Color(0xFF6A27F7),
+                        borderRadius: BorderRadius.all(Radius.circular(30)),
+                      ),
+                      tabs: [Tab(text: 'Upcoming'), Tab(text: 'History')],
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
         ),
         body: TabBarView(
-          controller: _tabController,
           children: [
             RefreshIndicator(
               onRefresh: _loadRides,
@@ -611,10 +628,32 @@ class _PassengerRidesPageState extends State<PassengerRidesPage>
       ),
     );
   }
+}
+
+/// Small, AppBar-safe popup menu (no ListTile, no unbounded width)
+class _AdminMenuButton extends StatelessWidget {
+  const _AdminMenuButton();
 
   @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      tooltip: 'Admin',
+      icon: const Icon(Icons.admin_panel_settings),
+      onSelected: (value) {
+        // TODO: navigate to your admin pages depending on value
+        // e.g. if (value == 'verification') { Navigator.push(...); }
+      },
+      itemBuilder:
+          (ctx) => const [
+            PopupMenuItem(
+              value: 'verification',
+              child: Text('Verification Review'),
+            ),
+            PopupMenuItem(
+              value: 'vehicle',
+              child: Text('Vehicle Verification'),
+            ),
+          ],
+    );
   }
 }

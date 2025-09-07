@@ -94,7 +94,7 @@ class _DashboardPageState extends State<DashboardPage> {
         _loading = false;
       });
 
-      // start realtime watcher
+      // realtime watcher
       _verifSub?.cancel();
       _verifSub = _verifSvc.watchStatus(userId: u.id).listen((s) {
         if (!mounted) return;
@@ -102,7 +102,7 @@ class _DashboardPageState extends State<DashboardPage> {
       });
 
       await _loadOverview();
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
         _error = 'Failed to load profile.';
@@ -128,19 +128,16 @@ class _DashboardPageState extends State<DashboardPage> {
             .select('id')
             .eq('driver_id', uid)
             .eq('is_active', true);
-        final activeCount = (activeRoutes as List).length;
-
         final pendingMatches = await _sb
             .from('ride_matches')
             .select('id')
             .eq('driver_id', uid)
             .eq('status', 'pending');
-        final pendingCount = (pendingMatches as List).length;
 
         if (!mounted) return;
         setState(() {
-          _driverActiveRoutes = activeCount;
-          _driverPendingRequests = pendingCount;
+          _driverActiveRoutes = (activeRoutes as List).length;
+          _driverPendingRequests = (pendingMatches as List).length;
         });
       } else {
         final upcoming = await _sb
@@ -148,8 +145,6 @@ class _DashboardPageState extends State<DashboardPage> {
             .select('id')
             .eq('passenger_id', uid)
             .inFilter('status', ['pending', 'accepted', 'en_route']);
-        final upcomingCount = (upcoming as List).length;
-
         final history = await _sb
             .from('ride_requests')
             .select('id')
@@ -160,16 +155,15 @@ class _DashboardPageState extends State<DashboardPage> {
               'cancelled',
               'canceled',
             ]);
-        final historyCount = (history as List).length;
 
         if (!mounted) return;
         setState(() {
-          _passengerUpcoming = upcomingCount;
-          _passengerHistory = historyCount;
+          _passengerUpcoming = (upcoming as List).length;
+          _passengerHistory = (history as List).length;
         });
       }
     } catch (_) {
-      // log or ignore
+      // ignore
     } finally {
       if (mounted) setState(() => _loadingOverview = false);
     }
@@ -209,7 +203,7 @@ class _DashboardPageState extends State<DashboardPage> {
       backgroundColor: _bg,
       drawer: const AppDrawer(),
       body: RefreshIndicator(
-        onRefresh: () async => _fetch(),
+        onRefresh: _fetch,
         child:
             _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -229,7 +223,6 @@ class _DashboardPageState extends State<DashboardPage> {
                             onLogout: _logout,
                           ),
                     ),
-
                     const SizedBox(height: 16),
 
                     // Verification Banner (shows unless verified)
@@ -257,11 +250,11 @@ class _DashboardPageState extends State<DashboardPage> {
                               Expanded(
                                 child: Text(
                                   _statusText(_verifStatus, role),
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w600,
                                   ),
-                                  maxLines: 3,
-                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -363,9 +356,9 @@ class _DashboardPageState extends State<DashboardPage> {
                                     padding: const EdgeInsets.all(16),
                                     child: const Text(
                                       'Driver features are locked until your verification is approved.',
-                                      style: TextStyle(color: Colors.black54),
                                       maxLines: 3,
                                       overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(color: Colors.black54),
                                     ),
                                   ))
                               : _ActionGrid(
@@ -517,9 +510,7 @@ class _HeroHeader extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: 25),
-          // Use default mainAxisSize (max) so Expanded works correctly
           Row(
-            mainAxisAlignment: MainAxisAlignment.start,
             children: [
               IconButton(
                 icon: const Icon(Icons.menu, color: Colors.white),
@@ -531,7 +522,6 @@ class _HeroHeader extends StatelessWidget {
                 backgroundColor: Colors.white,
                 child: Text(
                   name.isNotEmpty ? name[0].toUpperCase() : '?',
-                  overflow: TextOverflow.clip,
                   style: TextStyle(
                     color: purpleDark,
                     fontWeight: FontWeight.w800,
@@ -540,7 +530,6 @@ class _HeroHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              // Constrain text area
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -567,7 +556,6 @@ class _HeroHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              // Role chip with safe text
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
@@ -589,7 +577,6 @@ class _HeroHeader extends StatelessWidget {
                       size: 18,
                     ),
                     const SizedBox(width: 6),
-                    // Constrain role text to avoid infinite width
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 90),
                       child: Text(
