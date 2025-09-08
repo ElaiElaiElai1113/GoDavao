@@ -639,10 +639,7 @@ class _AdminMenuButton extends StatelessWidget {
     return PopupMenuButton<String>(
       tooltip: 'Admin',
       icon: const Icon(Icons.admin_panel_settings),
-      onSelected: (value) {
-        // TODO: navigate to your admin pages depending on value
-        // e.g. if (value == 'verification') { Navigator.push(...); }
-      },
+      onSelected: (value) {},
       itemBuilder:
           (ctx) => const [
             PopupMenuItem(
