@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:godavao/core/reverse_geocoder.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -40,19 +41,8 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
     _loadRides();
   }
 
-  Future<String> _formatAddress(double lat, double lng) async {
-    try {
-      final pm = await placemarkFromCoordinates(lat, lng);
-      if (pm.isEmpty) return 'Unknown';
-      final m = pm.first;
-      final parts = <String?>[m.thoroughfare, m.subLocality, m.locality];
-      return parts
-          .where((s) => s != null && s!.isNotEmpty)
-          .cast<String>()
-          .join(', ');
-    } catch (_) {
-      return 'Unknown';
-    }
+  Future<String> _formatAddress(double lat, double lng) {
+    return reverseGeocodeText(lat, lng);
   }
 
   // Safely extract driverId from a ride row (handles map or list shapes)
