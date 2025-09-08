@@ -4,23 +4,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-import 'package:godavao/main.dart' show localNotify;
-import 'package:godavao/features/safety/presentation/sos_sheet.dart';
-
-// Ratings
+// Chat / Ratings / Safety
+import 'package:godavao/features/chat/presentation/chat_page.dart';
 import 'package:godavao/features/ratings/data/ratings_service.dart';
 import 'package:godavao/features/ratings/presentation/rate_user.dart';
 import 'package:godavao/features/ratings/presentation/rating_details_sheet.dart';
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
+import 'package:godavao/features/verify/presentation/verified_badge.dart';
+import 'package:godavao/features/safety/presentation/sos_sheet.dart';
 
-// Live tracking
+// Live markers/helpers
 import 'package:godavao/features/live_tracking/presentation/driver_marker.dart';
 import 'package:godavao/features/live_tracking/presentation/passenger_marker.dart';
 import 'package:godavao/features/live_tracking/utils/live_tracking_helpers.dart';
 
-// Publisher (ride_id + actor)
+// Publish driver live location
 import 'package:godavao/features/live_tracking/data/live_publisher.dart';
 
 class DriverRideStatusPage extends StatefulWidget {
@@ -33,14 +32,14 @@ class DriverRideStatusPage extends StatefulWidget {
 
 class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     with SingleTickerProviderStateMixin {
-  final supabase = Supabase.instance.client;
+  final sb = Supabase.instance.client;
 
-  // Realtime
+  // Realtime channels
   RealtimeChannel? _rideChannel;
-  RealtimeChannel? _driverLiveChannel; // listens by (ride_id, actor='driver')
-  RealtimeChannel? _passengerLiveChannel;
+  RealtimeChannel? _driverLiveChan; // (ride_id, actor='driver')
+  RealtimeChannel? _passengerLiveChan; // (ride_id, actor='passenger')
 
-  // Map readiness
+  // Map control (+ safe center until ready)
   final MapController _map = MapController();
   bool _mapReady = false;
   LatLng? _pendingCenter;
@@ -54,36 +53,41 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     }
   }
 
-  // Data
-  Map<String, dynamic>? _ride;
-  Map<String, dynamic>? _passenger;
+  // Page state
   bool _loading = true;
   String? _error;
-  bool _ratingPromptShown = false;
+  Map<String, dynamic>? _ride;
+  String? _matchId;
 
-  // Live positions
+  // Passenger identity & ratings
+  String? _passengerId; // users.id
+  bool _fetchingPassengerAgg = false;
+  Map<String, dynamic>? _passengerAggregate;
+
+  // Live driver interpolation (this device)
   LatLng? _driverPrev, _driverNext, _driverInterp;
   double _driverHeading = 0;
-  LatLng? _passengerLive;
-
   late final AnimationController _driverAnim = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 450),
   )..addListener(_onDriverTick);
 
-  bool _followDriver = true;
+  // Live passenger
+  LatLng? _passengerLive;
 
-  // Live publisher (driver)
+  // Camera/UX
+  bool _followDriver = true;
+  bool _ratingPromptShown = false;
+
+  // Publisher for THIS driver
   late final LivePublisher _publisher = LivePublisher(
-    supabase,
-    userId: supabase.auth.currentUser!.id,
+    sb,
+    userId: sb.auth.currentUser!.id,
     rideId: widget.rideId,
     actor: 'driver',
   );
 
-  // Optional polling fallback if realtime drops
-  Timer? _pollFallback;
-
+  // Theme tokens
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
   static const _bg = Color(0xFFF7F7FB);
@@ -91,90 +95,79 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
   @override
   void initState() {
     super.initState();
-    _loadRide();
-    _subscribeRideStatus();
-    _subscribeDriverLive(widget.rideId); // listen for our own published updates
+    _loadAll();
   }
 
   @override
   void dispose() {
-    _rideChannel?.kill(supabase);
-    _driverLiveChannel?.kill(supabase);
-    _passengerLiveChannel?.kill(supabase);
-    _driverAnim.dispose();
-    _pollFallback?.cancel();
     _publisher.stop();
+    _rideChannel._kill(sb);
+    _driverLiveChan._kill(sb);
+    _passengerLiveChan._kill(sb);
+    _driverAnim.dispose();
     super.dispose();
   }
 
-  // -------------------------------------------------
-  // Notifications
-  Future<void> _notify(String title, String body) async {
-    const android = AndroidNotificationDetails(
-      'rides_channel',
-      'Ride Updates',
-      channelDescription: 'Notifications for ride status changes',
-      importance: Importance.max,
-      priority: Priority.high,
-    );
-    const ios = DarwinNotificationDetails();
-    await localNotify.show(
-      0,
-      title,
-      body,
-      const NotificationDetails(android: android, iOS: ios),
-    );
-  }
+  // ----------------------------- LOAD ALL -----------------------------
 
-  // -------------------------------------------------
-  // Data load
-  Future<void> _loadRide() async {
-    if (!mounted) return;
+  Future<void> _loadAll() async {
     setState(() {
       _loading = true;
       _error = null;
     });
 
     try {
-      final r =
-          await supabase
+      // 1) Ride base
+      final ride =
+          await sb
               .from('ride_requests')
               .select('''
             id,
             pickup_lat, pickup_lng,
             destination_lat, destination_lng,
             status,
-            passenger_id,
-            driver_route_id
+            passenger_id
           ''')
               .eq('id', widget.rideId)
               .maybeSingle();
 
-      if (r == null) throw Exception('Ride not found');
-      _ride = Map<String, dynamic>.from(r as Map);
+      if (ride == null) throw Exception('Ride not found');
+      _ride = Map<String, dynamic>.from(ride as Map);
 
-      // center on pickup safely
-      final pickup = LatLng(
-        (_ride!['pickup_lat'] as num).toDouble(),
-        (_ride!['pickup_lng'] as num).toDouble(),
-      );
-      _safeMove(pickup, 13);
+      // 2) Match id (for chat)
+      final match =
+          await sb
+              .from('ride_matches')
+              .select('id')
+              .eq('ride_request_id', widget.rideId)
+              .maybeSingle();
+      _matchId = (match as Map?)?['id']?.toString();
 
-      // fetch passenger + subscribe to passenger live
-      final pid = _ride!['passenger_id']?.toString();
-      if (pid != null) {
-        final u =
-            await supabase
-                .from('users')
-                .select('id, name, avatar_url')
-                .eq('id', pid)
-                .maybeSingle();
-        if (u != null) _passenger = Map<String, dynamic>.from(u as Map);
-        _subscribePassengerLive(pid);
+      // 3) Passenger id + rating aggregate
+      _passengerId = _ride?['passenger_id']?.toString();
+      if (_passengerId != null) {
+        _fetchPassengerAggregate(); // best effort
       }
 
-      _syncPublisherToStatus((_ride!['status'] ?? '').toString());
+      // 4) Seed live positions (driver & passenger) from live_locations by ride/actor
+      await _seedLive('driver');
+      await _seedLive('passenger');
+
+      // 5) Move map to pickup initially
+      _safeMove(_pickup, 13);
+
+      // 6) Wire realtime (ride status + live rows by ride_id/actor)
+      _subscribeRideStatus();
+      _subscribeLive('driver');
+      _subscribeLive('passenger');
+
+      // 7) Start/stop publishing my live based on status
+      _syncPublisherToStatus(status);
+
+      // 8) Maybe show rating prompt immediately if already completed
       await _maybePromptRatingIfCompleted();
+    } on PostgrestException catch (e) {
+      _error = 'Supabase error: ${e.message}';
     } catch (e) {
       _error = e.toString();
     } finally {
@@ -182,32 +175,53 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     }
   }
 
-  // -------------------------------------------------
-  // Realtime: ride status
+  Future<void> _fetchPassengerAggregate() async {
+    if (_passengerId == null || !mounted) return;
+    setState(() => _fetchingPassengerAgg = true);
+    try {
+      final agg = await RatingsService(sb).fetchUserAggregate(_passengerId!);
+      if (!mounted) return;
+      setState(() => _passengerAggregate = agg);
+    } catch (_) {
+      // ignore best effort
+    } finally {
+      if (mounted) setState(() => _fetchingPassengerAgg = false);
+    }
+  }
+
+  // ----------------------------- SUPABASE LIVE -----------------------------
+
   void _subscribeRideStatus() {
     _rideChannel =
-        supabase.channel('ride_requests_${widget.rideId}')
+        sb.channel('ride_requests:${widget.rideId}')
           ..onPostgresChanges(
             schema: 'public',
             table: 'ride_requests',
             event: PostgresChangeEvent.update,
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'id',
-              value: widget.rideId,
-            ),
+            // Filter inside callback (SDK-version-agnostic)
             callback: (payload) async {
-              final updated = Map<String, dynamic>.from(payload.newRecord);
+              final newRec = payload.newRecord;
+              if (newRec == null) return;
+              if (newRec['id']?.toString() != widget.rideId) return;
+
+              final updated = Map<String, dynamic>.from(newRec);
               if (!mounted) return;
 
               setState(() => _ride = updated);
 
-              final st = (updated['status'] ?? '').toString();
-              _syncPublisherToStatus(st);
+              if (status == 'en_route') {
+                setState(() => _followDriver = true);
+              }
 
-              await _notify('Ride Update', 'Status is now $st');
+              // Toggle my publishing
+              _syncPublisherToStatus(status);
 
-              if (st == 'en_route') setState(() => _followDriver = true);
+              // Passenger id might appear late in some flows
+              final pid = updated['passenger_id']?.toString();
+              if (pid != null && pid != _passengerId) {
+                _passengerId = pid;
+                _fetchPassengerAggregate();
+              }
 
               await _maybePromptRatingIfCompleted();
             },
@@ -215,52 +229,21 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
           ..subscribe();
   }
 
-  void _syncPublisherToStatus(String status) {
-    // start sending when accepted/en_route, stop otherwise
-    if (status == 'accepted' || status == 'en_route') {
-      _publisher.start(); // safe/idempotent
-      _ensurePollingFallback();
-    } else if (status == 'completed' ||
-        status == 'cancelled' ||
-        status == 'canceled') {
-      _publisher.stop();
-      _pollFallback?.cancel();
-    }
-  }
-
-  void _ensurePollingFallback() {
-    _pollFallback?.cancel();
-    _pollFallback = Timer.periodic(const Duration(seconds: 10), (_) async {
-      try {
-        // prefer ride_id + actor row
-        final last =
-            await supabase
-                .from('live_locations')
-                .select('lat,lng,heading,updated_at')
-                .eq('ride_id', widget.rideId)
-                .eq('actor', 'driver')
-                .maybeSingle();
-        if (last != null) {
-          _consumeDriverLocation(last as Map);
-        }
-      } catch (_) {}
-    });
-  }
-
-  // -------------------------------------------------
-  // Realtime: live driver (listen to our own published updates)
-  void _subscribeDriverLive(String rideId) {
-    _driverLiveChannel =
-        supabase.channel('live_locations_driver:$rideId')
+  // Listen to live_locations for this ride by actor
+  void _subscribeLive(String actor) {
+    final chan =
+        sb.channel('live_locations:${widget.rideId}:$actor')
           ..onPostgresChanges(
             schema: 'public',
             table: 'live_locations',
             event: PostgresChangeEvent.insert,
             callback: (p) {
-              final rec = p.newRecord;
-              if (rec['ride_id']?.toString() != rideId) return;
-              if (rec['actor']?.toString() != 'driver') return;
-              _consumeDriverLocation(rec);
+              final r = p.newRecord;
+              if (r == null) return;
+              if (r['ride_id']?.toString() == widget.rideId &&
+                  r['actor']?.toString() == actor) {
+                _onLiveRow(actor, r);
+              }
             },
           )
           ..onPostgresChanges(
@@ -268,14 +251,64 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
             table: 'live_locations',
             event: PostgresChangeEvent.update,
             callback: (p) {
-              final rec = p.newRecord;
-              if (rec['ride_id']?.toString() != rideId) return;
-              if (rec['actor']?.toString() != 'driver') return;
-              _consumeDriverLocation(rec);
+              final r = p.newRecord;
+              if (r == null) return;
+              if (r['ride_id']?.toString() == widget.rideId &&
+                  r['actor']?.toString() == actor) {
+                _onLiveRow(actor, r);
+              }
             },
           )
           ..subscribe();
+
+    if (actor == 'driver') {
+      _driverLiveChan = chan;
+    } else {
+      _passengerLiveChan = chan;
+    }
   }
+
+  // One-shot seed of current live row
+  Future<void> _seedLive(String actor) async {
+    final res =
+        await sb
+            .from('live_locations')
+            .select('lat,lng,heading')
+            .eq('ride_id', widget.rideId)
+            .eq('actor', actor)
+            .maybeSingle();
+
+    if (res == null) return;
+    final lat = (res['lat'] as num?)?.toDouble();
+    final lng = (res['lng'] as num?)?.toDouble();
+    if (lat == null || lng == null) return;
+
+    if (actor == 'driver') {
+      _consumeDriverLocation({
+        'lat': lat,
+        'lng': lng,
+        'heading': (res['heading'] as num?)?.toDouble(),
+      });
+    } else {
+      if (!mounted) return;
+      setState(() => _passengerLive = LatLng(lat, lng));
+    }
+  }
+
+  void _onLiveRow(String actor, Map row) {
+    final lat = (row['lat'] as num?)?.toDouble();
+    final lng = (row['lng'] as num?)?.toDouble();
+    if (lat == null || lng == null) return;
+
+    if (actor == 'driver') {
+      _consumeDriverLocation(row);
+    } else {
+      if (!mounted) return;
+      setState(() => _passengerLive = LatLng(lat, lng));
+    }
+  }
+
+  // ----------------------------- DRIVER INTERP -----------------------------
 
   void _consumeDriverLocation(Map rec) {
     final lat = (rec['lat'] as num?)?.toDouble();
@@ -285,6 +318,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     final next = LatLng(lat, lng);
     final hdg = (rec['heading'] as num?)?.toDouble() ?? _driverHeading;
 
+    if (!mounted) return;
     setState(() {
       _driverPrev = _driverInterp ?? _driverNext ?? next;
       _driverNext = next;
@@ -299,55 +333,40 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     if (_driverPrev == null || _driverNext == null) return;
     final t = _driverAnim.value;
     final p = LiveTrackingHelpers.lerp(_driverPrev!, _driverNext!, t);
+
+    if (!mounted) return;
     setState(() => _driverInterp = p);
 
-    final status = (_ride?['status'] ?? '').toString();
     if (_followDriver && status == 'en_route') {
       final z = _mapReady ? _map.camera.zoom : 15.0;
       _safeMove(p, z.clamp(14, 16));
     }
   }
 
-  // -------------------------------------------------
-  // Realtime: passenger live (optional)
-  void _subscribePassengerLive(String passengerUserId) {
-    _passengerLiveChannel =
-        supabase.channel('live_locations_passenger_$passengerUserId')
-          ..onPostgresChanges(
-            schema: 'public',
-            table: 'live_locations',
-            event: PostgresChangeEvent.update,
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'user_id',
-              value: passengerUserId,
-            ),
-            callback: (payload) {
-              final rec = payload.newRecord;
-              final lat = (rec['lat'] as num?)?.toDouble();
-              final lng = (rec['lng'] as num?)?.toDouble();
-              if (lat == null || lng == null) return;
-              setState(() => _passengerLive = LatLng(lat, lng));
-            },
-          )
-          ..subscribe();
+  // ----------------------------- TOGGLING PUBLISHER -----------------------------
+
+  void _syncPublisherToStatus(String s) {
+    // Publish the driver's live location while active
+    if (s == 'accepted' || s == 'en_route') {
+      _publisher.start(); // idempotent
+    } else {
+      _publisher.stop();
+    }
   }
 
-  // -------------------------------------------------
-  // Ratings
+  // ----------------------------- RATING FLOW -----------------------------
+
   Future<void> _maybePromptRatingIfCompleted() async {
     if (_ratingPromptShown) return;
-    final status = _ride?['status']?.toString();
     if (status != 'completed') return;
 
-    final uid = supabase.auth.currentUser?.id;
-    final passengerId = _ride?['passenger_id']?.toString();
-    if (uid == null || passengerId == null) return;
+    final me = sb.auth.currentUser?.id;
+    if (me == null || _passengerId == null) return;
 
-    final existing = await RatingsService(supabase).getExistingRating(
+    final existing = await RatingsService(sb).getExistingRating(
       rideId: widget.rideId,
-      raterUserId: uid,
-      rateeUserId: passengerId,
+      raterUserId: me,
+      rateeUserId: _passengerId!,
     );
     if (existing != null) return;
 
@@ -359,16 +378,125 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
       builder:
           (_) => RateUserSheet(
             rideId: widget.rideId,
-            raterUserId: uid,
-            rateeUserId: passengerId,
-            rateeName: _passenger?['name'] ?? 'Passenger',
+            raterUserId: me,
+            rateeUserId: _passengerId!,
+            rateeName: 'Passenger',
             rateeRole: 'passenger',
           ),
     );
+
+    await _fetchPassengerAggregate();
   }
 
-  // -------------------------------------------------
-  // BUILD
+  // ----------------------------- HELPERS/GETTERS -----------------------------
+
+  LatLng get _pickup => LatLng(
+    (_ride!['pickup_lat'] as num).toDouble(),
+    (_ride!['pickup_lng'] as num).toDouble(),
+  );
+
+  LatLng get _dest => LatLng(
+    (_ride!['destination_lat'] as num).toDouble(),
+    (_ride!['destination_lng'] as num).toDouble(),
+  );
+
+  String get status => (_ride?['status'] as String?) ?? 'pending';
+
+  Widget _statusPill(String s) {
+    final c = _statusColor(s);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: c.withOpacity(.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        s.toUpperCase(),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: c,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+          letterSpacing: .3,
+        ),
+      ),
+    );
+  }
+
+  Color _statusColor(String s) {
+    switch (s) {
+      case 'pending':
+        return Colors.grey;
+      case 'accepted':
+        return Colors.blue;
+      case 'en_route':
+        return Colors.orange;
+      case 'completed':
+        return Colors.green;
+      case 'declined':
+      case 'cancelled':
+      case 'canceled':
+        return Colors.red;
+      default:
+        return Colors.black87;
+    }
+  }
+
+  Widget _primaryGradientButton({
+    required String label,
+    required VoidCallback? onPressed,
+    IconData? icon,
+  }) {
+    return SizedBox(
+      height: 48,
+      width: double.infinity,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          gradient: const LinearGradient(
+            colors: [_purple, _purpleDark],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: _purple.withOpacity(0.25),
+              blurRadius: 14,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: ElevatedButton.icon(
+          onPressed: onPressed,
+          icon:
+              icon == null
+                  ? const SizedBox.shrink()
+                  : Icon(icon, color: Colors.white),
+          label: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            elevation: 0,
+            backgroundColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ----------------------------- BUILD -----------------------------
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -381,27 +509,27 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
       return const Scaffold(body: Center(child: Text('No ride data')));
     }
 
-    final r = _ride!;
-    final pickup = LatLng(
-      (r['pickup_lat'] as num).toDouble(),
-      (r['pickup_lng'] as num).toDouble(),
-    );
-    final dest = LatLng(
-      (r['destination_lat'] as num).toDouble(),
-      (r['destination_lng'] as num).toDouble(),
-    );
-    final status = (r['status'] ?? '').toString();
+    final pickup = _pickup;
+    final dest = _dest;
 
-    final passengerName = (_passenger?['name'] as String?) ?? 'Passenger';
-    final passengerId = r['passenger_id']?.toString();
+    final passengerRatingText = () {
+      if (_fetchingPassengerAgg) return 'Loading…';
+      final avg = (_passengerAggregate?['avg_rating'] as num?)?.toDouble();
+      final cnt = (_passengerAggregate?['rating_count'] as int?) ?? 0;
+      if (avg == null) return 'No ratings yet';
+      return '${avg.toStringAsFixed(2)} ★  ($cnt)';
+    }();
 
-    // Driver marker position pref: live interp > next > pickup
+    // Driver marker position preference: live interp > next > pickup
     final driverPoint = _driverInterp ?? _driverNext ?? pickup;
 
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
         title: const Text('Driver Ride Details'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.white,
         actions: [
           IconButton(
             tooltip: _followDriver ? 'Disable follow' : 'Enable follow',
@@ -427,7 +555,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: Stack(
         children: [
-          // Map
+          // ---- Map ----
           Positioned.fill(
             child: FlutterMap(
               mapController: _map,
@@ -456,7 +584,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                   subdomains: const ['a', 'b', 'c'],
                   userAgentPackageName: 'com.godavao.app',
                 ),
-                // Route overview
+                // Simple straight line (swap to OSRM polyline if desired)
                 PolylineLayer(
                   polylines: [
                     Polyline(
@@ -466,10 +594,9 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                     ),
                   ],
                 ),
-                // Live markers
                 MarkerLayer(
                   markers: [
-                    // Driver
+                    // Driver live (this device)
                     Marker(
                       point: driverPoint,
                       width: 48,
@@ -479,10 +606,9 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                         size: 36,
                         headingDeg: _driverHeading,
                         active: status == 'en_route' || status == 'accepted',
-                        label: null,
                       ),
                     ),
-                    // Passenger: live or pickup
+                    // Passenger live (if available) else pickup
                     Marker(
                       point: _passengerLive ?? pickup,
                       width: 36,
@@ -490,21 +616,21 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                       child:
                           _passengerLive == null
                               ? const Icon(
-                                Icons.location_pin,
+                                Icons.location_on,
                                 color: Colors.green,
-                                size: 36,
+                                size: 38,
                               )
                               : const PassengerMarker(size: 26, ripple: true),
                     ),
                     // Destination
                     Marker(
                       point: dest,
-                      width: 36,
-                      height: 36,
+                      width: 38,
+                      height: 38,
                       child: const Icon(
                         Icons.flag,
                         color: Colors.red,
-                        size: 30,
+                        size: 38,
                       ),
                     ),
                   ],
@@ -513,12 +639,13 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
             ),
           ),
 
-          // Bottom sheet summary
+          // ---- Bottom sheet ----
           Align(
             alignment: Alignment.bottomCenter,
             child: SafeArea(
               top: false,
               child: Container(
+                width: double.infinity,
                 decoration: const BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -526,120 +653,68 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                     BoxShadow(
                       color: Colors.black26,
                       blurRadius: 12,
-                      offset: Offset(0, -6),
+                      offset: Offset(0, -4),
                     ),
                   ],
                 ),
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Passenger row
+                    // Header
                     Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        CircleAvatar(
-                          radius: 20,
-                          backgroundColor: Colors.grey.shade200,
-                          backgroundImage:
-                              (_passenger?['avatar_url'] as String?)
-                                          ?.isNotEmpty ==
-                                      true
-                                  ? NetworkImage(
-                                    _passenger!['avatar_url'] as String,
-                                  )
-                                  : null,
-                          child:
-                              ((_passenger?['avatar_url'] as String?)
-                                          ?.isEmpty ??
-                                      true)
-                                  ? const Icon(
-                                    Icons.person,
-                                    color: Colors.black54,
-                                  )
-                                  : null,
+                        const Text(
+                          'Passenger',
+                          style: TextStyle(fontWeight: FontWeight.w700),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      passengerName,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 16,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  if (passengerId != null)
-                                    UserRatingBadge(
-                                      userId: passengerId,
-                                      iconSize: 14,
-                                    ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  _statusPill(
-                                    'Status: ${status.toUpperCase()}',
-                                    icon: Icons.info_outline,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  if (passengerId != null)
-                                    InkWell(
-                                      onTap: () {
-                                        showModalBottomSheet(
-                                          context: context,
-                                          isScrollControlled: true,
-                                          builder:
-                                              (_) => RatingDetailsSheet(
-                                                userId: passengerId,
-                                                title: 'Passenger feedback',
-                                              ),
-                                        );
-                                      },
-                                      child: const Row(
-                                        children: [
-                                          Icon(
-                                            Icons.reviews,
-                                            size: 16,
-                                            color: Colors.black54,
-                                          ),
-                                          SizedBox(width: 4),
-                                          Text(
-                                            'View feedback',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600,
-                                              color: Colors.black87,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
+                        const SizedBox(width: 6),
+                        if (_passengerId != null)
+                          VerifiedBadge(userId: _passengerId!, size: 18),
+                        const Spacer(),
+                        Flexible(child: _statusPill(status)),
                       ],
                     ),
+                    const SizedBox(height: 6),
 
-                    const SizedBox(height: 12),
+                    // Ratings summary
+                    if (_passengerId != null)
+                      Row(
+                        children: [
+                          UserRatingBadge(userId: _passengerId!, iconSize: 16),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              passengerRatingText,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                builder:
+                                    (_) => RatingDetailsSheet(
+                                      userId: _passengerId!,
+                                      title: 'Passenger feedback',
+                                    ),
+                              );
+                            },
+                            child: const Text('View feedback'),
+                          ),
+                        ],
+                      ),
+
+                    const SizedBox(height: 8),
+
+                    // Center controls + Chat
                     Row(
                       children: [
-                        _statusPill('Pickup', icon: Icons.location_pin),
-                        const SizedBox(width: 8),
-                        _statusPill('Dropoff', icon: Icons.flag),
-                        const Spacer(),
                         TextButton.icon(
                           onPressed: () {
                             final p = _driverInterp ?? _driverNext;
@@ -650,61 +725,42 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                             }
                           },
                           icon: const Icon(Icons.center_focus_strong, size: 16),
-                          label: const Text('Center'),
+                          label: const Text('Center on me'),
                         ),
+                        const SizedBox(width: 6),
                         TextButton.icon(
-                          onPressed: () => _safeMove(dest, 15),
+                          onPressed: () => _safeMove(_dest, 15),
                           icon: const Icon(Icons.place, size: 16),
                           label: const Text('Destination'),
                         ),
+                        const Spacer(),
+                        if (_matchId != null)
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.message),
+                            label: const Text('Chat'),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ChatPage(matchId: _matchId!),
+                                ),
+                              );
+                            },
+                          ),
                       ],
                     ),
 
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
 
-                    if (status == 'completed' && passengerId != null)
+                    // Rate after completed
+                    if (status == 'completed' && _passengerId != null)
                       SizedBox(
-                        height: 52,
                         width: double.infinity,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(14),
-                            gradient: const LinearGradient(
-                              colors: [_purple, _purpleDark],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: _purple.withOpacity(0.25),
-                                blurRadius: 16,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
-                          ),
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              elevation: 0,
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                            icon: const Icon(Icons.star, color: Colors.white),
-                            label: const Text(
-                              'Rate your passenger',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 16,
-                              ),
-                            ),
-                            onPressed: () async {
-                              _ratingPromptShown = false;
-                              await _maybePromptRatingIfCompleted();
-                            },
-                          ),
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.star),
+                          label: const Text('Rate your passenger'),
+                          onPressed:
+                              () async => _maybePromptRatingIfCompleted(),
                         ),
                       ),
                   ],
@@ -716,34 +772,12 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
       ),
     );
   }
-
-  // UI helpers
-  Widget _statusPill(String text, {IconData? icon}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.black12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[
-            Icon(icon, size: 14, color: Colors.black54),
-            const SizedBox(width: 6),
-          ],
-          Text(
-            text,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
-// small extension to remove channels cleanly
-extension on RealtimeChannel {
-  void kill(SupabaseClient sb) => sb.removeChannel(this);
+// ----- helpers -----
+extension _Kill on RealtimeChannel? {
+  void _kill(SupabaseClient sb) {
+    final c = this;
+    if (c != null) sb.removeChannel(c);
+  }
 }

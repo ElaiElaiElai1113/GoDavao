@@ -3,15 +3,6 @@ import 'dart:math' as math;
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Publishes live location for a single user (driver or passenger).
-/// Schema expectations:
-///   live_locations:
-///     user_id (PK or UNIQUE), ride_id, actor, lat, lng, speed_mps, heading, updated_at
-///   location_traces (optional breadcrumbs):
-///     user_id, ride_id, actor, lat, lng, recorded_at
-///
-/// Ensure a unique constraint exists on live_locations.user_id
-/// so `onConflict: 'user_id'` works correctly.
 class LivePublisher {
   LivePublisher(
     this.sb, {
@@ -27,36 +18,26 @@ class LivePublisher {
   });
 
   final SupabaseClient sb;
-
-  /// Identifies the row to upsert; make sure live_locations has UNIQUE/PK on this.
-  String userId;
-
-  /// Current ride association for this publisher.
+  String userId; // still useful for RLS/ownership, but not the conflict key
   String rideId;
-
-  /// 'driver' or 'passenger'
   String actor;
 
-  // Tunables
-  final double minMeters; // Minimum movement before sending (meters)
-  final double
-  minHeadingDelta; // Minimum heading change before sending (degrees)
-  final Duration minPeriod; // Min time between sends
-  final double traceEveryMeters; // Spacing for breadcrumb inserts
-  final LocationAccuracy locationAccuracy; // Geolocator accuracy
-  final int distanceFilter; // Raw stream distance filter (meters)
+  final double minMeters;
+  final double minHeadingDelta;
+  final Duration minPeriod;
+  final double traceEveryMeters;
+  final LocationAccuracy locationAccuracy;
+  final int distanceFilter;
 
   StreamSubscription<Position>? _sub;
   Position? _lastPos;
   double? _lastHeading;
   DateTime? _lastSentAt;
   double _sinceLastTraceMeters = 0;
-
   Object? lastError;
 
   bool get isRunning => _sub != null;
 
-  /// Starts streaming and publishing locations. Idempotent.
   Future<void> start() async {
     if (_sub != null) return;
 
@@ -65,7 +46,6 @@ class LivePublisher {
       lastError = 'Location services are disabled';
       throw lastError!;
     }
-
     var perm = await Geolocator.checkPermission();
     if (perm == LocationPermission.denied) {
       perm = await Geolocator.requestPermission();
@@ -76,7 +56,6 @@ class LivePublisher {
       throw lastError!;
     }
 
-    // You can switch to AndroidSettings/iOSSettings if you want platform-specific configs.
     final settings = LocationSettings(
       accuracy: locationAccuracy,
       distanceFilter: distanceFilter,
@@ -100,42 +79,36 @@ class LivePublisher {
           _sinceLastTraceMeters += movedMeters;
           _lastPos = pos;
 
-          // Heading can be NaN on some devices; hold the last good value.
-          if (!pos.heading.isNaN) {
-            _lastHeading = pos.heading;
-          }
+          if (!pos.heading.isNaN) _lastHeading = pos.heading;
           _lastSentAt = DateTime.now();
 
-          // Sanitize NaNs → nulls
           final speed = pos.speed.isNaN ? null : pos.speed;
           final heading = (_lastHeading?.isNaN ?? true) ? null : _lastHeading;
 
-          // Upsert the single "live" row
+          // ⬇️ key change: onConflict 'ride_id,actor'
           await sb.from('live_locations').upsert({
-            'user_id': userId,
             'ride_id': rideId,
             'actor': actor,
+            'user_id': userId, // still stored for RLS/audit
             'lat': pos.latitude,
             'lng': pos.longitude,
             'speed_mps': speed,
             'heading': heading,
             'updated_at': _lastSentAt!.toUtc().toIso8601String(),
-          }, onConflict: 'user_id');
+          }, onConflict: 'ride_id,actor');
 
-          // Optional breadcrumb every X meters
           if (_sinceLastTraceMeters >= traceEveryMeters) {
             _sinceLastTraceMeters = 0;
             await sb.from('location_traces').insert({
-              'user_id': userId,
               'ride_id': rideId,
               'actor': actor,
+              'user_id': userId,
               'lat': pos.latitude,
               'lng': pos.longitude,
               'recorded_at': DateTime.now().toUtc().toIso8601String(),
             });
           }
         } catch (e) {
-          // Best-effort: don't crash the stream; stash error for diagnostics.
           lastError = e;
         }
       },
@@ -144,7 +117,6 @@ class LivePublisher {
     );
   }
 
-  /// Stops streaming and resets internal state. Idempotent.
   Future<void> stop() async {
     await _sub?.cancel();
     _sub = null;
@@ -154,7 +126,6 @@ class LivePublisher {
     _sinceLastTraceMeters = 0;
   }
 
-  /// Switch rides (and/or actor) safely. If running, restarts stream.
   Future<void> switchRide({
     required String newRideId,
     required String newActor,
@@ -166,7 +137,6 @@ class LivePublisher {
     if (wasRunning) await start();
   }
 
-  /// Optional: switch user (rare; only if you truly need it).
   Future<void> switchUser(String newUserId) async {
     final wasRunning = isRunning;
     if (wasRunning) await stop();
@@ -174,18 +144,12 @@ class LivePublisher {
     if (wasRunning) await start();
   }
 
-  // ---------------- Internals ----------------
-
   bool _shouldSend(Position pos) {
-    // Time gate
-    if (_lastSentAt != null) {
-      final since = DateTime.now().difference(_lastSentAt!);
-      if (since < minPeriod) return false;
-    }
-    // First fix always allowed
+    if (_lastSentAt != null &&
+        DateTime.now().difference(_lastSentAt!) < minPeriod)
+      return false;
     if (_lastPos == null) return true;
 
-    // Distance / heading gate
     final moved = _haversine(
       _lastPos!.latitude,
       _lastPos!.longitude,
@@ -199,13 +163,12 @@ class LivePublisher {
   }
 
   double _deltaAngle(double a, double b) {
-    // shortest angular distance in degrees
     final d = ((b - a + 540) % 360) - 180;
     return d.abs();
   }
 
   double _haversine(double lat1, double lon1, double lat2, double lon2) {
-    const R = 6371000.0; // meters
+    const R = 6371000.0;
     final dLat = (lat2 - lat1) * math.pi / 180;
     final dLon = (lon2 - lon1) * math.pi / 180;
     final s1 = math.sin(dLat / 2), s2 = math.sin(dLon / 2);
