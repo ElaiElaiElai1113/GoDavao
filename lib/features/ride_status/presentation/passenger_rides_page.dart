@@ -571,7 +571,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                 borderRadius: BorderRadius.circular(999),
                 child: Theme(
                   data: Theme.of(context).copyWith(
-                    tabBarTheme: const TabBarTheme(
+                    tabBarTheme: const TabBarThemeData(
                       labelColor: Colors.white,
                       unselectedLabelColor: Colors.black87,
                       indicatorSize: TabBarIndicatorSize.tab,
