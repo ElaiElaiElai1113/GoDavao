@@ -869,7 +869,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       appBar: AppBar(
         title: const Text('Ride Matches'),
         actions: [
-          AdminMenuAction(),
+          _AdminMenuButton(),
           IconButton(
             icon: const Icon(Icons.verified_user),
             tooltip: 'Get Verified',
@@ -966,5 +966,33 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     _tabController.dispose();
     _listScroll.dispose();
     super.dispose();
+  }
+}
+
+class _AdminMenuButton extends StatelessWidget {
+  const _AdminMenuButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      tooltip: 'Admin',
+      icon: const Icon(Icons.admin_panel_settings),
+      onSelected: (value) {
+        // TODO: route to the right admin screen
+        // if (value == 'verification') { Navigator.push(...); }
+        // if (value == 'vehicle') { Navigator.push(...); }
+      },
+      itemBuilder:
+          (ctx) => const [
+            PopupMenuItem(
+              value: 'verification',
+              child: Text('Verification Review'),
+            ),
+            PopupMenuItem(
+              value: 'vehicle',
+              child: Text('Vehicle Verification'),
+            ),
+          ],
+    );
   }
 }
