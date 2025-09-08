@@ -3,36 +3,32 @@ import 'package:latlong2/latlong.dart';
 
 class LiveSubscriber {
   final SupabaseClient sb;
-  final String userId; // the user we follow
+  final String rideId;
+  final String actor; // 'driver' or 'passenger' — WHO you want to follow
   final void Function(LatLng pos, double? heading) onUpdate;
 
   RealtimeChannel? _chan;
 
-  LiveSubscriber(this.sb, {required this.userId, required this.onUpdate});
+  LiveSubscriber(
+    this.sb, {
+    required this.rideId,
+    required this.actor,
+    required this.onUpdate,
+  });
 
   void listen() {
     _chan =
-        sb.channel('live_locations_user_$userId')
+        sb.channel('live_locations:$rideId:$actor')
           ..onPostgresChanges(
             schema: 'public',
             table: 'live_locations',
             event: PostgresChangeEvent.insert,
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'user_id',
-              value: userId,
-            ),
-            callback: _handle, // 👈 no type on the function
+            callback: _handle,
           )
           ..onPostgresChanges(
             schema: 'public',
             table: 'live_locations',
             event: PostgresChangeEvent.update,
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'user_id',
-              value: userId,
-            ),
             callback: _handle,
           )
           ..subscribe();
@@ -40,10 +36,13 @@ class LiveSubscriber {
     _seed();
   }
 
-  // Accept dynamic so it works with both v1 and v2 payload types
   void _handle(dynamic payload) {
+    // v2: payload.newRecord (Map), v1: Map-like as well
     final row = payload.newRecord ?? payload.oldRecord;
     if (row == null) return;
+
+    if (row['ride_id']?.toString() != rideId) return;
+    if (row['actor']?.toString() != actor) return;
 
     final lat = (row['lat'] as num?)?.toDouble();
     final lng = (row['lng'] as num?)?.toDouble();
@@ -57,7 +56,8 @@ class LiveSubscriber {
         await sb
             .from('live_locations')
             .select('lat,lng,heading')
-            .eq('user_id', userId)
+            .eq('ride_id', rideId)
+            .eq('actor', actor)
             .maybeSingle();
 
     if (res != null) {

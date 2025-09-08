@@ -5,7 +5,6 @@ import 'package:geocoding/geocoding.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:godavao/features/chat/presentation/chat_page.dart';
-import 'package:godavao/features/verify/presentation/admin_menu_action.dart';
 import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
@@ -13,6 +12,9 @@ import 'package:godavao/features/ratings/presentation/rate_user.dart';
 import 'package:godavao/features/ratings/data/ratings_service.dart';
 import 'package:godavao/features/payments/presentation/payment_status_chip.dart';
 import 'package:godavao/main.dart' show localNotify;
+
+// ✅ Map/details page for drivers (make sure the class+path match your file)
+import 'package:godavao/features/ride_status/presentation/driver_ride_status_page.dart';
 
 class DriverRidesPage extends StatefulWidget {
   const DriverRidesPage({super.key});
@@ -24,7 +26,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     with SingleTickerProviderStateMixin {
   final _supabase = Supabase.instance.client;
 
-  late TabController _tabController;
+  late final TabController _tabController;
   final _listScroll = ScrollController();
 
   List<Map<String, dynamic>> _upcoming = [];
@@ -48,13 +50,24 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     _loadMatches();
   }
 
+  @override
+  void dispose() {
+    if (_matchChannel != null) _supabase.removeChannel(_matchChannel!);
+    _tabController.dispose();
+    _listScroll.dispose();
+    super.dispose();
+  }
+
   // --- Actions ---------------------------------------------------------------
 
   Future<void> _acceptViaRpc(String matchId, String rideRequestId) async {
+    if (!mounted) return;
     setState(() => _loading = true);
     try {
       await _supabase.rpc('accept_match', params: {'p_match_id': matchId});
       await _loadPaymentIntents([rideRequestId]);
+
+      if (!mounted) return;
       setState(() {
         final item = _findAndRemove(matchId);
         if (item != null) {
@@ -63,17 +76,19 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         }
         _loading = false;
       });
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Ride accepted')));
-      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Ride accepted')));
     } on PostgrestException catch (e) {
+      if (!mounted) return;
       setState(() => _loading = false);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {
+      if (!mounted) return;
       setState(() => _loading = false);
       ScaffoldMessenger.of(
         context,
@@ -102,26 +117,26 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     final user = _supabase.auth.currentUser;
     if (user == null) return;
 
-    setState(() => _loading = true);
+    if (mounted) setState(() => _loading = true);
 
     _subscribeToNewMatchesByDriver(user.id);
 
     final raw = await _supabase
         .from('ride_matches')
         .select('''
-            id,
-            ride_request_id,
-            status,
-            created_at,
-            driver_id,
-            driver_route_id,
-            ride_requests (
-              pickup_lat, pickup_lng,
-              destination_lat, destination_lng,
-              passenger_id, fare,
-              users ( id, name )
-            )
-          ''')
+          id,
+          ride_request_id,
+          status,
+          created_at,
+          driver_id,
+          driver_route_id,
+          ride_requests (
+            pickup_lat, pickup_lng,
+            destination_lat, destination_lng,
+            passenger_id, fare,
+            users ( id, name )
+          )
+        ''')
         .eq('driver_id', user.id)
         .order('created_at', ascending: false);
 
@@ -195,6 +210,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
 
     await _loadPaymentIntents(rideIds);
 
+    if (!mounted) return;
     setState(() {
       _upcoming =
           all
@@ -229,47 +245,44 @@ class _DriverRidesPageState extends State<DriverRidesPage>
   void _subscribeToNewMatchesByDriver(String driverId) {
     if (_matchChannel != null) return;
     _matchChannel =
-        _supabase
-            .channel('ride_matches_driver_$driverId')
-            .onPostgresChanges(
-              schema: 'public',
-              table: 'ride_matches',
-              event: PostgresChangeEvent.insert,
-              callback: (payload) {
-                final rec = (payload.newRecord as Map).cast<String, dynamic>();
-                if (rec['driver_id']?.toString() != driverId) return;
+        _supabase.channel('ride_matches_driver_$driverId')
+          ..onPostgresChanges(
+            schema: 'public',
+            table: 'ride_matches',
+            event: PostgresChangeEvent.insert,
+            callback: (payload) {
+              final rec = (payload.newRecord as Map).cast<String, dynamic>();
+              if (rec['driver_id']?.toString() != driverId) return;
 
-                setState(() => _newMatchIds.add(rec['id']?.toString() ?? ''));
-                _showNotification(
-                  'New Request',
-                  'A passenger requested a pickup.',
-                );
-                _loadMatches();
-              },
-            )
-            .onPostgresChanges(
-              schema: 'public',
-              table: 'ride_matches',
-              event: PostgresChangeEvent.update,
-              callback: (payload) {
-                final newRec = payload.newRecord;
-                final rec = (newRec as Map).cast<String, dynamic>();
-                if (rec['driver_id']?.toString() != driverId) return;
-                _loadMatches();
-              },
-            )
-            .onPostgresChanges(
-              schema: 'public',
-              table: 'ride_matches',
-              event: PostgresChangeEvent.delete,
-              callback: (payload) {
-                final oldRec = payload.oldRecord;
-                final rec = (oldRec as Map).cast<String, dynamic>();
-                if (rec['driver_id']?.toString() != driverId) return;
-                _loadMatches();
-              },
-            )
-            .subscribe();
+              setState(() => _newMatchIds.add(rec['id']?.toString() ?? ''));
+              _showNotification(
+                'New Request',
+                'A passenger requested a pickup.',
+              );
+              _loadMatches();
+            },
+          )
+          ..onPostgresChanges(
+            schema: 'public',
+            table: 'ride_matches',
+            event: PostgresChangeEvent.update,
+            callback: (payload) {
+              final rec = (payload.newRecord as Map).cast<String, dynamic>();
+              if (rec['driver_id']?.toString() != driverId) return;
+              _loadMatches();
+            },
+          )
+          ..onPostgresChanges(
+            schema: 'public',
+            table: 'ride_matches',
+            event: PostgresChangeEvent.delete,
+            callback: (payload) {
+              final rec = (payload.oldRecord as Map).cast<String, dynamic>();
+              if (rec['driver_id']?.toString() != driverId) return;
+              _loadMatches();
+            },
+          )
+          ..subscribe();
   }
 
   Map<String, dynamic>? _findAndRemove(String matchId) {
@@ -311,6 +324,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     String rideRequestId,
     String newStatus,
   ) async {
+    if (!mounted) return;
     setState(() => _loading = true);
 
     try {
@@ -335,12 +349,11 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       }
       await _supabase.from('ride_requests').update(upd).eq('id', rideRequestId);
 
-      if (newStatus == 'completed' ||
-          newStatus == 'declined' ||
-          newStatus == 'canceled') {
+      if (['completed', 'declined', 'canceled'].contains(newStatus)) {
         await _syncPaymentForRide(rideRequestId, newStatus);
       }
 
+      if (!mounted) return;
       setState(() {
         final item = _findAndRemove(matchId);
         if (item != null) {
@@ -356,19 +369,16 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         _loading = false;
       });
 
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Ride $newStatus')));
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Ride $newStatus')));
     } catch (e) {
-      if (mounted) {
-        _loading = false;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Update failed: $e')));
-        setState(() {});
-      }
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Update failed: $e')));
     }
   }
 
@@ -384,12 +394,14 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       rateeUserId: passengerId,
     );
     if (existing != null) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('You already rated this passenger.')),
       );
       return;
     }
 
+    if (!mounted) return;
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -500,6 +512,9 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     final passengerId = m['passenger_id'] as String?;
     final rideRequestId = m['ride_request_id'] as String;
     final isNew = _newMatchIds.remove(id);
+
+    final canOpenMap =
+        status == 'accepted' || status == 'en_route' || status == 'completed';
 
     return Card(
       elevation: 0,
@@ -672,6 +687,22 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     );
                   },
                 ),
+                const Spacer(),
+                if (canOpenMap)
+                  TextButton.icon(
+                    icon: const Icon(Icons.map_outlined),
+                    label: const Text('View ride'),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder:
+                              (_) =>
+                                  DriverRideStatusPage(rideId: rideRequestId),
+                        ),
+                      );
+                    },
+                  ),
               ],
             ),
           ],
@@ -680,196 +711,16 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     );
   }
 
-  // Widget _buildCard(Map<String, dynamic> m) {
-  //   final id = m['match_id'] as String;
-  //   final status = (m['status'] as String).toLowerCase();
-  //   final dt = DateFormat(
-  //     'MMM d, y • h:mm a',
-  //   ).format(DateTime.parse(m['created_at']));
-  //   final passengerId = m['passenger_id'] as String?;
-  //   final rideRequestId = m['ride_request_id'] as String;
-  //   final isNew = _newMatchIds.remove(id);
-
-  //   return Card(
-  //     elevation: 0,
-  //     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-  //     color: Colors.white,
-  //     child: Padding(
-  //       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-  //       child: Column(
-  //         crossAxisAlignment: CrossAxisAlignment.start,
-  //         children: [
-  //           // top row: route + NEW
-  //           Row(
-  //             children: [
-  //               Expanded(
-  //                 child: Text(
-  //                   '${m['pickup_address']} → ${m['destination_address']}',
-  //                   style: const TextStyle(fontWeight: FontWeight.w700),
-  //                 ),
-  //               ),
-  //               if (isNew)
-  //                 Container(
-  //                   padding: const EdgeInsets.symmetric(
-  //                     horizontal: 8,
-  //                     vertical: 2,
-  //                   ),
-  //                   decoration: BoxDecoration(
-  //                     color: Colors.red.shade400,
-  //                     borderRadius: BorderRadius.circular(999),
-  //                   ),
-  //                   child: const Text(
-  //                     'NEW',
-  //                     style: TextStyle(
-  //                       color: Colors.white,
-  //                       fontSize: 10,
-  //                       fontWeight: FontWeight.w700,
-  //                     ),
-  //                   ),
-  //                 ),
-  //             ],
-  //           ),
-  //           const SizedBox(height: 6),
-
-  //           // meta row
-  //           Row(
-  //             children: [
-  //               if (m['driver_route_id'] != null)
-  //                 _pill(
-  //                   'Route ${m['driver_route_id'].toString().substring(0, 8)}',
-  //                   icon: Icons.alt_route,
-  //                 ),
-  //               const SizedBox(width: 8),
-  //               Expanded(
-  //                 child: Row(
-  //                   children: [
-  //                     const Icon(Icons.person, size: 14, color: Colors.black54),
-  //                     const SizedBox(width: 4),
-  //                     Expanded(
-  //                       child: Text(
-  //                         m['passenger'] ?? 'Passenger',
-  //                         maxLines: 1,
-  //                         overflow: TextOverflow.ellipsis,
-  //                       ),
-  //                     ),
-  //                     if (passengerId != null) ...[
-  //                       const SizedBox(width: 6),
-  //                       VerifiedBadge(userId: passengerId, size: 16),
-  //                       const SizedBox(width: 6),
-  //                       UserRatingBadge(userId: passengerId, iconSize: 14),
-  //                     ],
-  //                   ],
-  //                 ),
-  //               ),
-  //             ],
-  //           ),
-  //           const SizedBox(height: 6),
-
-  //           // time + fare
-  //           Row(
-  //             children: [
-  //               _pill(dt, icon: Icons.access_time),
-  //               const SizedBox(width: 8),
-  //               if (m['fare'] != null)
-  //                 _pill(
-  //                   '₱${(m['fare'] as num).toDouble().toStringAsFixed(2)}',
-  //                   icon: Icons.payments,
-  //                 ),
-  //               const Spacer(),
-  //               PaymentStatusChip(
-  //                 status: _paymentByRide[rideRequestId]?['status'] as String?,
-  //                 amount: _paymentByRide[rideRequestId]?['amount'] as double?,
-  //               ),
-  //             ],
-  //           ),
-
-  //           const Divider(height: 18),
-
-  //           // status + actions
-  //           Row(
-  //             children: [
-  //               Text(
-  //                 status.toUpperCase(),
-  //                 style: TextStyle(
-  //                   color: _statusColor(status),
-  //                   fontWeight: FontWeight.w700,
-  //                 ),
-  //               ),
-  //               const Spacer(),
-  //               if (status == 'pending') ...[
-  //                 Flexible(
-  //                   child: _primaryButton(
-  //                     child: const Text('Accept'),
-  //                     onPressed: () => _acceptViaRpc(id, rideRequestId),
-  //                   ),
-  //                 ),
-  //                 const SizedBox(width: 8),
-  //                 TextButton(
-  //                   onPressed:
-  //                       () => _updateMatchStatus(id, rideRequestId, 'declined'),
-  //                   child: const Text('Decline'),
-  //                 ),
-  //               ] else if (status == 'accepted') ...[
-  //                 Flexible(
-  //                   child: _primaryButton(
-  //                     child: const Text('Start Ride'),
-  //                     onPressed:
-  //                         () =>
-  //                             _updateMatchStatus(id, rideRequestId, 'en_route'),
-  //                   ),
-  //                 ),
-  //               ] else if (status == 'en_route') ...[
-  //                 Flexible(
-  //                   child: _primaryButton(
-  //                     child: const Text('Complete Ride'),
-  //                     onPressed:
-  //                         () => _updateMatchStatus(
-  //                           id,
-  //                           rideRequestId,
-  //                           'completed',
-  //                         ),
-  //                   ),
-  //                 ),
-  //               ] else if (status == 'completed' && passengerId != null) ...[
-  //                 Flexible(
-  //                   child: OutlinedButton.icon(
-  //                     icon: const Icon(Icons.star),
-  //                     label: const Text('Rate passenger'),
-  //                     onPressed: () => _ratePassenger(m),
-  //                   ),
-  //                 ),
-  //               ],
-  //               const SizedBox(width: 8),
-  //               IconButton(
-  //                 tooltip: 'Open chat',
-  //                 icon: const Icon(Icons.message_outlined),
-  //                 onPressed: () {
-  //                   Navigator.push(
-  //                     context,
-  //                     MaterialPageRoute(builder: (_) => ChatPage(matchId: id)),
-  //                   );
-  //                 },
-  //               ),
-  //             ],
-  //           ),
-  //         ],
-  //       ),
-  //     ),
-  //   );
-  // }
-
   // --- Scaffold --------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
-    final counters = [_upcoming.length, _declined.length, _completed.length];
-
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
         title: const Text('Ride Matches'),
         actions: [
-          _AdminMenuButton(),
+          const _AdminMenuButton(),
           IconButton(
             icon: const Icon(Icons.verified_user),
             tooltip: 'Get Verified',
@@ -877,7 +728,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               showModalBottomSheet(
                 context: context,
                 isScrollControlled: true,
-                builder: (_) => VerifyIdentitySheet(role: 'driver'),
+                builder: (_) => const VerifyIdentitySheet(role: 'driver'),
               );
             },
           ),
@@ -926,46 +777,16 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     );
   }
 
-  Tab _segTab(String label, int count) {
-    return Tab(
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(label),
-          const SizedBox(width: 6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              '$count',
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _list(List<Map<String, dynamic>> items) {
     return RefreshIndicator(
       onRefresh: _loadMatches,
       child: ListView.builder(
+        controller: _listScroll,
         padding: const EdgeInsets.all(16),
         itemCount: items.length,
         itemBuilder: (_, i) => _buildCard(items[i]),
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    if (_matchChannel != null) _supabase.removeChannel(_matchChannel!);
-    _tabController.dispose();
-    _listScroll.dispose();
-    super.dispose();
   }
 }
 
@@ -979,8 +800,6 @@ class _AdminMenuButton extends StatelessWidget {
       icon: const Icon(Icons.admin_panel_settings),
       onSelected: (value) {
         // TODO: route to the right admin screen
-        // if (value == 'verification') { Navigator.push(...); }
-        // if (value == 'vehicle') { Navigator.push(...); }
       },
       itemBuilder:
           (ctx) => const [

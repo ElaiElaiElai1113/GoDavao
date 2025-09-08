@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:godavao/features/ride_status/presentation/passenger_ride_status_page.dart';
-// import 'package:godavao/features/verify/presentation/admin_menu_action.dart'; // <- remove this import
-import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:godavao/features/ride_status/presentation/passenger_ride_status_page.dart';
+
+import 'package:godavao/features/ratings/presentation/user_rating.dart';
+
 // OSRM
 import 'package:godavao/core/osrm_service.dart';
-import 'package:godavao/features/ratings/presentation/user_rating.dart';
 
 class PassengerRidesPage extends StatefulWidget {
   const PassengerRidesPage({super.key});
@@ -43,6 +43,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
   Future<String> _formatAddress(double lat, double lng) async {
     try {
       final pm = await placemarkFromCoordinates(lat, lng);
+      if (pm.isEmpty) return 'Unknown';
       final m = pm.first;
       final parts = <String?>[m.thoroughfare, m.subLocality, m.locality];
       return parts
@@ -54,7 +55,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
     }
   }
 
-  // Safely extract driverId from a ride row (handles map or list)
+  // Safely extract driverId from a ride row (handles map or list shapes)
   String? _extractDriverId(Map<String, dynamic> ride) {
     final rel = ride['driver_routes'];
     if (rel is Map && rel['driver_id'] != null)
@@ -73,6 +74,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
       _loading = true;
       _error = null;
     });
+
     final user = supabase.auth.currentUser;
     if (user == null) {
       setState(() {
@@ -105,6 +107,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
               .map((e) => Map<String, dynamic>.from(e as Map))
               .toList();
 
+      // Enrich with human-readable addresses (best-effort)
       final enriched = await Future.wait(
         raw.map((ride) async {
           final pLat = (ride['pickup_lat'] as num).toDouble();
@@ -318,7 +321,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
     final dt = DateFormat(
       'MMM d, y • h:mm a',
     ).format(DateTime.parse(ride['created_at'] as String));
-    final status = (ride['status'] as String);
+    final status = ride['status'] as String;
     final fare = (ride['fare'] as num?)?.toDouble() ?? 0.0;
 
     final pLat = (ride['pickup_lat'] as num).toDouble();
@@ -349,35 +352,28 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                     end: LatLng(dLat, dLng),
                   ),
                   builder: (ctx, snap) {
-                    final routeLayer =
-                        snap.hasData
-                            ? PolylineLayer(
-                              polylines: [
-                                Polyline(
-                                  points: snap.data!.points,
-                                  strokeWidth: 3,
-                                  color: Colors.purple.shade700,
-                                ),
-                              ],
-                            )
-                            : PolylineLayer(
-                              polylines: [
-                                Polyline(
-                                  points: [
-                                    LatLng(pLat, pLng),
-                                    LatLng(dLat, dLng),
-                                  ],
-                                  strokeWidth: 3,
-                                  color: Colors.purple.shade700,
-                                ),
-                              ],
-                            );
+                    final polylines = <Polyline>[
+                      if (snap.hasData && snap.data != null)
+                        snap.data!
+                      else
+                        Polyline(
+                          points: [LatLng(pLat, pLng), LatLng(dLat, dLng)],
+                          strokeWidth: 3,
+                          color: Colors.purple.shade700,
+                        ),
+                    ];
 
                     return FlutterMap(
                       options: MapOptions(
-                        center: LatLng((pLat + dLat) / 2, (pLng + dLng) / 2),
-                        zoom: 13,
-                        interactiveFlags: InteractiveFlag.none,
+                        // keep static; user cannot pan/zoom this preview
+                        initialCenter: LatLng(
+                          (pLat + dLat) / 2,
+                          (pLng + dLng) / 2,
+                        ),
+                        initialZoom: 13,
+                        interactionOptions: const InteractionOptions(
+                          flags: InteractiveFlag.none,
+                        ),
                       ),
                       children: [
                         TileLayer(
@@ -386,7 +382,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                           subdomains: const ['a', 'b', 'c'],
                           userAgentPackageName: 'com.godavao.app',
                         ),
-                        routeLayer,
+                        PolylineLayer(polylines: polylines),
                         MarkerLayer(
                           markers: [
                             Marker(
@@ -490,6 +486,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                         label: 'Contact Driver',
                         icon: Icons.phone,
                         onPressed: () {
+                          // TODO: wire to your preferred contact flow (call/text)
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('Contacting driver…')),
                           );
@@ -545,6 +542,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
           backgroundColor: Colors.white,
           elevation: 0,
           surfaceTintColor: Colors.white,
+          actions: const [_AdminMenuButton()],
         ),
         body: Center(child: Text(_error!)),
       );
@@ -559,9 +557,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.white,
           elevation: 0,
-          actions: const [
-            _AdminMenuButton(), // <- SAFE replacement
-          ],
+          actions: const [_AdminMenuButton()],
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(56),
             child: Padding(
@@ -577,6 +573,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                       indicatorSize: TabBarIndicatorSize.tab,
                     ),
                   ),
+
                   child: Container(
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(999),
@@ -641,7 +638,8 @@ class _AdminMenuButton extends StatelessWidget {
       icon: const Icon(Icons.admin_panel_settings),
       onSelected: (value) {
         // TODO: navigate to your admin pages depending on value
-        // e.g. if (value == 'verification') { Navigator.push(...); }
+        // if (value == 'verification') { Navigator.push(...); }
+        // if (value == 'vehicle') { Navigator.push(...); }
       },
       itemBuilder:
           (ctx) => const [
