@@ -1,3 +1,4 @@
+// lib/features/dashboard/presentation/dashboard_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -72,7 +73,7 @@ class _DashboardPageState extends State<DashboardPage> {
       final res =
           await _sb
               .from('users')
-              .select('id, name, role, vehicle_info, verification_status')
+              .select('id, name, role, verification_status')
               .eq('id', u.id)
               .single();
 
@@ -183,9 +184,7 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget build(BuildContext context) {
     final role = (_user?['role'] as String?) ?? 'passenger';
     final name = (_user?['name'] as String?) ?? 'GoDavao user';
-    final vehicleInfo = _user?['vehicle_info'] as String?;
     final isDriver = role == 'driver';
-
     final isVerified = _verifStatus == VerificationStatus.verified;
 
     final overviewLeftLabel = isDriver ? 'Active Routes' : 'Upcoming';
@@ -285,25 +284,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
                     const SizedBox(height: 16),
 
-                    // DRIVER VEHICLE SUMMARY (only if verified)
-                    if (isDriver && isVerified)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: _VehicleCard(
-                          vehicleInfo: vehicleInfo,
-                          onManage: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const DriverRoutePage(),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-
                     // QUICK ACTIONS
-                    const SizedBox(height: 12),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Text(
@@ -742,70 +723,6 @@ class _StatCard extends StatelessWidget {
                   ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _VehicleCard extends StatelessWidget {
-  final String? vehicleInfo;
-  final VoidCallback onManage;
-  const _VehicleCard({required this.vehicleInfo, required this.onManage});
-
-  @override
-  Widget build(BuildContext context) {
-    final info =
-        (vehicleInfo == null || vehicleInfo!.trim().isEmpty)
-            ? 'No vehicle on profile'
-            : vehicleInfo!;
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x15000000),
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEFF1FF),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.directions_car,
-              size: 28,
-              color: Color(0xFF3A3F73),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              info,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-          const SizedBox(width: 8),
-          TextButton.icon(
-            onPressed: onManage,
-            icon: const Icon(Icons.settings, size: 18),
-            label: const Text(
-              'Manage',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],

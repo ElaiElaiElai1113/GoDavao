@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:godavao/features/profile/presentation/profile_page.dart';
+import 'package:godavao/features/vehicles/data/vehicle.dart';
+import 'package:godavao/features/vehicles/presentation/vehicles_page.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -79,6 +81,7 @@ class GoDavaoApp extends StatelessWidget {
         '/passenger_map': (_) => const PassengerMapPage(),
         '/driver_route': (_) => const DriverRoutePage(),
         '/profile': (_) => const ProfilePage(),
+        '/vehicles': (_) => const VehiclesPage(),
       },
       home: const SessionRouter(),
     );

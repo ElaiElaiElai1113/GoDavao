@@ -1,3 +1,4 @@
+// lib/features/ride_status/presentation/driver_ride_status_page.dart
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -36,8 +37,9 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
 
   // Realtime channels
   RealtimeChannel? _rideChannel;
-  RealtimeChannel? _driverLiveChan; // (ride_id, actor='driver')
-  RealtimeChannel? _passengerLiveChan; // (ride_id, actor='passenger')
+  RealtimeChannel? _driverLiveChan;
+  RealtimeChannel? _passengerLiveChan;
+  RealtimeChannel? _feeChannel;
 
   // Map control (+ safe center until ready)
   final MapController _map = MapController();
@@ -75,6 +77,10 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
   // Live passenger
   LatLng? _passengerLive;
 
+  // fare + fee
+  double? _fare; // gross ride value
+  double _platformFeeRate = 0.15; // default until dashboard loads
+
   // Camera/UX
   bool _followDriver = true;
   bool _ratingPromptShown = false;
@@ -95,6 +101,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
   @override
   void initState() {
     super.initState();
+    _initFee();
     _loadAll();
   }
 
@@ -104,11 +111,81 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     _rideChannel._kill(sb);
     _driverLiveChan._kill(sb);
     _passengerLiveChan._kill(sb);
+    _feeChannel._kill(sb);
     _driverAnim.dispose();
     super.dispose();
   }
 
-  // ----------------------------- LOAD ALL -----------------------------
+  // ===================== fee =====================
+
+  Future<void> _initFee() async {
+    await _loadFeeFromDb();
+    _subscribeFee();
+  }
+
+  Future<void> _loadFeeFromDb() async {
+    try {
+      final row =
+          await sb
+              .from('app_settings')
+              .select('key, value, value_num')
+              .eq('key', 'platform_fee_rate')
+              .maybeSingle();
+
+      final rate = _parseFeeRate(row);
+      if (rate != null && rate >= 0 && rate <= 1) {
+        setState(() => _platformFeeRate = rate);
+      }
+    } catch (_) {
+      // ignore, keep default
+    }
+  }
+
+  void _subscribeFee() {
+    if (_feeChannel != null) return;
+    _feeChannel =
+        sb.channel('app_settings:platform_fee_rate:view')
+          ..onPostgresChanges(
+            schema: 'public',
+            table: 'app_settings',
+            event: PostgresChangeEvent.insert,
+            callback: (payload) {
+              final rec = payload.newRecord as Map?;
+              if (rec == null) return;
+              if (rec['key']?.toString() != 'platform_fee_rate') return;
+              final rate = _parseFeeRate(rec);
+              if (rate != null && rate >= 0 && rate <= 1) {
+                setState(() => _platformFeeRate = rate);
+              }
+            },
+          )
+          ..onPostgresChanges(
+            schema: 'public',
+            table: 'app_settings',
+            event: PostgresChangeEvent.update,
+            callback: (payload) {
+              final rec = payload.newRecord as Map?;
+              if (rec == null) return;
+              if (rec['key']?.toString() != 'platform_fee_rate') return;
+              final rate = _parseFeeRate(rec);
+              if (rate != null && rate >= 0 && rate <= 1) {
+                setState(() => _platformFeeRate = rate);
+              }
+            },
+          )
+          ..subscribe();
+  }
+
+  double? _parseFeeRate(Map? row) {
+    if (row == null) return null;
+    final num? n = row['value_num'] as num? ?? row['value'] as num?;
+    if (n != null) return n.toDouble();
+    final s = row['value']?.toString();
+    if (s == null) return null;
+    return double.tryParse(s);
+  }
+
+  // ===================== LOAD ALL =====================
 
   Future<void> _loadAll() async {
     setState(() {
@@ -117,7 +194,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     });
 
     try {
-      // 1) Ride base
       final ride =
           await sb
               .from('ride_requests')
@@ -126,15 +202,16 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
             pickup_lat, pickup_lng,
             destination_lat, destination_lng,
             status,
-            passenger_id
+            passenger_id,
+            fare
           ''')
               .eq('id', widget.rideId)
               .maybeSingle();
 
       if (ride == null) throw Exception('Ride not found');
       _ride = Map<String, dynamic>.from(ride as Map);
+      _fare = (_ride?['fare'] as num?)?.toDouble();
 
-      // 2) Match id (for chat)
       final match =
           await sb
               .from('ride_matches')
@@ -143,28 +220,20 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
               .maybeSingle();
       _matchId = (match as Map?)?['id']?.toString();
 
-      // 3) Passenger id + rating aggregate
       _passengerId = _ride?['passenger_id']?.toString();
-      if (_passengerId != null) {
-        _fetchPassengerAggregate(); // best effort
-      }
+      if (_passengerId != null) _fetchPassengerAggregate();
 
-      // 4) Seed live positions (driver & passenger) from live_locations by ride/actor
       await _seedLive('driver');
       await _seedLive('passenger');
 
-      // 5) Move map to pickup initially
       _safeMove(_pickup, 13);
 
-      // 6) Wire realtime (ride status + live rows by ride_id/actor)
       _subscribeRideStatus();
       _subscribeLive('driver');
       _subscribeLive('passenger');
 
-      // 7) Start/stop publishing my live based on status
       _syncPublisherToStatus(status);
 
-      // 8) Maybe show rating prompt immediately if already completed
       await _maybePromptRatingIfCompleted();
     } on PostgrestException catch (e) {
       _error = 'Supabase error: ${e.message}';
@@ -183,13 +252,13 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
       if (!mounted) return;
       setState(() => _passengerAggregate = agg);
     } catch (_) {
-      // ignore best effort
+      // ignore
     } finally {
       if (mounted) setState(() => _fetchingPassengerAgg = false);
     }
   }
 
-  // ----------------------------- SUPABASE LIVE -----------------------------
+  // ===================== SUPABASE LIVE =====================
 
   void _subscribeRideStatus() {
     _rideChannel =
@@ -198,7 +267,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
             schema: 'public',
             table: 'ride_requests',
             event: PostgresChangeEvent.update,
-            // Filter inside callback (SDK-version-agnostic)
             callback: (payload) async {
               final newRec = payload.newRecord;
               if (newRec == null) return;
@@ -207,16 +275,14 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
               final updated = Map<String, dynamic>.from(newRec);
               if (!mounted) return;
 
-              setState(() => _ride = updated);
+              setState(() {
+                _ride = updated;
+                _fare = (updated['fare'] as num?)?.toDouble();
+              });
 
-              if (status == 'en_route') {
-                setState(() => _followDriver = true);
-              }
-
-              // Toggle my publishing
+              if (status == 'en_route') setState(() => _followDriver = true);
               _syncPublisherToStatus(status);
 
-              // Passenger id might appear late in some flows
               final pid = updated['passenger_id']?.toString();
               if (pid != null && pid != _passengerId) {
                 _passengerId = pid;
@@ -229,7 +295,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
           ..subscribe();
   }
 
-  // Listen to live_locations for this ride by actor
   void _subscribeLive(String actor) {
     final chan =
         sb.channel('live_locations:${widget.rideId}:$actor')
@@ -268,7 +333,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     }
   }
 
-  // One-shot seed of current live row
   Future<void> _seedLive(String actor) async {
     final res =
         await sb
@@ -308,7 +372,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     }
   }
 
-  // ----------------------------- DRIVER INTERP -----------------------------
+  // ===================== driver interp =====================
 
   void _consumeDriverLocation(Map rec) {
     final lat = (rec['lat'] as num?)?.toDouble();
@@ -343,10 +407,9 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     }
   }
 
-  // ----------------------------- TOGGLING PUBLISHER -----------------------------
+  // ===================== toggle publisher =====================
 
   void _syncPublisherToStatus(String s) {
-    // Publish the driver's live location while active
     if (s == 'accepted' || s == 'en_route') {
       _publisher.start(); // idempotent
     } else {
@@ -354,7 +417,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     }
   }
 
-  // ----------------------------- RATING FLOW -----------------------------
+  // ===================== ratings =====================
 
   Future<void> _maybePromptRatingIfCompleted() async {
     if (_ratingPromptShown) return;
@@ -388,7 +451,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     await _fetchPassengerAggregate();
   }
 
-  // ----------------------------- HELPERS/GETTERS -----------------------------
+  // ===================== helpers/getters =====================
 
   LatLng get _pickup => LatLng(
     (_ride!['pickup_lat'] as num).toDouble(),
@@ -401,6 +464,11 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
   );
 
   String get status => (_ride?['status'] as String?) ?? 'pending';
+
+  String _peso(num? v) =>
+      v == null ? '₱0.00' : '₱${(v.toDouble()).toStringAsFixed(2)}';
+  double? _driverNet(num? fare) =>
+      fare == null ? null : (fare.toDouble() * (1 - _platformFeeRate));
 
   Widget _statusPill(String s) {
     final c = _statusColor(s);
@@ -463,7 +531,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
             BoxShadow(
               color: _purple.withOpacity(0.25),
               blurRadius: 14,
-              offset: const Offset(0, 8),
+              offset: Offset(0, 8),
             ),
           ],
         ),
@@ -495,7 +563,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     );
   }
 
-  // ----------------------------- BUILD -----------------------------
+  // ===================== build =====================
 
   @override
   Widget build(BuildContext context) {
@@ -520,7 +588,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
       return '${avg.toStringAsFixed(2)} ★  ($cnt)';
     }();
 
-    // Driver marker position preference: live interp > next > pickup
     final driverPoint = _driverInterp ?? _driverNext ?? pickup;
 
     return Scaffold(
@@ -555,7 +622,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: Stack(
         children: [
-          // ---- Map ----
+          // Map
           Positioned.fill(
             child: FlutterMap(
               mapController: _map,
@@ -584,7 +651,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                   subdomains: const ['a', 'b', 'c'],
                   userAgentPackageName: 'com.godavao.app',
                 ),
-                // Simple straight line (swap to OSRM polyline if desired)
                 PolylineLayer(
                   polylines: [
                     Polyline(
@@ -639,7 +705,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
             ),
           ),
 
-          // ---- Bottom sheet ----
+          // Bottom sheet
           Align(
             alignment: Alignment.bottomCenter,
             child: SafeArea(
@@ -709,6 +775,83 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                           ),
                         ],
                       ),
+
+                    // ==== Earnings breakdown ====
+                    if (_fare != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.black12),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.receipt_long,
+                                  size: 16,
+                                  color: Colors.black54,
+                                ),
+                                const SizedBox(width: 6),
+                                const Text(
+                                  'Ride value',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  _peso(_fare),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.percent,
+                                  size: 16,
+                                  color: Colors.black54,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Platform fee (${(_platformFeeRate * 100).toStringAsFixed(0)}%)',
+                                ),
+                                const Spacer(),
+                                Text('- ${_peso(_fare! * _platformFeeRate)}'),
+                              ],
+                            ),
+                            const Divider(height: 14),
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.account_balance_wallet_outlined,
+                                  size: 18,
+                                  color: Colors.green,
+                                ),
+                                const SizedBox(width: 6),
+                                const Text(
+                                  'Your take',
+                                  style: TextStyle(fontWeight: FontWeight.w700),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  _peso(_driverNet(_fare)),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.green,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
 
                     const SizedBox(height: 8),
 

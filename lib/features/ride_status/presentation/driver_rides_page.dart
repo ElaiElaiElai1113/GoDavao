@@ -1,3 +1,4 @@
+// lib/features/ride_status/presentation/driver_rides_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:intl/intl.dart';
@@ -13,7 +14,7 @@ import 'package:godavao/features/ratings/data/ratings_service.dart';
 import 'package:godavao/features/payments/presentation/payment_status_chip.dart';
 import 'package:godavao/main.dart' show localNotify;
 
-// ✅ Map/details page for drivers (make sure the class+path match your file)
+// Map/details page
 import 'package:godavao/features/ride_status/presentation/driver_ride_status_page.dart';
 
 class DriverRidesPage extends StatefulWidget {
@@ -36,29 +37,109 @@ class _DriverRidesPageState extends State<DriverRidesPage>
 
   Map<String, Map<String, dynamic>> _paymentByRide = {};
   bool _loading = true;
+
+  // Realtime
   RealtimeChannel? _matchChannel;
+  RealtimeChannel? _feeChannel;
+
+  // ---- fee (dashboard-managed) ----
+  // default 15% until the dashboard value loads
+  double _platformFeeRate = 0.15;
 
   // theme tokens
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
   static const _bg = Color(0xFFF7F7FB);
 
+  // ===================== lifecycle =====================
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _initFee(); // <-- load & watch fee
     _loadMatches();
   }
 
   @override
   void dispose() {
     if (_matchChannel != null) _supabase.removeChannel(_matchChannel!);
+    if (_feeChannel != null) _supabase.removeChannel(_feeChannel!);
     _tabController.dispose();
     _listScroll.dispose();
     super.dispose();
   }
 
-  // --- Actions ---------------------------------------------------------------
+  // ===================== fee =====================
+
+  Future<void> _initFee() async {
+    await _loadFeeFromDb();
+    _subscribeFee();
+  }
+
+  Future<void> _loadFeeFromDb() async {
+    try {
+      final row =
+          await _supabase
+              .from('app_settings')
+              .select('key, value, value_num')
+              .eq('key', 'platform_fee_rate')
+              .maybeSingle();
+
+      final rate = _parseFeeRate(row);
+      if (rate != null && rate >= 0 && rate <= 1) {
+        setState(() => _platformFeeRate = rate);
+      }
+    } catch (_) {
+      // keep default if fetch fails
+    }
+  }
+
+  void _subscribeFee() {
+    if (_feeChannel != null) return;
+    _feeChannel =
+        _supabase.channel('app_settings:platform_fee_rate')
+          ..onPostgresChanges(
+            schema: 'public',
+            table: 'app_settings',
+            event: PostgresChangeEvent.insert,
+            callback: (payload) {
+              final rec = payload.newRecord as Map?;
+              if (rec == null) return;
+              if (rec['key']?.toString() != 'platform_fee_rate') return;
+              final rate = _parseFeeRate(rec);
+              if (rate != null && rate >= 0 && rate <= 1) {
+                setState(() => _platformFeeRate = rate);
+              }
+            },
+          )
+          ..onPostgresChanges(
+            schema: 'public',
+            table: 'app_settings',
+            event: PostgresChangeEvent.update,
+            callback: (payload) {
+              final rec = payload.newRecord as Map?;
+              if (rec == null) return;
+              if (rec['key']?.toString() != 'platform_fee_rate') return;
+              final rate = _parseFeeRate(rec);
+              if (rate != null && rate >= 0 && rate <= 1) {
+                setState(() => _platformFeeRate = rate);
+              }
+            },
+          )
+          ..subscribe();
+  }
+
+  double? _parseFeeRate(Map? row) {
+    if (row == null) return null;
+    final num? n = row['value_num'] as num? ?? row['value'] as num?;
+    if (n != null) return n.toDouble();
+    final s = row['value']?.toString();
+    if (s == null) return null;
+    return double.tryParse(s);
+  }
+
+  // ===================== actions =====================
 
   Future<void> _acceptViaRpc(String matchId, String rideRequestId) async {
     if (!mounted) return;
@@ -416,7 +497,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     );
   }
 
-  // --- UI --------------------------------------------------------------------
+  // ===================== UI helpers =====================
 
   Color _statusColor(String s) {
     switch (s) {
@@ -459,6 +540,11 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     );
   }
 
+  String _peso(num? v) =>
+      v == null ? '₱0.00' : '₱${(v.toDouble()).toStringAsFixed(2)}';
+  double? _driverNet(num? fare) =>
+      fare == null ? null : (fare.toDouble() * (1 - _platformFeeRate));
+
   Widget _primaryButton({
     required Widget child,
     required VoidCallback? onPressed,
@@ -477,7 +563,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             BoxShadow(
               color: _purple.withOpacity(0.25),
               blurRadius: 12,
-              offset: const Offset(0, 6),
+              offset: Offset(0, 6),
             ),
           ],
         ),
@@ -525,7 +611,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // top row: route + NEW
+            // --- Route line + NEW badge (single line, ellipsis) ---
             Row(
               children: [
                 Expanded(
@@ -538,6 +624,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                 ),
                 if (isNew)
                   Container(
+                    margin: const EdgeInsets.only(left: 8),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
                       vertical: 2,
@@ -557,23 +644,29 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                   ),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
 
-            // meta row
-            Row(
+            // --- Meta (wraps cleanly) ---
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 if (m['driver_route_id'] != null)
                   _pill(
                     'Route ${m['driver_route_id'].toString().substring(0, 8)}',
                     icon: Icons.alt_route,
                   ),
-                const SizedBox(width: 8),
-                Expanded(
+
+                // Passenger + badges in a bounded box so it can ellipsize
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 0, maxWidth: 280),
                   child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(Icons.person, size: 14, color: Colors.black54),
                       const SizedBox(width: 4),
-                      Expanded(
+                      Flexible(
                         child: Text(
                           m['passenger'] ?? 'Passenger',
                           maxLines: 1,
@@ -591,65 +684,87 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                 ),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
 
-            // time + fare
-            Row(
+            // --- Time + Fare (wraps to avoid overflow) ---
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
               children: [
                 _pill(dt, icon: Icons.access_time),
-                const SizedBox(width: 8),
                 if (m['fare'] != null)
                   _pill(
                     '₱${(m['fare'] as num).toDouble().toStringAsFixed(2)}',
                     icon: Icons.payments,
                   ),
-                const Spacer(),
+                // Payment chip can grow; box it so it wraps nicely
+                if (_paymentByRide[rideRequestId] != null)
+                  PaymentStatusChip(
+                    status: _paymentByRide[rideRequestId]?['status'] as String?,
+                    amount: _paymentByRide[rideRequestId]?['amount'] as double?,
+                  ),
               ],
             ),
 
             const Divider(height: 18),
 
-            // status + actions
-            Row(
+            // --- Status + Actions (wrap) ---
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Text(
-                  status.toUpperCase(),
-                  style: TextStyle(
-                    color: _statusColor(status),
-                    fontWeight: FontWeight.w700,
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Text(
+                    status.toUpperCase(),
+                    style: TextStyle(
+                      color: _statusColor(status),
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
-                const Spacer(),
 
                 if (status == 'pending') ...[
-                  Flexible(
+                  SizedBox(
+                    width: 140,
                     child: _primaryButton(
-                      child: const Text('Accept'),
+                      child: const Text(
+                        'Accept',
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       onPressed: () => _acceptViaRpc(id, rideRequestId),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: TextButton(
-                      onPressed:
-                          () =>
-                              _updateMatchStatus(id, rideRequestId, 'declined'),
-                      child: const Text('Decline'),
+                  TextButton(
+                    onPressed:
+                        () => _updateMatchStatus(id, rideRequestId, 'declined'),
+                    child: const Text(
+                      'Decline',
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ] else if (status == 'accepted') ...[
-                  Flexible(
+                  SizedBox(
+                    width: 160,
                     child: _primaryButton(
-                      child: const Text('Start Ride'),
+                      child: const Text(
+                        'Start Ride',
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       onPressed:
                           () =>
                               _updateMatchStatus(id, rideRequestId, 'en_route'),
                     ),
                   ),
                 ] else if (status == 'en_route') ...[
-                  Flexible(
+                  SizedBox(
+                    width: 180,
                     child: _primaryButton(
-                      child: const Text('Complete Ride'),
+                      child: const Text(
+                        'Complete Ride',
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       onPressed:
                           () => _updateMatchStatus(
                             id,
@@ -659,24 +774,17 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     ),
                   ),
                 ] else if (status == 'completed' && passengerId != null) ...[
-                  Flexible(
-                    flex: 2,
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.star),
-                      label: const Text('Rate passenger'),
-                      onPressed: () => _ratePassenger(m),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.star),
+                    label: const Text(
+                      'Rate passenger',
+                      overflow: TextOverflow.ellipsis,
                     ),
+                    onPressed: () => _ratePassenger(m),
                   ),
                 ],
-              ],
-            ),
 
-            Row(
-              children: [
-                PaymentStatusChip(
-                  status: _paymentByRide[rideRequestId]?['status'] as String?,
-                  amount: _paymentByRide[rideRequestId]?['amount'] as double?,
-                ),
+                // Chat and Map buttons also in the same Wrap
                 IconButton(
                   tooltip: 'Open chat',
                   icon: const Icon(Icons.message_outlined),
@@ -687,11 +795,13 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     );
                   },
                 ),
-                const Spacer(),
                 if (canOpenMap)
-                  TextButton.icon(
+                  OutlinedButton.icon(
                     icon: const Icon(Icons.map_outlined),
-                    label: const Text('View ride'),
+                    label: const Text(
+                      'View ride',
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     onPressed: () {
                       Navigator.push(
                         context,
@@ -711,7 +821,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     );
   }
 
-  // --- Scaffold --------------------------------------------------------------
+  // ===================== scaffold =====================
 
   @override
   Widget build(BuildContext context) {
@@ -799,7 +909,7 @@ class _AdminMenuButton extends StatelessWidget {
       tooltip: 'Admin',
       icon: const Icon(Icons.admin_panel_settings),
       onSelected: (value) {
-        // TODO: route to the right admin screen
+        // Navigate to admin screens as needed
       },
       itemBuilder:
           (ctx) => const [

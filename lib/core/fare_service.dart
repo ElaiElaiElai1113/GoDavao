@@ -4,14 +4,29 @@ import 'package:latlong2/latlong.dart';
 import 'package:godavao/core/osrm_service.dart';
 
 class FareRules {
-  final double baseFare; // flag-down
-  final double perKm; // per kilometer
-  final double perMin; // per minute (from OSRM duration)
-  final double minFare; // minimum fare
-  final double bookingFee; // fixed fee
-  final double nightSurchargePct; // e.g., 0.15 = 15% more
-  final int nightStartHour; // 21 means 9 PM
-  final int nightEndHour; // 5 means 5 AM
+  /// Flag-down
+  final double baseFare;
+
+  /// Per kilometer
+  final double perKm;
+
+  /// Per minute (from OSRM duration)
+  final double perMin;
+
+  /// Minimum charge before surcharges
+  final double minFare;
+
+  /// Fixed fee added once (e.g., booking)
+  final double bookingFee;
+
+  /// Nighttime surcharge percentage (0.15 = 15%)
+  final double nightSurchargePct;
+
+  /// Night starts at this hour (0-23)
+  final int nightStartHour;
+
+  /// Night ends **before** this hour (exclusive, 0-23). e.g., 5 means up to 4:59
+  final int nightEndHour;
 
   const FareRules({
     this.baseFare = 25.0,
@@ -20,17 +35,29 @@ class FareRules {
     this.minFare = 70.0,
     this.bookingFee = 5.0,
     this.nightSurchargePct = 0.15,
-    this.nightStartHour = 21,
-    this.nightEndHour = 5,
+    this.nightStartHour = 21, // 9 PM
+    this.nightEndHour = 5, // until 4:59 AM
   });
 }
 
 class FareBreakdown {
   final double distanceKm;
   final double durationMin;
+
+  /// Base+distance+time+booking (after min-fare applied, before surcharges)
   final double subtotal;
+
+  /// Night surcharge amount
   final double surcharge;
+
+  /// Passenger pays (rounded to peso)
   final double total;
+
+  /// Optional: platform fee amount (2 decimals)
+  final double platformFee;
+
+  /// Optional: what the driver takes home (2 decimals)
+  final double driverTake;
 
   const FareBreakdown({
     required this.distanceKm,
@@ -38,6 +65,8 @@ class FareBreakdown {
     required this.subtotal,
     required this.surcharge,
     required this.total,
+    this.platformFee = 0.0,
+    this.driverTake = 0.0,
   });
 
   Map<String, dynamic> toMap() => {
@@ -46,6 +75,8 @@ class FareBreakdown {
     'subtotal': subtotal,
     'surcharge': surcharge,
     'total': total,
+    'platform_fee': platformFee,
+    'driver_take': driverTake,
   };
 }
 
@@ -88,20 +119,27 @@ class FareService {
 
   double _deg2rad(double d) => d * pi / 180.0;
 
+  /// Treat `nightEndHour` as exclusive to avoid double-charging at the boundary.
   bool _isNight(DateTime now) {
     final h = now.hour;
-    // window may wrap midnight
-    if (rules.nightStartHour <= rules.nightEndHour) {
-      return h >= rules.nightStartHour && h <= rules.nightEndHour;
+    if (rules.nightStartHour < rules.nightEndHour) {
+      // e.g., 18..21 (same day window)
+      return h >= rules.nightStartHour && h < rules.nightEndHour;
     } else {
-      return h >= rules.nightStartHour || h <= rules.nightEndHour;
+      // spans midnight (e.g., 21..5)
+      return h >= rules.nightStartHour || h < rules.nightEndHour;
     }
   }
 
+  /// Estimate fare, optionally including platform fee & driver take.
+  ///
+  /// [platformFeeRate] should be between 0 and 1 (e.g., 0.18 = 18%).
+  /// You can fetch it from `app_settings.platform_fee_rate` and pass here.
   Future<FareBreakdown> estimate({
     required LatLng pickup,
     required LatLng destination,
     DateTime? when,
+    double? platformFeeRate, // optional; if null, fee=0 and driverTake=total
   }) async {
     final (km, mins) = await _distanceAndTime(pickup, destination);
 
@@ -115,17 +153,34 @@ class FareService {
 
     final now = when ?? DateTime.now();
     final surcharge = _isNight(now) ? subtotal * rules.nightSurchargePct : 0.0;
-    final total = subtotal + surcharge;
 
-    // Round to nearest peso (₱)
-    double roundPeso(double x) => x.roundToDouble();
+    // Passenger total: rounded to the nearest peso
+    final rawTotal = subtotal + surcharge;
+    final passengerTotal = _roundPeso(rawTotal);
+
+    // Platform fee + driver take (rounded to 2 decimals for display/accounting)
+    final rate =
+        (platformFeeRate != null && platformFeeRate > 0)
+            ? platformFeeRate.clamp(0.0, 1.0)
+            : 0.0;
+
+    final platformFee = _round2(passengerTotal * rate);
+    final driverTake = _round2(passengerTotal - platformFee);
 
     return FareBreakdown(
-      distanceKm: double.parse(km.toStringAsFixed(2)),
-      durationMin: double.parse(mins.toStringAsFixed(0)),
-      subtotal: double.parse(subtotal.toStringAsFixed(2)),
-      surcharge: double.parse(surcharge.toStringAsFixed(2)),
-      total: roundPeso(total),
+      distanceKm: _round(km, 2),
+      durationMin: _round(mins, 0),
+      subtotal: _round2(subtotal),
+      surcharge: _round2(surcharge),
+      total: passengerTotal,
+      platformFee: platformFee,
+      driverTake: driverTake,
     );
   }
+
+  // --- rounding helpers ---
+  double _round(double v, int places) =>
+      double.parse(v.toStringAsFixed(places));
+  double _round2(double v) => _round(v, 2);
+  double _roundPeso(double v) => v.roundToDouble();
 }
