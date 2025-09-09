@@ -8,15 +8,20 @@ import 'package:geocoding/geocoding.dart';
 import 'package:godavao/core/osrm_service.dart';
 import 'package:godavao/features/rides/presentation/confirm_ride_page.dart';
 
+/// Data model for driver route listing. We support both OSRM and manual routes.
 class DriverRoute {
   final String id;
   final String driverId;
-  final String polyline;
+  final String? routeMode; // 'osrm' | 'manual' | null
+  final String? routePolyline; // encoded OSRM line
+  final String? manualPolyline; // encoded manual line
 
   DriverRoute.fromMap(Map<String, dynamic> m)
     : id = m['id'] as String,
       driverId = m['driver_id'] as String,
-      polyline = m['route_polyline'] as String;
+      routeMode = (m['route_mode'] as String?),
+      routePolyline = (m['route_polyline'] as String?),
+      manualPolyline = (m['manual_polyline'] as String?);
 }
 
 class PassengerMapPage extends StatefulWidget {
@@ -30,7 +35,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
   final supabase = Supabase.instance.client;
   final _polyDecoder = PolylinePoints();
   final MapController _map = MapController();
-  final Distance _dist = const Distance();
+  final Distance _distance = const Distance();
 
   // destination search input
   final _destCtrl = TextEditingController();
@@ -81,11 +86,13 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     super.dispose();
   }
 
+  /* ----------------------------- Data loading ----------------------------- */
+
   Future<void> _primeRoutes() async {
     try {
       final data = await supabase
           .from('driver_routes')
-          .select('id, driver_id, route_polyline')
+          .select('id, driver_id, route_mode, route_polyline, manual_polyline')
           .eq('is_active', true);
       _allRoutes =
           (data as List)
@@ -97,6 +104,8 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     }
   }
 
+  /* ----------------------------- Map helpers ----------------------------- */
+
   void _safeMove(LatLng center, double zoom) {
     if (!mounted) return;
     if (_mapReady) {
@@ -106,6 +115,97 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
       _pendingZoom = zoom;
     }
   }
+
+  // Decode whichever polyline is appropriate (manual > route if mode says so)
+  List<LatLng> _decodeEffectivePolyline(DriverRoute r) {
+    String? encoded;
+    if (r.routeMode == 'manual') {
+      encoded = r.manualPolyline ?? r.routePolyline;
+    } else if (r.routeMode == 'osrm') {
+      encoded = r.routePolyline ?? r.manualPolyline;
+    } else {
+      // missing mode: pick whichever is available
+      encoded = r.routePolyline ?? r.manualPolyline;
+    }
+    if (encoded == null || encoded.isEmpty) return const [];
+
+    final pts = _polyDecoder.decodePolyline(encoded);
+    return pts.map((p) => LatLng(p.latitude, p.longitude)).toList();
+  }
+
+  // Meter distance using latlong2 Distance
+  double _meters(LatLng a, LatLng b) => _distance.as(LengthUnit.Meter, a, b);
+
+  bool _isPointNearPolyline(LatLng p, List<LatLng> polyline, double maxMeters) {
+    if (polyline.length < 2) return false;
+    double best = double.infinity;
+
+    for (var i = 0; i < polyline.length - 1; i++) {
+      final a = polyline[i];
+      final b = polyline[i + 1];
+      final d = _distancePointToSegmentMeters(p, a, b);
+      if (d < best) best = d;
+      if (best <= maxMeters) return true;
+    }
+    return best <= maxMeters;
+  }
+
+  // Approx perpendicular distance P→AB in meters
+  double _distancePointToSegmentMeters(LatLng p, LatLng a, LatLng b) {
+    final ax = a.longitude, ay = a.latitude;
+    final bx = b.longitude, by = b.latitude;
+    final px = p.longitude, py = p.latitude;
+
+    final vx = bx - ax, vy = by - ay;
+    final wx = px - ax, wy = py - ay;
+
+    final c1 = vx * wx + vy * wy;
+    if (c1 <= 0) return _meters(a, p);
+
+    final c2 = vx * vx + vy * vy;
+    if (c2 <= c1) return _meters(b, p);
+
+    final t = c1 / c2;
+    final proj = LatLng(ay + t * vy, ax + t * vx);
+    return _meters(proj, p);
+  }
+
+  LatLng _projectOnSegment(LatLng p, LatLng a, LatLng b) {
+    final ax = a.longitude, ay = a.latitude;
+    final bx = b.longitude, by = b.latitude;
+    final px = p.longitude, py = p.latitude;
+
+    final vx = bx - ax, vy = by - ay;
+    final wx = px - ax, wy = py - ay;
+
+    final c1 = vx * wx + vy * wy;
+    final c2 = vx * vx + vy * vy;
+
+    if (c1 <= 0) return a;
+    if (c2 <= c1) return b;
+
+    final t = c1 / c2;
+    return LatLng(ay + t * vy, ax + t * vx);
+  }
+
+  LatLng _snapToPolyline(LatLng p, List<LatLng> polyline) {
+    late LatLng best;
+    double bestD = double.infinity;
+
+    for (var i = 0; i < polyline.length - 1; i++) {
+      final a = polyline[i];
+      final b = polyline[i + 1];
+      final proj = _projectOnSegment(p, a, b);
+      final d = _meters(proj, p);
+      if (d < bestD) {
+        bestD = d;
+        best = proj;
+      }
+    }
+    return best;
+  }
+
+  /* ----------------------------- Search flow ----------------------------- */
 
   Future<void> _searchByAddress(String text) async {
     if (text.trim().isEmpty) return;
@@ -139,11 +239,8 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
       // Filter routes that pass near the searched destination
       final matches = <DriverRoute>[];
       for (final r in _allRoutes) {
-        final pts =
-            _polyDecoder
-                .decodePolyline(r.polyline)
-                .map((p) => LatLng(p.latitude, p.longitude))
-                .toList();
+        final pts = _decodeEffectivePolyline(r);
+        if (pts.isEmpty) continue;
         if (_isPointNearPolyline(dest, pts, _matchRadiusMeters)) {
           matches.add(r);
         }
@@ -170,82 +267,11 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     }
   }
 
-  bool _isPointNearPolyline(LatLng p, List<LatLng> polyline, double maxMeters) {
-    if (polyline.length < 2) return false;
-    double best = double.infinity;
-
-    for (var i = 0; i < polyline.length - 1; i++) {
-      final a = polyline[i];
-      final b = polyline[i + 1];
-      final d = _distancePointToSegmentMeters(p, a, b);
-      if (d < best) best = d;
-      if (best <= maxMeters) return true;
-    }
-    return best <= maxMeters;
-  }
-
-  // Approx perpendicular distance P→AB in meters
-  double _distancePointToSegmentMeters(LatLng p, LatLng a, LatLng b) {
-    final ax = a.longitude, ay = a.latitude;
-    final bx = b.longitude, by = b.latitude;
-    final px = p.longitude, py = p.latitude;
-
-    final vx = bx - ax, vy = by - ay;
-    final wx = px - ax, wy = py - ay;
-
-    final c1 = vx * wx + vy * wy;
-    if (c1 <= 0) return _dist(a, p);
-
-    final c2 = vx * vx + vy * vy;
-    if (c2 <= c1) return _dist(b, p);
-
-    final t = c1 / c2;
-    final proj = LatLng(ay + t * vy, ax + t * vx);
-    return _dist(proj, p);
-  }
-
-  LatLng _projectOnSegment(LatLng p, LatLng a, LatLng b) {
-    final ax = a.longitude, ay = a.latitude;
-    final bx = b.longitude, by = b.latitude;
-    final px = p.longitude, py = p.latitude;
-
-    final vx = bx - ax, vy = by - ay;
-    final wx = px - ax, wy = py - ay;
-
-    final c1 = vx * wx + vy * wy;
-    final c2 = vx * vx + vy * vy;
-
-    if (c1 <= 0) return a;
-    if (c2 <= c1) return b;
-
-    final t = c1 / c2;
-    return LatLng(ay + t * vy, ax + t * vx);
-  }
-
-  LatLng _snapToPolyline(LatLng p, List<LatLng> polyline) {
-    late LatLng best;
-    double bestD = double.infinity;
-
-    for (var i = 0; i < polyline.length - 1; i++) {
-      final a = polyline[i];
-      final b = polyline[i + 1];
-      final proj = _projectOnSegment(p, a, b);
-      final d = _dist(proj, p);
-      if (d < bestD) {
-        bestD = d;
-        best = proj;
-      }
-    }
-    return best;
-  }
+  /* ----------------------------- Interactions ----------------------------- */
 
   // When the user picks a candidate route
   void _selectRoute(DriverRoute r) {
-    final pts =
-        _polyDecoder
-            .decodePolyline(r.polyline)
-            .map((p) => LatLng(p.latitude, p.longitude))
-            .toList();
+    final pts = _decodeEffectivePolyline(r);
 
     // If there was a searched destination, offer a default drop-off snapped to route
     LatLng? newDrop =
@@ -257,7 +283,10 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
       _selectedRoute = r;
       _selectedRoutePoints = pts;
       // keep previous pickup if it already existed and makes sense on the new route; otherwise clear
-      _pickup = (_pickup != null) ? _snapToPolyline(_pickup!, pts) : null;
+      _pickup =
+          (_pickup != null && pts.length >= 2)
+              ? _snapToPolyline(_pickup!, pts)
+              : null;
       _dropoff = newDrop; // pre-populate drop-off if we had a search
       _osrmSegment = null;
       _editTarget = 'auto';
@@ -286,7 +315,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     if (_pickup == null) {
       setState(() {
         _pickup = snapped;
-        // keep prefilled dropoff if any; user can still change it
         _editTarget = 'dropoff';
         _osrmSegment = null;
       });
@@ -360,6 +388,8 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
       ),
     );
   }
+
+  /* ----------------------------- Build ----------------------------- */
 
   @override
   Widget build(BuildContext context) {
@@ -716,7 +746,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
 
 /* ---------------- Small UI widgets ---------------- */
 
-class _SearchBar extends StatelessWidget {
+class _SearchBar extends StatefulWidget {
   const _SearchBar({
     required this.controller,
     required this.onSubmit,
@@ -727,7 +757,26 @@ class _SearchBar extends StatelessWidget {
   final void Function(String) onSubmit;
   final VoidCallback onClear;
 
+  @override
+  State<_SearchBar> createState() => _SearchBarState();
+}
+
+class _SearchBarState extends State<_SearchBar> {
   static const _purple = Color(0xFF6A27F7);
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onChange);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onChange);
+    super.dispose();
+  }
+
+  void _onChange() => setState(() {});
 
   @override
   Widget build(BuildContext context) {
@@ -752,30 +801,26 @@ class _SearchBar extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: TextField(
-              controller: controller,
+              controller: widget.controller,
               textInputAction: TextInputAction.search,
               decoration: const InputDecoration(
                 border: InputBorder.none,
                 hintText: 'Enter your destination',
               ),
-              onSubmitted: onSubmit,
-              onChanged: (_) {
-                // rebuild to show/hide clear icon
-                (context as Element).markNeedsBuild();
-              },
+              onSubmitted: widget.onSubmit,
             ),
           ),
-          if (controller.text.isNotEmpty)
+          if (widget.controller.text.isNotEmpty)
             IconButton(
               tooltip: 'Clear',
               icon: const Icon(Icons.close, color: Colors.black45),
               onPressed: () {
-                controller.clear();
-                onClear();
+                widget.controller.clear();
+                widget.onClear();
               },
             ),
           FilledButton(
-            onPressed: () => onSubmit(controller.text),
+            onPressed: () => widget.onSubmit(widget.controller.text),
             style: FilledButton.styleFrom(
               backgroundColor: _purple,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -907,8 +952,8 @@ class _LoadingBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: const [
+    return const Row(
+      children: [
         SizedBox(width: 12),
         Expanded(child: LinearProgressIndicator(minHeight: 6)),
         SizedBox(width: 12),
