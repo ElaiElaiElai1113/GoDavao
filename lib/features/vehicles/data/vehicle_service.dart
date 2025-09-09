@@ -1,77 +1,216 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'vehicle.dart';
 
-class VehicleService {
+class VehiclesService {
   final SupabaseClient sb;
-  VehicleService(this.sb);
+  VehiclesService(this.sb);
 
-  String? get _uid => sb.auth.currentUser?.id;
+  // ---------------- Queries ----------------
 
-  Future<List<Vehicle>> listMyVehicles() async {
-    final uid = _uid;
-    if (uid == null) return [];
+  Future<List<Map<String, dynamic>>> listMine() async {
+    final uid = sb.auth.currentUser?.id;
+    if (uid == null) throw Exception('Not authenticated');
+
     final res = await sb
         .from('vehicles')
-        .select('*')
+        .select(
+          'id, make, model, plate, color, year, seats, is_default, verification_status, created_at',
+        )
         .eq('driver_id', uid)
-        .order('is_primary', ascending: false)
+        .order('is_default', ascending: false)
         .order('created_at', ascending: false);
-    return (res as List)
-        .map((e) => Vehicle.fromMap(e as Map<String, dynamic>))
-        .toList();
+
+    return (res as List).map((e) => (e as Map<String, dynamic>)).toList();
   }
 
-  Future<Vehicle> createVehicle({
-    required String plate,
-    required String make,
-    required String model,
-    String? color,
-    int? year,
-    int? seats,
-  }) async {
-    final uid = _uid;
-    if (uid == null) throw Exception('Not signed in');
-    final insert = {
-      'driver_id': uid,
-      'plate': plate.trim(),
-      'make': make.trim(),
-      'model': model.trim(),
-      if (color != null && color.trim().isNotEmpty) 'color': color.trim(),
-      if (year != null) 'year': year,
-      if (seats != null) 'seats': seats,
-    };
-    final res = await sb.from('vehicles').insert(insert).select().single();
-    return Vehicle.fromMap(res as Map<String, dynamic>);
-  }
+  Future<Map<String, dynamic>?> getVehicle(String vehicleId) async {
+    final uid = sb.auth.currentUser?.id;
+    if (uid == null) throw Exception('Not authenticated');
 
-  Future<Vehicle> updateVehicle(String id, Vehicle updated) async {
     final res =
         await sb
             .from('vehicles')
-            .update(updated.toUpdate())
-            .eq('id', id)
-            .select()
-            .single();
-    return Vehicle.fromMap(res as Map<String, dynamic>);
+            .select(
+              'id, make, model, plate, color, year, seats, is_default, verification_status, created_at',
+            )
+            .eq('driver_id', uid)
+            .eq('id', vehicleId)
+            .maybeSingle();
+
+    if (res == null) return null;
+    return Map<String, dynamic>.from(res as Map);
   }
 
-  Future<void> deleteVehicle(String id) async {
-    await sb.from('vehicles').delete().eq('id', id);
+  Future<Map<String, dynamic>?> getDefaultVehicle() async {
+    final uid = sb.auth.currentUser?.id;
+    if (uid == null) throw Exception('Not authenticated');
+
+    final res =
+        await sb
+            .from('vehicles')
+            .select(
+              'id, make, model, plate, color, year, seats, is_default, verification_status, created_at',
+            )
+            .eq('driver_id', uid)
+            .eq('is_default', true)
+            .maybeSingle();
+
+    if (res == null) return null;
+    return Map<String, dynamic>.from(res as Map);
   }
 
-  /// Sets this vehicle as primary, and clears others for this driver.
-  Future<void> setPrimary(String id) async {
-    final uid = _uid;
-    if (uid == null) return;
-    final rpcSupported = false; // flip to true if you add a Postgres function
-    if (rpcSupported) {
-      // await sb.rpc('set_primary_vehicle', params: {'p_vehicle_id': id});
-      return;
+  // ---------------- Create ----------------
+
+  /// Your existing name
+  Future<void> addVehicle({
+    required String make,
+    required String model,
+    String? plate,
+    String? color,
+    int? year,
+    required int seats,
+    bool isDefault = false,
+  }) async {
+    await createVehicle(
+      make: make,
+      model: model,
+      plate: plate,
+      color: color,
+      year: year,
+      seats: seats,
+      isDefault: isDefault,
+    );
+  }
+
+  /// Name expected by VehicleFormPage
+  Future<void> createVehicle({
+    required String make,
+    required String model,
+    String? plate,
+    String? color,
+    int? year,
+    required int seats,
+    bool isDefault = false,
+  }) async {
+    final uid = sb.auth.currentUser?.id;
+    if (uid == null) throw Exception('Not authenticated');
+
+    try {
+      await sb.from('vehicles').insert({
+        'driver_id': uid,
+        'make': make,
+        'model': model,
+        'plate': (plate?.trim().isEmpty ?? true) ? null : plate!.trim(),
+        'color': (color?.trim().isEmpty ?? true) ? null : color!.trim(),
+        'year': year,
+        'seats': seats,
+        'is_default': isDefault,
+      });
+    } on PostgrestException catch (e) {
+      // nicer duplicate-plate message
+      if ((e.message ?? '').toLowerCase().contains(
+        'uq_vehicle_plate_per_driver',
+      )) {
+        throw Exception('This plate is already registered to your account.');
+      }
+      rethrow;
     }
-    final _ = await sb
+  }
+
+  // ---------------- Update ----------------
+
+  /// Name expected by VehicleFormPage
+  Future<void> updateVehicle(
+    String vehicleId,
+    Map<String, dynamic> patch,
+  ) async {
+    final uid = sb.auth.currentUser?.id;
+    if (uid == null) throw Exception('Not authenticated');
+
+    // Clean the patch to allowed columns only
+    final allowed = <String, dynamic>{};
+    void put(String key, dynamic value) {
+      if (value != null) allowed[key] = value;
+    }
+
+    put('make', patch['make']);
+    put('model', patch['model']);
+    put(
+      'plate',
+      (patch['plate'] is String && (patch['plate'] as String).trim().isEmpty)
+          ? null
+          : patch['plate'],
+    );
+    put(
+      'color',
+      (patch['color'] is String && (patch['color'] as String).trim().isEmpty)
+          ? null
+          : patch['color'],
+    );
+    put('year', patch['year']);
+    put('seats', patch['seats']);
+    if (patch.containsKey('is_default')) {
+      put('is_default', patch['is_default']);
+    }
+
+    if (allowed.isEmpty) return;
+
+    try {
+      await sb
+          .from('vehicles')
+          .update(allowed)
+          .eq('id', vehicleId)
+          .eq('driver_id', uid);
+    } on PostgrestException catch (e) {
+      if ((e.message ?? '').toLowerCase().contains(
+        'uq_vehicle_plate_per_driver',
+      )) {
+        throw Exception('This plate is already registered to your account.');
+      }
+      rethrow;
+    }
+  }
+
+  /// Overload to accept your Vehicle model if you prefer:
+  /// VehiclesService.updateVehicle(vehicle.id, vehicle.toMapForUpdate());
+  Future<void> updateVehicleFromModel(
+    String vehicleId,
+    String make,
+    String model,
+    String? plate,
+    String? color,
+    int? year,
+    int seats, {
+    bool? isDefault,
+  }) => updateVehicle(vehicleId, {
+    'make': make,
+    'model': model,
+    'plate': plate,
+    'color': color,
+    'year': year,
+    'seats': seats,
+    if (isDefault != null) 'is_default': isDefault,
+  });
+
+  // ---------------- Default toggle ----------------
+
+  Future<void> setDefault(String vehicleId) async {
+    final uid = sb.auth.currentUser?.id;
+    if (uid == null) throw Exception('Not authenticated');
+
+    // rely on DB trigger ensure_single_default_vehicle()
+    await sb
         .from('vehicles')
-        .update({'is_primary': false})
+        .update({'is_default': true})
+        .eq('id', vehicleId)
         .eq('driver_id', uid);
-    await sb.from('vehicles').update({'is_primary': true}).eq('id', id);
+  }
+
+  // ---------------- Delete ----------------
+
+  Future<void> deleteVehicle(String vehicleId) async {
+    final uid = sb.auth.currentUser?.id;
+    if (uid == null) throw Exception('Not authenticated');
+
+    await sb.from('vehicles').delete().eq('id', vehicleId).eq('driver_id', uid);
   }
 }

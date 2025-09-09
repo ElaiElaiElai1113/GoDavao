@@ -12,7 +12,7 @@ class VehicleFormPage extends StatefulWidget {
 }
 
 class _VehicleFormPageState extends State<VehicleFormPage> {
-  final _svc = VehicleService(Supabase.instance.client);
+  final _svc = VehiclesService(Supabase.instance.client);
   final _form = GlobalKey<FormState>();
 
   late final TextEditingController plate;
@@ -55,15 +55,20 @@ class _VehicleFormPageState extends State<VehicleFormPage> {
     if (!_form.currentState!.validate()) return;
     setState(() => _working = true);
     try {
-      final y = int.tryParse(year.text.trim().isEmpty ? '' : year.text.trim());
-      final s = int.tryParse(
-        seats.text.trim().isEmpty ? '' : seats.text.trim(),
-      );
+      final y =
+          year.text.trim().isNotEmpty ? int.tryParse(year.text.trim()) : null;
+      final s =
+          seats.text.trim().isNotEmpty ? int.tryParse(seats.text.trim()) : null;
+
+      if (s == null || s < 1 || s > 10) {
+        throw Exception('Seats must be between 1 and 10');
+      }
+
       if (widget.vehicle == null) {
         await _svc.createVehicle(
-          plate: plate.text,
-          make: make.text,
-          model: model.text,
+          plate: plate.text.trim(),
+          make: make.text.trim(),
+          model: model.text.trim(),
           color: color.text.trim().isEmpty ? null : color.text.trim(),
           year: y,
           seats: s,
@@ -72,18 +77,23 @@ class _VehicleFormPageState extends State<VehicleFormPage> {
         final updated = Vehicle(
           id: widget.vehicle!.id,
           driverId: widget.vehicle!.driverId,
-          plate: plate.text,
-          make: make.text,
-          model: model.text,
+          plate: plate.text.trim(),
+          make: make.text.trim(),
+          model: model.text.trim(),
           color: color.text.trim().isEmpty ? null : color.text.trim(),
           year: y,
           seats: s,
+          // keep whatever naming your Vehicle model expects
           isPrimary: widget.vehicle!.isPrimary,
           verificationStatus: widget.vehicle!.verificationStatus,
           verificationReason: widget.vehicle!.verificationReason,
         );
-        await _svc.updateVehicle(widget.vehicle!.id, updated);
+        await _svc.updateVehicle(
+          widget.vehicle!.id,
+          updated as Map<String, dynamic>,
+        );
       }
+
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -118,7 +128,7 @@ class _VehicleFormPageState extends State<VehicleFormPage> {
                 controller: plate,
                 textCapitalization: TextCapitalization.characters,
                 decoration: const InputDecoration(
-                  labelText: 'Plate Number',
+                  labelText: 'Plate Number *',
                   border: OutlineInputBorder(),
                 ),
                 validator: _req,
@@ -127,7 +137,7 @@ class _VehicleFormPageState extends State<VehicleFormPage> {
               TextFormField(
                 controller: make,
                 decoration: const InputDecoration(
-                  labelText: 'Make',
+                  labelText: 'Make *',
                   border: OutlineInputBorder(),
                 ),
                 validator: _req,
@@ -136,7 +146,7 @@ class _VehicleFormPageState extends State<VehicleFormPage> {
               TextFormField(
                 controller: model,
                 decoration: const InputDecoration(
-                  labelText: 'Model',
+                  labelText: 'Model *',
                   border: OutlineInputBorder(),
                 ),
                 validator: _req,
@@ -168,9 +178,10 @@ class _VehicleFormPageState extends State<VehicleFormPage> {
                       controller: seats,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
-                        labelText: 'Seats',
+                        labelText: 'Seats *',
                         border: OutlineInputBorder(),
                       ),
+                      validator: _req,
                     ),
                   ),
                 ],

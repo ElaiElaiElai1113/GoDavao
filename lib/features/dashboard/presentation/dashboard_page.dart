@@ -10,6 +10,8 @@ import 'package:godavao/features/maps/passenger_map_page.dart';
 import 'package:godavao/features/routes/presentation/pages/driver_route_page.dart';
 import 'package:godavao/features/ride_status/presentation/driver_rides_page.dart';
 import 'package:godavao/features/verify/data/verification_service.dart';
+// 👇 Add Vehicles import
+import 'package:godavao/features/vehicles/presentation/vehicles_page.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -59,6 +61,7 @@ class _DashboardPageState extends State<DashboardPage> {
       _loading = true;
       _error = null;
     });
+
     final u = _sb.auth.currentUser;
     if (u == null) {
       if (!mounted) return;
@@ -69,6 +72,7 @@ class _DashboardPageState extends State<DashboardPage> {
       );
       return;
     }
+
     try {
       final res =
           await _sb
@@ -129,6 +133,7 @@ class _DashboardPageState extends State<DashboardPage> {
             .select('id')
             .eq('driver_id', uid)
             .eq('is_active', true);
+
         final pendingMatches = await _sb
             .from('ride_matches')
             .select('id')
@@ -146,6 +151,7 @@ class _DashboardPageState extends State<DashboardPage> {
             .select('id')
             .eq('passenger_id', uid)
             .inFilter('status', ['pending', 'accepted', 'en_route']);
+
         final history = await _sb
             .from('ride_requests')
             .select('id')
@@ -164,7 +170,7 @@ class _DashboardPageState extends State<DashboardPage> {
         });
       }
     } catch (_) {
-      // ignore
+      // non-fatal
     } finally {
       if (mounted) setState(() => _loadingOverview = false);
     }
@@ -300,9 +306,26 @@ class _DashboardPageState extends State<DashboardPage> {
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child:
                           isDriver
-                              ? (isVerified
+                              ? (
+                              // DRIVER: Vehicles is always visible; other actions require verification
+                              isVerified
                                   ? _ActionGrid(
                                     items: [
+                                      _ActionItem(
+                                        title: 'Vehicles',
+                                        subtitle: 'Add & verify car',
+                                        icon:
+                                            Icons
+                                                .directions_car_filled_outlined,
+                                        onTap:
+                                            () => Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder:
+                                                    (_) => const VehiclesPage(),
+                                              ),
+                                            ),
+                                      ),
                                       _ActionItem(
                                         title: 'Set Driver Route',
                                         subtitle: 'Go online',
@@ -333,14 +356,24 @@ class _DashboardPageState extends State<DashboardPage> {
                                       ),
                                     ],
                                   )
-                                  : Container(
-                                    padding: const EdgeInsets.all(16),
-                                    child: const Text(
-                                      'Driver features are locked until your verification is approved.',
-                                      maxLines: 3,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(color: Colors.black54),
-                                    ),
+                                  : _ActionGrid(
+                                    items: [
+                                      _ActionItem(
+                                        title: 'Vehicles',
+                                        subtitle: 'Add & verify car',
+                                        icon:
+                                            Icons
+                                                .directions_car_filled_outlined,
+                                        onTap:
+                                            () => Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder:
+                                                    (_) => const VehiclesPage(),
+                                              ),
+                                            ),
+                                      ),
+                                    ],
                                   ))
                               : _ActionGrid(
                                 items: [
@@ -381,7 +414,7 @@ class _DashboardPageState extends State<DashboardPage> {
                               ),
                     ),
 
-                    // OVERVIEW (only if driver is verified or passenger)
+                    // OVERVIEW (only if driver is verified OR user is passenger)
                     if (!isDriver || isVerified) ...[
                       const SizedBox(height: 16),
                       Padding(
