@@ -15,10 +15,7 @@ class _AdminVehicleVerificationPageState
   late final _VehicleAdminService svc;
   late final TabController _tabs;
 
-  // Optimistic/busy per-row ids
   final Set<String> _busy = {};
-
-  // Caches for approved/rejected lists
   List<Map<String, dynamic>> _approved = [];
   List<Map<String, dynamic>> _rejected = [];
   bool _loadingApproved = true;
@@ -37,8 +34,6 @@ class _AdminVehicleVerificationPageState
     setState(() => _loadingApproved = true);
     try {
       _approved = await svc.fetch(status: 'approved');
-    } catch (_) {
-      // ignore; show toasts only on action
     } finally {
       if (mounted) setState(() => _loadingApproved = false);
     }
@@ -48,8 +43,6 @@ class _AdminVehicleVerificationPageState
     setState(() => _loadingRejected = true);
     try {
       _rejected = await svc.fetch(status: 'rejected');
-    } catch (_) {
-      // ignore
     } finally {
       if (mounted) setState(() => _loadingRejected = false);
     }
@@ -71,7 +64,6 @@ class _AdminVehicleVerificationPageState
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Vehicle approved ✔')));
-      // pending stream will drop item automatically, refresh approved tab
       _loadApproved();
     } catch (e) {
       if (!mounted) return;
@@ -236,8 +228,7 @@ class _VehicleAdminService {
   _VehicleAdminService(this.client);
   final SupabaseClient client;
 
-  // ✅ Realtime pending list (no .select on streams; sort client-side)
-  // in _VehicleAdminService
+  // Realtime pending list
   Stream<List<Map<String, dynamic>>> watchPending() {
     final s = client
         .from('vehicles')
@@ -248,8 +239,14 @@ class _VehicleAdminService {
       final list =
           rows
               .map((e) => Map<String, dynamic>.from(e as Map))
-              // optional: only show vehicles that uploaded OR/CR
-              .where((v) => (v['orcr_key'] as String?)?.isNotEmpty == true)
+              // If you want to require BOTH uploaded before showing in Pending:
+              .where(
+                (v) =>
+                    ((v['or_key'] as String?)?.isNotEmpty ?? false) &&
+                    ((v['cr_key'] as String?)?.isNotEmpty ?? false),
+              )
+              // If you want to allow showing even if only one uploaded, change to:
+              // .where((v) => ((v['or_key'] as String?)?.isNotEmpty ?? false) || ((v['cr_key'] as String?)?.isNotEmpty ?? false))
               .toList();
 
       list.sort((a, b) {
@@ -265,7 +262,6 @@ class _VehicleAdminService {
     });
   }
 
-  // Pull lists for history tabs
   Future<List<Map<String, dynamic>>> fetch({required String status}) async {
     return await client
         .from('vehicles')
@@ -298,7 +294,6 @@ class _VehicleAdminService {
         .eq('id', vehicleId);
   }
 
-  // Signed URL for private bucket objects
   Future<String?> signedUrl(
     String? storageKey, {
     int expiresInSeconds = 300,
@@ -330,7 +325,6 @@ class _PendingTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final id = v['id'].toString();
     final plate = (v['plate'] ?? '').toString();
     final make = (v['make'] ?? '').toString();
     final model = (v['model'] ?? '').toString();
@@ -415,9 +409,7 @@ class _ListWithRefresh extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (loading) return const Center(child: CircularProgressIndicator());
-    if (items.isEmpty) {
-      return _EmptyState(icon: emptyIcon, text: emptyText);
-    }
+    if (items.isEmpty) return _EmptyState(icon: emptyIcon, text: emptyText);
     return RefreshIndicator(
       onRefresh: onRefresh,
       child: ListView.separated(
@@ -468,25 +460,31 @@ class _VehiclePreviewSheet extends StatefulWidget {
 }
 
 class _VehiclePreviewSheetState extends State<_VehiclePreviewSheet> {
-  String? _signedUrl;
+  String? _signedOr;
+  String? _signedCr;
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    final key = (widget.vehicle['orcr_key'] as String?);
-    _load(key);
+    final orKey = widget.vehicle['or_key'] as String?;
+    final crKey = widget.vehicle['cr_key'] as String?;
+    _load(orKey, crKey);
   }
 
-  Future<void> _load(String? key) async {
+  Future<void> _load(String? orKey, String? crKey) async {
     setState(() => _loading = true);
     try {
-      _signedUrl = await widget.svc.signedUrl(key, expiresInSeconds: 300);
+      _signedOr = await widget.svc.signedUrl(orKey, expiresInSeconds: 300);
     } catch (_) {
-      _signedUrl = null;
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      _signedOr = null;
     }
+    try {
+      _signedCr = await widget.svc.signedUrl(crKey, expiresInSeconds: 300);
+    } catch (_) {
+      _signedCr = null;
+    }
+    if (mounted) setState(() => _loading = false);
   }
 
   @override
@@ -508,29 +506,52 @@ class _VehiclePreviewSheetState extends State<_VehiclePreviewSheet> {
             Text('Color: ${v['color'] ?? '—'} — Seats: ${v['seats'] ?? '—'}'),
             const Divider(height: 20),
             const Text(
-              'OR/CR Document',
+              'Documents',
               style: TextStyle(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
+
             if (_loading)
               const SizedBox(
                 height: 160,
                 child: Center(child: CircularProgressIndicator()),
               )
-            else if (_signedUrl == null)
-              const Text('No document uploaded')
-            else
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  _signedUrl!,
-                  height: 200,
-                  fit: BoxFit.cover,
+            else ...[
+              // OR
+              const Text('Official Receipt (OR)'),
+              const SizedBox(height: 6),
+              if (_signedOr == null)
+                const Text('No OR uploaded')
+              else
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    _signedOr!,
+                    height: 200,
+                    fit: BoxFit.cover,
+                  ),
                 ),
-              ),
+              const SizedBox(height: 12),
+
+              // CR
+              const Text('Certificate of Registration (CR)'),
+              const SizedBox(height: 6),
+              if (_signedCr == null)
+                const Text('No CR uploaded')
+              else
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    _signedCr!,
+                    height: 200,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+            ],
+
             const SizedBox(height: 12),
             if (v['review_notes'] != null &&
-                (v['review_notes'] as String).isNotEmpty) ...[
+                (v['review_notes'] as String).toString().isNotEmpty) ...[
               const Text(
                 'Notes',
                 style: TextStyle(fontWeight: FontWeight.w600),

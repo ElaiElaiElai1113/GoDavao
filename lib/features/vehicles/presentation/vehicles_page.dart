@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:godavao/features/vehicles/data/vehicle_service.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class VehiclesPage extends StatefulWidget {
@@ -66,26 +68,8 @@ class _VehiclesPageState extends State<VehiclesPage> {
                   itemBuilder:
                       (_, i) => _VehicleTile(
                         v: _items[i],
-                        onMakeDefault: () async {
-                          try {
-                            await _svc.setDefault(_items[i]['id'] as String);
-                            _load();
-                          } catch (e) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Failed: $e')),
-                            );
-                          }
-                        },
-                        onDelete: () async {
-                          try {
-                            await _svc.deleteVehicle(_items[i]['id'] as String);
-                            _load();
-                          } catch (e) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Failed: $e')),
-                            );
-                          }
-                        },
+                        svc: _svc,
+                        onChanged: _load,
                       ),
                 ),
       ),
@@ -98,19 +82,92 @@ class _VehiclesPageState extends State<VehiclesPage> {
   }
 }
 
-class _VehicleTile extends StatelessWidget {
+/* ---------------- Vehicle Tile ---------------- */
+
+class _VehicleTile extends StatefulWidget {
   final Map<String, dynamic> v;
-  final VoidCallback onMakeDefault;
-  final VoidCallback onDelete;
+  final VehiclesService svc;
+  final VoidCallback onChanged;
 
   const _VehicleTile({
     required this.v,
-    required this.onMakeDefault,
-    required this.onDelete,
+    required this.svc,
+    required this.onChanged,
   });
 
   @override
+  State<_VehicleTile> createState() => _VehicleTileState();
+}
+
+class _VehicleTileState extends State<_VehicleTile> {
+  bool _working = false;
+
+  Future<void> _uploadOR() async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (picked == null) return;
+    setState(() => _working = true);
+    try {
+      await widget.svc.uploadOR(
+        vehicleId: widget.v['id'] as String,
+        file: File(picked.path),
+      );
+      _toast('OR uploaded');
+      widget.onChanged();
+    } catch (e) {
+      _toast('Upload failed: $e');
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  Future<void> _uploadCR() async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (picked == null) return;
+    setState(() => _working = true);
+    try {
+      await widget.svc.uploadCR(
+        vehicleId: widget.v['id'] as String,
+        file: File(picked.path),
+      );
+      _toast('CR uploaded');
+      widget.onChanged();
+    } catch (e) {
+      _toast('Upload failed: $e');
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  Future<void> _submit() async {
+    setState(() => _working = true);
+    try {
+      await widget.svc.submitForVerificationBoth(widget.v['id'] as String);
+      _toast('Submitted for verification');
+      widget.onChanged();
+    } catch (e) {
+      _toast('Submit failed: $e');
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  Future<void> _resubmit() async {
+    setState(() => _working = true);
+    try {
+      await widget.svc.resubmitBoth(widget.v['id'] as String);
+      _toast('Resubmitted for verification');
+      widget.onChanged();
+    } catch (e) {
+      _toast('Resubmit failed: $e');
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final v = widget.v;
+
     final title = [
       v['year']?.toString(),
       v['make'],
@@ -125,32 +182,278 @@ class _VehicleTile extends StatelessWidget {
     ].join(' • ');
 
     final isDefault = (v['is_default'] as bool?) ?? false;
+    final status = (v['verification_status'] ?? 'pending') as String;
+    final notes = v['review_notes'] as String?;
+
+    // separate keys (expect these columns exist in DB)
+    final orKey = v['or_key'] as String?;
+    final crKey = v['cr_key'] as String?;
 
     return Card(
-      child: ListTile(
+      child: ExpansionTile(
         leading: CircleAvatar(
           child: Icon(isDefault ? Icons.star : Icons.directions_car),
         ),
         title: Text(title.isEmpty ? 'Vehicle' : title),
         subtitle: Text(subtitle),
-        trailing: PopupMenuButton<String>(
-          onSelected: (value) {
-            if (value == 'default') onMakeDefault();
-            if (value == 'delete') onDelete();
-          },
-          itemBuilder:
-              (_) => [
-                const PopupMenuItem(
-                  value: 'default',
-                  child: Text('Make default'),
-                ),
-                const PopupMenuItem(value: 'delete', child: Text('Delete')),
-              ],
-        ),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        children: [
+          // Default/Delete
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ElevatedButton.icon(
+                icon: const Icon(Icons.star),
+                label: const Text('Make Default'),
+                onPressed:
+                    _working
+                        ? null
+                        : () async {
+                          try {
+                            await widget.svc.setDefault(v['id'] as String);
+                            widget.onChanged();
+                          } catch (e) {
+                            _toast('Failed: $e');
+                          }
+                        },
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.delete),
+                label: const Text('Delete'),
+                onPressed:
+                    _working
+                        ? null
+                        : () async {
+                          try {
+                            await widget.svc.deleteVehicle(v['id'] as String);
+                            widget.onChanged();
+                          } catch (e) {
+                            _toast('Failed: $e');
+                          }
+                        },
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Verification block
+          _VerificationBlock(
+            svc: widget.svc,
+            vehicleId: v['id'] as String,
+            status: status,
+            notes: notes,
+            working: _working,
+            orKey: orKey,
+            crKey: crKey,
+            onUploadOR: _uploadOR,
+            onUploadCR: _uploadCR,
+            onSubmit: _submit,
+            onResubmit: _resubmit,
+          ),
+        ],
       ),
     );
   }
+
+  void _toast(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
 }
+
+/* ---------------- Verification Block ---------------- */
+
+class _VerificationBlock extends StatelessWidget {
+  const _VerificationBlock({
+    required this.svc,
+    required this.vehicleId,
+    required this.status,
+    required this.notes,
+    required this.working,
+    required this.orKey,
+    required this.crKey,
+    required this.onUploadOR,
+    required this.onUploadCR,
+    required this.onSubmit,
+    required this.onResubmit,
+  });
+
+  final VehiclesService svc;
+  final String vehicleId;
+  final String status;
+  final String? notes;
+  final bool working;
+
+  final String? orKey;
+  final String? crKey;
+
+  final VoidCallback onUploadOR;
+  final VoidCallback onUploadCR;
+  final VoidCallback onSubmit;
+  final VoidCallback onResubmit;
+
+  bool get hasOR => (orKey != null && orKey!.isNotEmpty);
+  bool get hasCR => (crKey != null && crKey!.isNotEmpty);
+
+  @override
+  Widget build(BuildContext context) {
+    final rejected = status == 'rejected';
+    final approved = status == 'approved';
+    final pending = status == 'pending';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (rejected && (notes?.trim().isNotEmpty ?? false)) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(.06),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.red.withOpacity(.2)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.error_outline, color: Colors.red),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Review notes: $notes',
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+
+        // Upload buttons
+        Row(
+          children: [
+            OutlinedButton.icon(
+              icon: const Icon(Icons.upload_file),
+              label: Text(hasOR ? 'Replace OR' : 'Upload OR'),
+              onPressed: working ? null : onUploadOR,
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.upload_file),
+              label: Text(hasCR ? 'Replace CR' : 'Upload CR'),
+              onPressed: working ? null : onUploadCR,
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // Preview OR
+        FutureBuilder<String?>(
+          future: svc.signedUrl(orKey),
+          builder: (context, snap) {
+            if (orKey == null || orKey!.isEmpty) {
+              return const Text('No OR uploaded yet.');
+            }
+            if (!snap.hasData) {
+              return const SizedBox(
+                height: 32,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Loading OR preview…'),
+                ),
+              );
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Uploaded OR:'),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    snap.data!,
+                    height: 160,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+
+        // Preview CR
+        FutureBuilder<String?>(
+          future: svc.signedUrl(crKey),
+          builder: (context, snap) {
+            if (crKey == null || crKey!.isEmpty) {
+              return const Text('No CR uploaded yet.');
+            }
+            if (!snap.hasData) {
+              return const SizedBox(
+                height: 32,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Loading CR preview…'),
+                ),
+              );
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Uploaded CR:'),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    snap.data!,
+                    height: 160,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+
+        if (!approved && hasOR && hasCR)
+          FilledButton.icon(
+            icon: Icon(rejected ? Icons.refresh : Icons.check_circle),
+            label: Text(rejected ? 'Fix & Resubmit' : 'Submit'),
+            onPressed: working ? null : (rejected ? onResubmit : onSubmit),
+          ),
+
+        if (pending) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: const [
+              Icon(Icons.hourglass_top, size: 16, color: Colors.orange),
+              SizedBox(width: 6),
+              Text(
+                'Submitted — waiting for review',
+                style: TextStyle(color: Colors.orange),
+              ),
+            ],
+          ),
+        ],
+        if (approved) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: const [
+              Icon(Icons.verified, size: 16, color: Colors.green),
+              SizedBox(width: 6),
+              Text('Approved', style: TextStyle(color: Colors.green)),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/* ---------------- Empty State ---------------- */
 
 class _Empty extends StatelessWidget {
   final VoidCallback onAdd;
@@ -182,6 +485,8 @@ class _Empty extends StatelessWidget {
   }
 }
 
+/* ---------------- Error Box ---------------- */
+
 class _ErrorBox extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
@@ -210,6 +515,8 @@ class _ErrorBox extends StatelessWidget {
     );
   }
 }
+
+/* ---------------- Add Vehicle Sheet ---------------- */
 
 class _AddVehicleSheet extends StatefulWidget {
   const _AddVehicleSheet();
@@ -245,7 +552,7 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
     setState(() => _saving = true);
     try {
       final svc = VehiclesService(Supabase.instance.client);
-      await svc.addVehicle(
+      await svc.createVehicle(
         make: _make.text.trim(),
         model: _model.text.trim(),
         plate: _plate.text.trim().isEmpty ? null : _plate.text.trim(),
@@ -273,7 +580,7 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
     return Padding(
       padding: EdgeInsets.only(bottom: insets.bottom),
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        padding: const EdgeInsets.all(16),
         child: Form(
           key: _form,
           child: Column(
