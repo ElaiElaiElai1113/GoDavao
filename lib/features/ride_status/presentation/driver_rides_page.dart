@@ -13,8 +13,6 @@ import 'package:godavao/features/ratings/presentation/rate_user.dart';
 import 'package:godavao/features/ratings/data/ratings_service.dart';
 import 'package:godavao/features/payments/presentation/payment_status_chip.dart';
 import 'package:godavao/main.dart' show localNotify;
-
-// Map/details page
 import 'package:godavao/features/ride_status/presentation/driver_ride_status_page.dart';
 
 class DriverRidesPage extends StatefulWidget {
@@ -38,26 +36,21 @@ class _DriverRidesPageState extends State<DriverRidesPage>
   Map<String, Map<String, dynamic>> _paymentByRide = {};
   bool _loading = true;
 
-  // Realtime
   RealtimeChannel? _matchChannel;
   RealtimeChannel? _feeChannel;
 
-  // ---- fee (dashboard-managed) ----
-  // default 15% until the dashboard value loads
+  // default 15% until settings load
   double _platformFeeRate = 0.15;
 
-  // theme tokens
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
   static const _bg = Color(0xFFF7F7FB);
-
-  // ===================== lifecycle =====================
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _initFee(); // <-- load & watch fee
+    _initFee();
     _loadMatches();
   }
 
@@ -86,12 +79,12 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               .eq('key', 'platform_fee_rate')
               .maybeSingle();
 
-      final rate = _parseFeeRate(row);
+      final rate = _parseFeeRate(row as Map?);
       if (rate != null && rate >= 0 && rate <= 1) {
         setState(() => _platformFeeRate = rate);
       }
     } catch (_) {
-      // keep default if fetch fails
+      // keep default
     }
   }
 
@@ -215,6 +208,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             pickup_lat, pickup_lng,
             destination_lat, destination_lng,
             passenger_id, fare,
+            seats, passenger_count,
             users ( id, name )
           )
         ''')
@@ -230,7 +224,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       if (req == null) continue;
 
       // passenger
-      String passengerName = 'Unknown';
+      String passengerName = 'Passenger';
       String? passengerId;
       final usersRel = req['users'];
       if (usersRel is Map) {
@@ -244,6 +238,12 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         passengerId = first['id']?.toString();
       }
       passengerId ??= req['passenger_id']?.toString();
+
+      // pax
+      final pax =
+          (req['seats'] as num?)?.toInt() ??
+          (req['passenger_count'] as num?)?.toInt() ??
+          1;
 
       // reverse geocode (best effort)
       String fmt(Placemark pm) => [
@@ -260,7 +260,8 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               (req['pickup_lat'] as num).toDouble(),
               (req['pickup_lng'] as num).toDouble(),
             )).first;
-        pickupAddr = fmt(pickupMark);
+        final s = fmt(pickupMark);
+        pickupAddr = s.isEmpty ? 'Pickup' : s;
       } catch (_) {}
       try {
         final destMark =
@@ -268,7 +269,8 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               (req['destination_lat'] as num).toDouble(),
               (req['destination_lng'] as num).toDouble(),
             )).first;
-        destAddr = fmt(destMark);
+        final s = fmt(destMark);
+        destAddr = s.isEmpty ? 'Destination' : s;
       } catch (_) {}
 
       final fare = (req['fare'] as num?)?.toDouble();
@@ -284,6 +286,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         'pickup_address': pickupAddr,
         'destination_address': destAddr,
         'fare': fare,
+        'pax': pax,
       });
 
       rideIds.add(m['ride_request_id'] as String);
@@ -332,9 +335,9 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             table: 'ride_matches',
             event: PostgresChangeEvent.insert,
             callback: (payload) {
-              final rec = (payload.newRecord as Map).cast<String, dynamic>();
+              final rec = (payload.newRecord as Map?)?.cast<String, dynamic>();
+              if (rec == null) return;
               if (rec['driver_id']?.toString() != driverId) return;
-
               setState(() => _newMatchIds.add(rec['id']?.toString() ?? ''));
               _showNotification(
                 'New Request',
@@ -348,7 +351,8 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             table: 'ride_matches',
             event: PostgresChangeEvent.update,
             callback: (payload) {
-              final rec = (payload.newRecord as Map).cast<String, dynamic>();
+              final rec = (payload.newRecord as Map?)?.cast<String, dynamic>();
+              if (rec == null) return;
               if (rec['driver_id']?.toString() != driverId) return;
               _loadMatches();
             },
@@ -358,7 +362,8 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             table: 'ride_matches',
             event: PostgresChangeEvent.delete,
             callback: (payload) {
-              final rec = (payload.oldRecord as Map).cast<String, dynamic>();
+              final rec = (payload.oldRecord as Map?)?.cast<String, dynamic>();
+              if (rec == null) return;
               if (rec['driver_id']?.toString() != driverId) return;
               _loadMatches();
             },
@@ -542,7 +547,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
 
   String _peso(num? v) =>
       v == null ? '₱0.00' : '₱${(v.toDouble()).toStringAsFixed(2)}';
-  double? _driverNet(num? fare) =>
+  double? _driverNetForFare(num? fare) =>
       fare == null ? null : (fare.toDouble() * (1 - _platformFeeRate));
 
   Widget _primaryButton({
@@ -563,7 +568,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             BoxShadow(
               color: _purple.withOpacity(0.25),
               blurRadius: 12,
-              offset: Offset(0, 6),
+              offset: const Offset(0, 6),
             ),
           ],
         ),
@@ -601,6 +606,9 @@ class _DriverRidesPageState extends State<DriverRidesPage>
 
     final canOpenMap =
         status == 'accepted' || status == 'en_route' || status == 'completed';
+    final pax = (m['pax'] as int?) ?? 1;
+    final fare = (m['fare'] as num?)?.toDouble();
+    final driverNet = _driverNetForFare(fare);
 
     return Card(
       elevation: 0,
@@ -611,7 +619,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // --- Route line + NEW badge (single line, ellipsis) ---
+            // route line + NEW
             Row(
               children: [
                 Expanded(
@@ -646,7 +654,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             ),
             const SizedBox(height: 8),
 
-            // --- Meta (wraps cleanly) ---
+            // meta
             Wrap(
               spacing: 8,
               runSpacing: 6,
@@ -657,8 +665,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     'Route ${m['driver_route_id'].toString().substring(0, 8)}',
                     icon: Icons.alt_route,
                   ),
-
-                // Passenger + badges in a bounded box so it can ellipsize
+                _pill('$pax pax', icon: Icons.people),
                 ConstrainedBox(
                   constraints: const BoxConstraints(minWidth: 0, maxWidth: 280),
                   child: Row(
@@ -686,18 +693,18 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             ),
             const SizedBox(height: 8),
 
-            // --- Time + Fare (wraps to avoid overflow) ---
+            // time + fare/payments
             Wrap(
               spacing: 8,
               runSpacing: 6,
               children: [
                 _pill(dt, icon: Icons.access_time),
-                if (m['fare'] != null)
+                if (fare != null) _pill(_peso(fare), icon: Icons.payments),
+                if (driverNet != null)
                   _pill(
-                    '₱${(m['fare'] as num).toDouble().toStringAsFixed(2)}',
-                    icon: Icons.payments,
+                    'Driver net ${_peso(driverNet)}',
+                    icon: Icons.account_balance_wallet,
                   ),
-                // Payment chip can grow; box it so it wraps nicely
                 if (_paymentByRide[rideRequestId] != null)
                   PaymentStatusChip(
                     status: _paymentByRide[rideRequestId]?['status'] as String?,
@@ -708,7 +715,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
 
             const Divider(height: 18),
 
-            // --- Status + Actions (wrap) ---
+            // status + actions
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -724,7 +731,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     ),
                   ),
                 ),
-
                 if (status == 'pending') ...[
                   SizedBox(
                     width: 140,
@@ -783,8 +789,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     onPressed: () => _ratePassenger(m),
                   ),
                 ],
-
-                // Chat and Map buttons also in the same Wrap
                 IconButton(
                   tooltip: 'Open chat',
                   icon: const Icon(Icons.message_outlined),
