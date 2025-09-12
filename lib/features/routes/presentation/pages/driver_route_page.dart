@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:google_polyline_algorithm/google_polyline_algorithm.dart'
     as gpa;
+import 'package:geolocator/geolocator.dart'; // ✅ NEW
 
 import 'package:godavao/core/osrm_service.dart';
 import 'package:godavao/core/fare_service.dart';
@@ -58,6 +59,13 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
   bool _hasAnyVehicle = false;
   String? _error;
 
+  // Location (NEW)
+  LatLng? _myPos;
+  StreamSubscription<Position>? _posSub;
+  bool _followMe = false;
+  bool _locPermDenied = false;
+  bool _locating = false;
+
   // Styles
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
@@ -69,12 +77,14 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
   void initState() {
     super.initState();
     _checkHasVehicles();
+    _initLocation(); // ✅ NEW
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _notesCtrl.dispose();
+    _posSub?.cancel(); // ✅ NEW
     super.dispose();
   }
 
@@ -121,6 +131,88 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
       sum += d.as(LengthUnit.Kilometer, pts[i], pts[i + 1]);
     }
     return sum;
+  }
+
+  // ---------- LOCATION (NEW) ----------
+
+  Future<void> _initLocation() async {
+    setState(() {
+      _locating = true;
+      _locPermDenied = false;
+    });
+
+    try {
+      // 1) Service enabled?
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        setState(() => _locating = false);
+        return;
+      }
+
+      // 2) Permission
+      LocationPermission perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        setState(() {
+          _locating = false;
+          _locPermDenied = true;
+        });
+        return;
+      }
+
+      // 3) Get last known or current
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null) {
+        _updateMyPos(last);
+      } else {
+        final current = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.best,
+          timeLimit: const Duration(seconds: 8),
+        );
+        _updateMyPos(current);
+      }
+
+      // 4) Stream updates
+      _posSub?.cancel();
+      _posSub = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.bestForNavigation,
+          distanceFilter: 5, // meters
+        ),
+      ).listen((pos) {
+        _updateMyPos(pos);
+      });
+    } catch (_) {
+      // silent fail is okay; user can still make routes
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  void _updateMyPos(Position pos) {
+    final p = LatLng(pos.latitude, pos.longitude);
+    if (!mounted) return;
+    setState(() {
+      _myPos = p;
+    });
+    if (_followMe) {
+      _map.move(p, _map.camera.zoom);
+    }
+  }
+
+  void _toggleFollow() {
+    setState(() => _followMe = !_followMe);
+    if (_followMe && _myPos != null) {
+      _map.move(_myPos!, math.max(_map.camera.zoom, 15));
+    }
+  }
+
+  void _centerOnMe() {
+    if (_myPos == null) return;
+    _map.move(_myPos!, math.max(_map.camera.zoom, 15));
   }
 
   // ---------- fare ----------
@@ -452,7 +544,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
 
   @override
   Widget build(BuildContext context) {
-    final center = _start ?? const LatLng(7.1907, 125.4553); // Davao
+    final center = _myPos ?? _start ?? const LatLng(7.1907, 125.4553); // Davao
 
     String _fareLine() {
       if (_fare == null) return '—';
@@ -521,6 +613,34 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'com.yourcompany.godavao',
                 ),
+
+                // My live location (NEW)
+                if (_myPos != null)
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: _myPos!,
+                        width: 28,
+                        height: 28,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.blue.withOpacity(.15),
+                          ),
+                          alignment: Alignment.center,
+                          child: Container(
+                            width: 12,
+                            height: 12,
+                            decoration: const BoxDecoration(
+                              color: Colors.blue,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
                 if (_mode == RouteMode.osrm && _osrmRoute != null)
                   PolylineLayer(
                     polylines: [
@@ -598,6 +718,48 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                     ],
                   ),
               ],
+            ),
+          ),
+
+          // Center on me / Follow button (NEW)
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topRight,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8, right: 8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    FloatingActionButton.small(
+                      heroTag: 'centerOnMe',
+                      onPressed: _myPos == null ? null : _centerOnMe,
+                      tooltip:
+                          _myPos == null
+                              ? (_locPermDenied
+                                  ? 'Location permission denied'
+                                  : _locating
+                                  ? 'Locating…'
+                                  : 'Location unavailable')
+                              : 'Center on me',
+                      child: const Icon(Icons.my_location),
+                    ),
+                    const SizedBox(height: 8),
+                    FloatingActionButton.small(
+                      heroTag: 'followMe',
+                      onPressed: _myPos == null ? null : _toggleFollow,
+                      tooltip: _followMe ? 'Disable follow' : 'Enable follow',
+                      backgroundColor:
+                          _followMe
+                              ? _purple
+                              : Theme.of(context).colorScheme.primary,
+                      child: Icon(
+                        _followMe ? Icons.gps_fixed : Icons.gps_not_fixed,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
 
@@ -892,7 +1054,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                             BoxShadow(
                               color: _purple.withOpacity(0.25),
                               blurRadius: 16,
-                              offset: Offset(0, 8),
+                              offset: const Offset(0, 8),
                             ),
                           ],
                         ),

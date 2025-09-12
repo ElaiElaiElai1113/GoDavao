@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart'; // <-- NEW
 
 import 'package:godavao/core/osrm_service.dart';
 import 'package:godavao/features/rides/presentation/confirm_ride_page.dart';
@@ -74,14 +76,22 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
   // Config
   static const double _matchRadiusMeters = 600; // route near destination
 
+  // ---------- NEW: live user location ----------
+  StreamSubscription<Position>? _posSub;
+  LatLng? _me;
+  double? _meAccuracy; // meters
+  bool _followMe = false;
+
   @override
   void initState() {
     super.initState();
     _primeRoutes();
+    _startLiveLocation(); // <-- NEW
   }
 
   @override
   void dispose() {
+    _posSub?.cancel(); // <-- NEW
     _destCtrl.dispose();
     super.dispose();
   }
@@ -205,6 +215,72 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     return best;
   }
 
+  /* ----------------------------- Live location ----------------------------- */
+
+  Future<void> _startLiveLocation() async {
+    // Ask for permission
+    LocationPermission perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied ||
+        perm == LocationPermission.deniedForever) {
+      perm = await Geolocator.requestPermission();
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
+        return; // user declined; we just won't show the blue dot
+      }
+    }
+
+    // Quick seed from last known (fast)
+    try {
+      final last = await Geolocator.getLastKnownPosition();
+      if (mounted && last != null) {
+        setState(() {
+          _me = LatLng(last.latitude, last.longitude);
+          _meAccuracy = last.accuracy;
+        });
+      }
+    } catch (_) {}
+
+    // Stream updates
+    const settings = LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 5, // meters
+    );
+
+    _posSub?.cancel();
+    _posSub = Geolocator.getPositionStream(locationSettings: settings).listen((
+      pos,
+    ) {
+      if (!mounted) return;
+      final here = LatLng(pos.latitude, pos.longitude);
+      setState(() {
+        _me = here;
+        _meAccuracy = pos.accuracy;
+      });
+      if (_followMe && _mapReady) {
+        _map.move(here, _map.camera.zoom);
+      }
+    }, onError: (_) {});
+  }
+
+  Future<void> _centerOnMe() async {
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      final here = LatLng(pos.latitude, pos.longitude);
+      _safeMove(here, 15);
+      setState(() {
+        _me = here;
+        _meAccuracy = pos.accuracy;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Location unavailable: $e')));
+    }
+  }
+
   /* ----------------------------- Search flow ----------------------------- */
 
   Future<void> _searchByAddress(String text) async {
@@ -269,7 +345,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
 
   /* ----------------------------- Interactions ----------------------------- */
 
-  // When the user picks a candidate route
   void _selectRoute(DriverRoute r) {
     final pts = _decodeEffectivePolyline(r);
 
@@ -282,12 +357,11 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     setState(() {
       _selectedRoute = r;
       _selectedRoutePoints = pts;
-      // keep previous pickup if it already existed and makes sense on the new route; otherwise clear
       _pickup =
           (_pickup != null && pts.length >= 2)
               ? _snapToPolyline(_pickup!, pts)
               : null;
-      _dropoff = newDrop; // pre-populate drop-off if we had a search
+      _dropoff = newDrop;
       _osrmSegment = null;
       _editTarget = 'auto';
     });
@@ -299,14 +373,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     _rebuildOsrmIfReady();
   }
 
-  // Tap logic:
-  // - If no route selected → ignore
-  // - If pickup is null → set pickup
-  // - Else if dropoff is null → set dropoff
-  // - Else:
-  //     - if _editTarget == 'pickup' → set pickup (keep dropoff)
-  //     - else if _editTarget == 'dropoff' → set dropoff (keep pickup)
-  //     - else (auto): reset flow (new pickup, clear dropoff)
   void _onMapTap(TapPosition _, LatLng tap) async {
     if (_selectedRoutePoints.isEmpty) return;
 
@@ -477,6 +543,54 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     ],
                   ),
 
+                // Accuracy ring (NEW)
+                if (_me != null && (_meAccuracy ?? 0) > 0)
+                  CircleLayer(
+                    circles: [
+                      CircleMarker(
+                        point: _me!,
+                        radius: (_meAccuracy ?? 0),
+                        useRadiusInMeter: true,
+                        color: Colors.blue.withOpacity(0.12),
+                        borderColor: Colors.blue.withOpacity(0.25),
+                        borderStrokeWidth: 2,
+                      ),
+                    ],
+                  ),
+
+                // Live location blue dot (NEW)
+                if (_me != null)
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: _me!,
+                        width: 26,
+                        height: 26,
+                        alignment: Alignment.center,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.blue,
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x55000000),
+                                blurRadius: 6,
+                                offset: Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Container(
+                            margin: const EdgeInsets.all(6),
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
                 // Optional: marker for the searched destination (as a hint)
                 if (_searchedDestination != null)
                   MarkerLayer(
@@ -571,6 +685,19 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
               ),
             ),
 
+          // Quick “center on me” button (NEW)
+          Positioned(
+            right: 12,
+            bottom: 120,
+            child: SafeArea(
+              child: FloatingActionButton.small(
+                heroTag: 'center_me_fab',
+                onPressed: _centerOnMe,
+                child: const Icon(Icons.my_location),
+              ),
+            ),
+          ),
+
           // Bottom sheet
           Align(
             alignment: Alignment.bottomCenter,
@@ -623,10 +750,11 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     ),
                     const SizedBox(height: 10),
 
-                    // Status + tiny edit toggles
+                    // Status + tiny edit toggles + Follow me (NEW)
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         _Pill(
                           icon: Icons.flag,
@@ -682,6 +810,26 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                             icon: const Icon(Icons.refresh, size: 18),
                             label: const Text('Reset points'),
                           ),
+                        // Follow me toggle (NEW)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              'Follow me',
+                              style: TextStyle(color: Colors.black54),
+                            ),
+                            const SizedBox(width: 6),
+                            Switch(
+                              value: _followMe,
+                              onChanged: (v) {
+                                setState(() => _followMe = v);
+                                if (v && _me != null) {
+                                  _safeMove(_me!, _map.camera.zoom);
+                                }
+                              },
+                            ),
+                          ],
+                        ),
                       ],
                     ),
 
