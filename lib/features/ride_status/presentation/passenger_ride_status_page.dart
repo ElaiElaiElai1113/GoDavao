@@ -1,98 +1,41 @@
-import 'dart:math' as math;
+// lib/features/ride_status/presentation/passenger_ride_status_page.dart
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// Chat / Payments / Ratings / Safety
 import 'package:godavao/features/chat/presentation/chat_page.dart';
-import 'package:godavao/features/payments/presentation/gcash_proof_sheet.dart';
-import 'package:godavao/features/ratings/data/ratings_service.dart';
-import 'package:godavao/features/ratings/presentation/rate_user.dart';
-import 'package:godavao/features/ratings/presentation/rating_details_sheet.dart';
-import 'package:godavao/features/ratings/presentation/user_rating.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
-import 'package:godavao/features/safety/presentation/sos_sheet.dart';
-
-// Live tracking bits
-import 'package:godavao/features/live_tracking/presentation/driver_marker.dart';
-import 'package:godavao/features/live_tracking/presentation/passenger_marker.dart';
-import 'package:godavao/features/live_tracking/utils/live_tracking_helpers.dart';
-
-// Publish passenger live location
-import 'package:godavao/features/live_tracking/data/live_publisher.dart';
+import 'package:godavao/features/ratings/presentation/user_rating.dart';
+import 'package:godavao/features/payments/presentation/payment_status_chip.dart';
 
 class PassengerRideStatusPage extends StatefulWidget {
   final String rideId;
-  const PassengerRideStatusPage({required this.rideId, super.key});
+  const PassengerRideStatusPage({super.key, required this.rideId});
 
   @override
   State<PassengerRideStatusPage> createState() =>
       _PassengerRideStatusPageState();
 }
 
-class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
-    with SingleTickerProviderStateMixin {
+class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
   final _sb = Supabase.instance.client;
+  final _map = MapController();
 
-  // Realtime channels
-  RealtimeChannel? _rideChannel;
-  RealtimeChannel? _driverLocChannel;
-  RealtimeChannel? _selfLocChannel;
-
-  // Map + readiness guard
-  final MapController _map = MapController();
-  bool _mapReady = false;
-  LatLng? _pendingCenter;
-  double? _pendingZoom;
-  void _safeMove(LatLng center, double zoom) {
-    if (_mapReady) {
-      _map.move(center, zoom);
-    } else {
-      _pendingCenter = center;
-      _pendingZoom = zoom;
-    }
-  }
-
+  // Data
+  Map<String, dynamic>? _ride; // ride_requests row (+ joined bits)
+  Map<String, dynamic>? _match; // ride_matches row (driver, route, status)
+  Map<String, dynamic>? _payment; // payment_intents row
   bool _loading = true;
   String? _error;
 
-  Map<String, dynamic>? _ride;
-  String? _matchId;
+  // Realtime channels
+  RealtimeChannel? _rideCh;
+  RealtimeChannel? _matchCh;
 
-  // Driver identity + ratings
-  String? _driverId;
-  Map<String, dynamic>? _driverAggregate;
-  bool _fetchingDriverAgg = false;
-
-  // Live driver state for interpolation
-  LatLng? _driverPrev, _driverNext, _driverInterp;
-  double _driverHeading = 0;
-
-  // Passenger live
-  LatLng? _selfLive;
-
-  // Follow camera toggle
-  bool _followDriver = true;
-
-  // Avoid duplicate rating modals
-  bool _ratingPromptShown = false;
-
-  // Animate car between points
-  late final AnimationController _driverAnim = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 450),
-  )..addListener(_onDriverTick);
-
-  // Publish THIS passenger’s live location
-  late final LivePublisher _publisher = LivePublisher(
-    _sb,
-    userId: _sb.auth.currentUser!.id,
-    rideId: widget.rideId,
-    actor: 'passenger',
-  );
-
+  // Style tokens
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
   static const _bg = Color(0xFFF7F7FB);
@@ -100,332 +43,167 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   @override
   void initState() {
     super.initState();
-    _loadRideDetails();
-    _subscribeRideStatus();
-
-    // Subscribe to *my* live row so I can see my own dot move (optional)
-    final me = _sb.auth.currentUser?.id;
-    if (me != null) _subscribeSelfLive(me);
+    _bootstrap();
   }
 
   @override
   void dispose() {
-    _publisher.stop();
-    if (_rideChannel != null) _sb.removeChannel(_rideChannel!);
-    if (_driverLocChannel != null) _sb.removeChannel(_driverLocChannel!);
-    if (_selfLocChannel != null) _sb.removeChannel(_selfLocChannel!);
-    _driverAnim.dispose();
+    if (_rideCh != null) _sb.removeChannel(_rideCh!);
+    if (_matchCh != null) _sb.removeChannel(_matchCh!);
     super.dispose();
   }
 
-  // ---------------- Data ----------------
-
-  Future<void> _loadRideDetails() async {
-    if (!mounted) return;
+  Future<void> _bootstrap() async {
     setState(() {
       _loading = true;
       _error = null;
     });
-
     try {
-      // Ride
-      final ride =
-          await _sb
-              .from('ride_requests')
-              .select('''
-                id,
-                pickup_lat, pickup_lng,
-                destination_lat, destination_lng,
-                status,
-                fare,
-                payment_method,
-                driver_route_id
-              ''')
-              .eq('id', widget.rideId)
-              .maybeSingle();
-
-      if (ride == null) throw Exception('Ride not found');
-      _ride = (ride as Map).cast<String, dynamic>();
-
-      // Match
-      final match =
-          await _sb
-              .from('ride_matches')
-              .select('id')
-              .eq('ride_request_id', widget.rideId)
-              .maybeSingle();
-      if (match == null) throw Exception('No match found for this ride');
-      _matchId = (match as Map)['id']?.toString();
-
-      // Driver id + rating agg + subscribe to driver live
-      await _resolveDriver();
-
-      // Move map to pickup
-      final pickup = LatLng(
-        (_ride!['pickup_lat'] as num).toDouble(),
-        (_ride!['pickup_lng'] as num).toDouble(),
-      );
-      _safeMove(pickup, 13);
-
-      // Start/stop publishing my location depending on status
-      _syncPublisherToStatus((_ride!['status'] ?? '').toString());
-
-      // If already completed, maybe prompt rating
-      await _maybePromptRatingIfCompleted();
-    } on PostgrestException catch (e) {
-      _error = 'Supabase error: ${e.message}';
+      await _loadAll();
+      _subscribeRide();
+      _subscribeMatch();
     } catch (e) {
-      _error = e.toString();
+      if (!mounted) return;
+      setState(() => _error = 'Failed to load: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _resolveDriver() async {
-    final driverRouteId = _ride?['driver_route_id'];
-    if (driverRouteId == null) return;
-
-    final dr =
-        await _sb
-            .from('driver_routes')
-            .select('driver_id')
-            .eq('id', driverRouteId)
-            .maybeSingle();
-
-    if (dr != null) {
-      _driverId = (dr as Map)['driver_id']?.toString();
-      if (_driverId != null) {
-        _subscribeDriverLive(_driverId!);
-        await _seedDriverLive(_driverId!); // ← seed immediate position
-        await _fetchDriverAggregate();
-      }
-    }
+  Future<void> _loadAll() async {
+    await Future.wait([_loadRide(), _loadMatch(), _loadPayment()]);
   }
 
-  Future<void> _fetchDriverAggregate() async {
-    if (_driverId == null || !mounted) return;
-    setState(() => _fetchingDriverAgg = true);
-    try {
-      final service = RatingsService(_sb);
-      final agg = await service.fetchUserAggregate(_driverId!);
-      if (!mounted) return;
-      setState(() => _driverAggregate = agg);
-    } catch (_) {
-      // ignore; best effort
-    } finally {
-      if (mounted) setState(() => _fetchingDriverAgg = false);
-    }
-  }
-
-  // ------------- Live publish toggle -------------
-
-  void _syncPublisherToStatus(String status) {
-    // Publish while we still need the driver to locate the passenger.
-    if (status == 'pending' || status == 'accepted' || status == 'en_route') {
-      _publisher.start();
-    } else {
-      _publisher.stop();
-    }
-  }
-
-  // ------------- Realtime subscriptions -----------
-
-  void _subscribeRideStatus() {
-    _rideChannel =
-        _sb
-            .channel('ride_requests:${widget.rideId}')
-            .onPostgresChanges(
-              schema: 'public',
-              table: 'ride_requests',
-              event: PostgresChangeEvent.update,
-              callback: (payload) async {
-                final newRec = payload.newRecord;
-                final updated = (newRec as Map).cast<String, dynamic>();
-                if (updated['id'] != widget.rideId) return;
-
-                if (!mounted) return;
-                setState(() => _ride = updated);
-
-                // Auto follow while en_route
-                if ((updated['status'] ?? '') == 'en_route') {
-                  setState(() => _followDriver = true);
-                }
-
-                // If driver assignment changed, re-resolve
-                await _resolveDriver();
-
-                // Start/stop passenger publisher based on status
-                _syncPublisherToStatus((updated['status'] ?? '').toString());
-
-                await _maybePromptRatingIfCompleted();
-              },
-            )
-            .subscribe();
-  }
-
-  void _subscribeDriverLive(String driverUserId) {
-    _driverLocChannel =
-        _sb
-            .channel('live_locations_driver_$driverUserId')
-            .onPostgresChanges(
-              schema: 'public',
-              table: 'live_locations',
-              event: PostgresChangeEvent.all, // insert + update + delete
-              filter: PostgresChangeFilter(
-                type: PostgresChangeFilterType.eq,
-                column: 'user_id',
-                value: driverUserId,
-              ),
-              callback: (payload) {
-                final rec = payload.newRecord ?? payload.oldRecord;
-                if (rec != null) _consumeDriverLocation(rec);
-              },
-            )
-            .subscribe();
-  }
-
-  void _subscribeSelfLive(String selfUserId) {
-    _selfLocChannel =
-        _sb
-            .channel('live_locations_self_$selfUserId')
-            .onPostgresChanges(
-              schema: 'public',
-              table: 'live_locations',
-              event: PostgresChangeEvent.all,
-              filter: PostgresChangeFilter(
-                type: PostgresChangeFilterType.eq,
-                column: 'user_id',
-                value: selfUserId,
-              ),
-              callback: (payload) {
-                final rec = payload.newRecord ?? payload.oldRecord;
-                if (rec == null) return;
-                final lat = (rec['lat'] as num?)?.toDouble();
-                final lng = (rec['lng'] as num?)?.toDouble();
-                if (lat == null || lng == null) return;
-                if (!mounted) return;
-                setState(() => _selfLive = LatLng(lat, lng));
-              },
-            )
-            .subscribe();
-  }
-
-  // Seed driver position once (before realtime updates arrive)
-  Future<void> _seedDriverLive(String driverUserId) async {
+  Future<void> _loadRide() async {
+    // Join minimal data needed for the page
     final res =
         await _sb
-            .from('live_locations')
-            .select('lat,lng,heading')
-            .eq('user_id', driverUserId)
+            .from('ride_requests')
+            .select('''
+          id, status, created_at, pickup_lat, pickup_lng,
+          destination_lat, destination_lng, passenger_id, fare, seats,
+          driver_route_id,
+          users:passenger_id ( id, name )
+        ''')
+            .eq('id', widget.rideId)
             .maybeSingle();
 
-    if (res == null) return;
-    final lat = (res['lat'] as num?)?.toDouble();
-    final lng = (res['lng'] as num?)?.toDouble();
-    if (lat == null || lng == null) return;
-
-    _consumeDriverLocation({
-      'lat': lat,
-      'lng': lng,
-      'heading': (res['heading'] as num?)?.toDouble(),
-    });
+    if (!mounted) return;
+    setState(() => _ride = (res as Map?)?.cast<String, dynamic>());
   }
 
-  // -------- driver interpolation ----------
-
-  void _consumeDriverLocation(Map rec) {
-    final lat = (rec['lat'] as num?)?.toDouble();
-    final lng = (rec['lng'] as num?)?.toDouble();
-    if (lat == null || lng == null) return;
-
-    final next = LatLng(lat, lng);
-    final hdg = (rec['heading'] as num?)?.toDouble() ?? _driverHeading;
+  Future<void> _loadMatch() async {
+    // Single match row (by ride_id); there may be more historically,
+    // we show the latest by created_at.
+    final rows = await _sb
+        .from('ride_matches')
+        .select('''
+          id, status, created_at,
+          driver_id, driver_route_id, seats_allocated,
+          drivers:driver_id ( id, name ),
+          routes:driver_route_id ( id )
+        ''')
+        .eq('ride_request_id', widget.rideId)
+        .order('created_at', ascending: false)
+        .limit(1);
 
     if (!mounted) return;
     setState(() {
-      _driverPrev = _driverInterp ?? _driverNext ?? next;
-      _driverNext = next;
-      _driverHeading = hdg;
-      _driverAnim
-        ..reset()
-        ..forward();
+      _match =
+          (rows is List && rows.isNotEmpty)
+              ? (rows.first as Map).cast<String, dynamic>()
+              : null;
     });
   }
 
-  void _onDriverTick() {
-    if (_driverPrev == null || _driverNext == null) return;
-    final t = _driverAnim.value;
-    final p = LiveTrackingHelpers.lerp(_driverPrev!, _driverNext!, t);
+  Future<void> _loadPayment() async {
+    final res =
+        await _sb
+            .from('payment_intents')
+            .select('ride_id, status, amount')
+            .eq('ride_id', widget.rideId)
+            .maybeSingle();
     if (!mounted) return;
-    setState(() => _driverInterp = p);
+    setState(() => _payment = (res as Map?)?.cast<String, dynamic>());
+  }
 
-    // Follow while en_route
-    final status = (_ride?['status'] ?? '').toString();
-    if (_followDriver && status == 'en_route') {
-      final z = _mapReady ? _map.camera.zoom : 15.0;
-      _safeMove(p, z.clamp(14, 16));
+  void _subscribeRide() {
+    _rideCh?.unsubscribe();
+    _rideCh =
+        _sb.channel('ride_requests:${widget.rideId}')
+          ..onPostgresChanges(
+            schema: 'public',
+            table: 'ride_requests',
+            event: PostgresChangeEvent.update,
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'id',
+              value: widget.rideId,
+            ),
+            callback: (_) async {
+              await _loadRide();
+              await _loadPayment(); // payment status often follows ride status
+              if (!mounted) return;
+              setState(() {}); // refresh UI
+            },
+          )
+          ..subscribe();
+  }
+
+  void _subscribeMatch() {
+    _matchCh?.unsubscribe();
+    _matchCh =
+        _sb.channel('ride_matches:${widget.rideId}')
+          ..onPostgresChanges(
+            schema: 'public',
+            table: 'ride_matches',
+            event: PostgresChangeEvent.all,
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'ride_request_id',
+              value: widget.rideId,
+            ),
+            callback: (_) async {
+              await _loadMatch();
+              if (!mounted) return;
+              setState(() {});
+            },
+          )
+          ..subscribe();
+  }
+
+  // ====== Actions ======
+  Future<void> _cancelRide() async {
+    if (_ride == null) return;
+    setState(() => _loading = true);
+    try {
+      await _sb
+          .from('ride_requests')
+          .update({'status': 'canceled'})
+          .eq('id', widget.rideId);
+      // Also cancel payment intent if any
+      await _sb
+          .from('payment_intents')
+          .update({'status': 'canceled'})
+          .eq('ride_id', widget.rideId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Ride canceled')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Cancel failed: $e')));
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  // ------------- Ratings -----------------
-
-  Future<void> _maybePromptRatingIfCompleted() async {
-    if (_ratingPromptShown) return;
-    final status = _ride?['status']?.toString();
-    if (status != 'completed') return;
-
-    final uid = _sb.auth.currentUser?.id;
-    if (uid == null) return;
-    if (_driverId == null) return;
-
-    final service = RatingsService(_sb);
-    final existing = await service.getExistingRating(
-      rideId: widget.rideId,
-      raterUserId: uid,
-      rateeUserId: _driverId!,
-    );
-    if (existing != null) return;
-
-    if (!mounted) return;
-    _ratingPromptShown = true;
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder:
-          (_) => RateUserSheet(
-            rideId: widget.rideId,
-            raterUserId: uid,
-            rateeUserId: _driverId!,
-            rateeName: 'Driver',
-            rateeRole: 'driver',
-          ),
-    );
-
-    await _fetchDriverAggregate();
-  }
-
-  // ------------- UI helpers ---------------
-
-  Widget _statusPill(String status) {
-    final color = _statusColor(status);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(.12),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        status.toUpperCase(),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.w700,
-          fontSize: 12,
-          letterSpacing: .3,
-        ),
-      ),
-    );
+  // ====== UI helpers ======
+  String get _status {
+    final s = (_ride?['status'] as String?) ?? 'pending';
+    return s.toLowerCase();
   }
 
   Color _statusColor(String s) {
@@ -438,26 +216,385 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
         return Colors.orange;
       case 'completed':
         return Colors.green;
-      case 'declined':
-      case 'cancelled':
       case 'canceled':
+      case 'declined':
         return Colors.red;
       default:
         return Colors.black87;
     }
   }
 
-  Widget _primaryGradientButton({
-    required String label,
-    required VoidCallback? onPressed,
-    IconData? icon,
+  LatLng? get _pickup {
+    final r = _ride;
+    if (r == null) return null;
+    final lat = r['pickup_lat'] as num?;
+    final lng = r['pickup_lng'] as num?;
+    if (lat == null || lng == null) return null;
+    return LatLng(lat.toDouble(), lng.toDouble());
+  }
+
+  LatLng? get _dropoff {
+    final r = _ride;
+    if (r == null) return null;
+    final lat = r['destination_lat'] as num?;
+    final lng = r['destination_lng'] as num?;
+    if (lat == null || lng == null) return null;
+    return LatLng(lat.toDouble(), lng.toDouble());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fare = (_ride?['fare'] as num?)?.toDouble();
+    final passenger = (_ride?['users'] as Map?)?['name']?.toString() ?? 'You';
+    final driverId = _match?['driver_id']?.toString();
+    final driverName = (_match?['drivers'] as Map?)?['name']?.toString() ?? '—';
+
+    final center =
+        _pickup ?? _dropoff ?? const LatLng(7.1907, 125.4553); // Davao fallback
+
+    return Scaffold(
+      backgroundColor: _bg,
+      appBar: AppBar(
+        title: const Text('Ride Status'),
+        actions: [
+          if (driverId != null) VerifiedBadge(userId: driverId, size: 22),
+          const SizedBox(width: 8),
+          if (driverId != null)
+            IconButton(
+              tooltip: 'Chat with driver',
+              icon: const Icon(Icons.message_outlined),
+              onPressed: () {
+                final matchId = _match?['id']?.toString();
+                if (matchId == null) return;
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => ChatPage(matchId: matchId)),
+                );
+              },
+            ),
+        ],
+      ),
+      body:
+          _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+              ? Center(child: Text('Error: $_error'))
+              : Column(
+                children: [
+                  // ===== Header chips (status, fare, payment) =====
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _Chip(
+                          icon: Icons.info_outline,
+                          label: _status.toUpperCase(),
+                          color: _statusColor(_status).withOpacity(.12),
+                          textColor: _statusColor(_status),
+                        ),
+                        if (fare != null)
+                          _Chip(
+                            icon: Icons.payments_outlined,
+                            label: 'Fare: ₱${fare.toStringAsFixed(2)}',
+                          ),
+                        if (_payment != null)
+                          PaymentStatusChip(
+                            status: _payment!['status'] as String?,
+                            amount: (_payment!['amount'] as num?)?.toDouble(),
+                          ),
+                      ],
+                    ),
+                  ),
+
+                  // ===== Map =====
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: FlutterMap(
+                          mapController: _map,
+                          options: MapOptions(center: center, zoom: 13),
+                          children: [
+                            TileLayer(
+                              urlTemplate:
+                                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                              userAgentPackageName: 'com.yourcompany.godavao',
+                            ),
+                            // Pickup & Dropoff markers
+                            MarkerLayer(
+                              markers: [
+                                if (_pickup != null)
+                                  Marker(
+                                    point: _pickup!,
+                                    width: 30,
+                                    height: 30,
+                                    child: const Icon(
+                                      Icons.place,
+                                      color: Colors.green,
+                                      size: 28,
+                                    ),
+                                  ),
+                                if (_dropoff != null)
+                                  Marker(
+                                    point: _dropoff!,
+                                    width: 30,
+                                    height: 30,
+                                    child: const Icon(
+                                      Icons.flag,
+                                      color: Colors.red,
+                                      size: 26,
+                                    ),
+                                  ),
+                                // Driver marker (optional — you can add live location stream later)
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // ===== Driver + actions =====
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.directions_car_outlined,
+                          color: Colors.black54,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            driverId == null
+                                ? 'Waiting for driver'
+                                : 'Driver: $driverName',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        if (driverId != null)
+                          UserRatingBadge(userId: driverId, iconSize: 16),
+                      ],
+                    ),
+                  ),
+
+                  // Sticky bottom bar
+                  SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.info_outline),
+                              label: const Text('View details'),
+                              onPressed:
+                                  () => _openDetailsSheet(
+                                    context: context,
+                                    passengerName: passenger,
+                                    driverName: driverName,
+                                    fare: fare,
+                                  ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _PrimaryButton(
+                              label:
+                                  _status == 'pending' || _status == 'accepted'
+                                      ? 'Cancel ride'
+                                      : _status == 'en_route'
+                                      ? 'SOS'
+                                      : 'Close',
+                              icon:
+                                  _status == 'en_route'
+                                      ? Icons.emergency_share
+                                      : Icons.cancel_outlined,
+                              onPressed: () {
+                                if (_status == 'en_route') {
+                                  _showSosDialog();
+                                } else if (_status == 'pending' ||
+                                    _status == 'accepted') {
+                                  _cancelRide();
+                                } else {
+                                  Navigator.maybePop(context);
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+    );
+  }
+
+  void _openDetailsSheet({
+    required BuildContext context,
+    required String passengerName,
+    required String driverName,
+    double? fare,
   }) {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _detailRow('Ride ID', widget.rideId),
+              const SizedBox(height: 6),
+              _detailRow('Status', _status.toUpperCase()),
+              const Divider(height: 20),
+              _detailRow('Passenger', passengerName),
+              _detailRow('Driver', driverName),
+              if (fare != null)
+                _detailRow('Fare', '₱${fare.toStringAsFixed(2)}'),
+              const SizedBox(height: 12),
+              if (_payment != null)
+                PaymentStatusChip(
+                  status: _payment!['status'] as String?,
+                  amount: (_payment!['amount'] as num?)?.toDouble(),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 110,
+          child: Text(
+            label,
+            style: const TextStyle(color: Colors.black54, fontSize: 13),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showSosDialog() {
+    showDialog<void>(
+      context: context,
+      builder:
+          (_) => AlertDialog(
+            title: const Text('Emergency'),
+            content: const Text(
+              'Do you want to trigger SOS and share your live location with your emergency contacts?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+              FilledButton.icon(
+                icon: const Icon(Icons.emergency_share),
+                label: const Text('Trigger SOS'),
+                onPressed: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('SOS triggered')),
+                  );
+                  // Hook into your SOS flow here
+                },
+              ),
+            ],
+          ),
+    );
+  }
+}
+
+/* -------------------- Small UI helpers -------------------- */
+
+class _Chip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color? color;
+  final Color? textColor;
+  const _Chip({
+    required this.icon,
+    required this.label,
+    this.color,
+    this.textColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color ?? Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: textColor ?? Colors.black54),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: textColor ?? Colors.black87,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PrimaryButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback? onPressed;
+  const _PrimaryButton({
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  static const _purple = Color(0xFF6A27F7);
+  static const _purpleDark = Color(0xFF4B18C9);
+
+  @override
+  Widget build(BuildContext context) {
     return SizedBox(
-      height: 48,
-      width: double.infinity,
+      height: 44,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           gradient: const LinearGradient(
             colors: [_purple, _purpleDark],
             begin: Alignment.topLeft,
@@ -466,374 +603,31 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
           boxShadow: [
             BoxShadow(
               color: _purple.withOpacity(0.25),
-              blurRadius: 14,
-              offset: const Offset(0, 8),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
         child: ElevatedButton.icon(
-          onPressed: onPressed,
-          icon:
-              icon == null
-                  ? const SizedBox.shrink()
-                  : Icon(icon, color: Colors.white),
+          icon: Icon(icon, color: Colors.white),
           label: Text(
             label,
-            maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w700,
             ),
           ),
+          onPressed: onPressed,
           style: ElevatedButton.styleFrom(
             elevation: 0,
             backgroundColor: Colors.transparent,
             shadowColor: Colors.transparent,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(12),
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  // ---------------- BUILD ----------------
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    if (_error != null) {
-      return Scaffold(body: Center(child: Text('Error: $_error')));
-    }
-
-    if (_ride == null || _matchId == null) {
-      return const Scaffold(body: Center(child: Text('No ride data')));
-    }
-
-    final r = _ride!;
-    final pickup = LatLng(
-      (r['pickup_lat'] as num).toDouble(),
-      (r['pickup_lng'] as num).toDouble(),
-    );
-    final dest = LatLng(
-      (r['destination_lat'] as num).toDouble(),
-      (r['destination_lng'] as num).toDouble(),
-    );
-
-    final status = (r['status'] as String?) ?? 'pending';
-    final fare = (r['fare'] as num?)?.toDouble() ?? 0.0;
-
-    final driverRatingText = () {
-      if (_fetchingDriverAgg) return 'Loading…';
-      final avg = (_driverAggregate?['avg_rating'] as num?)?.toDouble();
-      final cnt = (_driverAggregate?['rating_count'] as int?) ?? 0;
-      if (avg == null) return 'No ratings yet';
-      return '${avg.toStringAsFixed(2)} ★  ($cnt)';
-    }();
-
-    final canUploadGcash =
-        (status == 'accepted' ||
-            status == 'en_route' ||
-            status == 'completed') &&
-        (r['payment_method'] == 'gcash');
-
-    // Driver marker position preference: live interp > next > pickup
-    final driverPoint = _driverInterp ?? _driverNext ?? pickup;
-
-    return Scaffold(
-      backgroundColor: _bg,
-      appBar: AppBar(
-        title: const Text('Ride Details'),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        surfaceTintColor: Colors.white,
-        actions: [
-          IconButton(
-            tooltip: _followDriver ? 'Disable follow' : 'Enable follow',
-            onPressed: () => setState(() => _followDriver = !_followDriver),
-            icon: Icon(
-              _followDriver ? Icons.my_location : Icons.location_disabled,
-            ),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: Colors.red.shade700,
-        icon: const Icon(Icons.emergency_share),
-        label: const Text('SOS'),
-        onPressed: () {
-          showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            builder: (_) => SosSheet(rideId: widget.rideId),
-          );
-        },
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-
-      body: Stack(
-        children: [
-          // Map
-          Positioned.fill(
-            child: FlutterMap(
-              mapController: _map,
-              options: MapOptions(
-                center: pickup,
-                zoom: 13,
-                onMapReady: () {
-                  setState(() => _mapReady = true);
-                  if (_pendingCenter != null) {
-                    _map.move(
-                      _pendingCenter!,
-                      _pendingZoom ?? _map.camera.zoom,
-                    );
-                    _pendingCenter = null;
-                    _pendingZoom = null;
-                  }
-                },
-                onTap: (_, __) {
-                  if (_followDriver) setState(() => _followDriver = false);
-                },
-              ),
-              children: [
-                TileLayer(
-                  urlTemplate:
-                      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  subdomains: const ['a', 'b', 'c'],
-                  userAgentPackageName: 'com.godavao.app',
-                ),
-                // Simple straight line preview
-                PolylineLayer(
-                  polylines: [
-                    Polyline(
-                      points: [pickup, dest],
-                      strokeWidth: 5,
-                      color: Colors.black.withOpacity(0.6),
-                    ),
-                  ],
-                ),
-                // Markers
-                MarkerLayer(
-                  markers: [
-                    // Driver live
-                    Marker(
-                      point: driverPoint,
-                      width: 48,
-                      height: 56,
-                      alignment: Alignment.center,
-                      child: DriverMarker(
-                        size: 36,
-                        headingDeg: _driverHeading,
-                        active: status == 'en_route' || status == 'accepted',
-                      ),
-                    ),
-                    // Myself (passenger) — live if available; else pickup
-                    Marker(
-                      point: _selfLive ?? pickup,
-                      width: 36,
-                      height: 44,
-                      child:
-                          _selfLive == null
-                              ? const Icon(
-                                Icons.location_on,
-                                color: Colors.green,
-                                size: 38,
-                              )
-                              : const PassengerMarker(size: 26, ripple: true),
-                    ),
-                    // Destination
-                    Marker(
-                      point: dest,
-                      width: 38,
-                      height: 38,
-                      child: const Icon(
-                        Icons.flag,
-                        color: Colors.red,
-                        size: 38,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          // Bottom sheet
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: SafeArea(
-              top: false,
-              child: Container(
-                width: double.infinity,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black26,
-                      blurRadius: 12,
-                      offset: Offset(0, -4),
-                    ),
-                  ],
-                ),
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Header
-                    Row(
-                      children: [
-                        const Text(
-                          'Driver',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(width: 6),
-                        if (_driverId != null)
-                          VerifiedBadge(userId: _driverId!, size: 18),
-                        const Spacer(),
-                        Flexible(child: _statusPill(status)), // <- safe
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-
-                    // Ratings
-                    if (_driverId != null)
-                      Row(
-                        children: [
-                          UserRatingBadge(userId: _driverId!, iconSize: 16),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              driverRatingText,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              showModalBottomSheet(
-                                context: context,
-                                isScrollControlled: true,
-                                builder:
-                                    (_) => RatingDetailsSheet(
-                                      userId: _driverId!,
-                                      title: 'Driver feedback',
-                                    ),
-                              );
-                            },
-                            child: const Text('View feedback'),
-                          ),
-                        ],
-                      ),
-
-                    const SizedBox(height: 8),
-
-                    // Fare + center
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.receipt_long,
-                          size: 16,
-                          color: Colors.black54,
-                        ),
-                        const SizedBox(width: 6),
-                        const Text(
-                          'Fare:',
-                          style: TextStyle(color: Colors.black54),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '₱${fare.toStringAsFixed(2)}',
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        const Spacer(),
-                        TextButton.icon(
-                          onPressed: () {
-                            final p = _driverInterp ?? _driverNext;
-                            if (p != null) {
-                              final z = _mapReady ? _map.camera.zoom : 15.0;
-                              _safeMove(p, math.max(z, 15));
-                              setState(() => _followDriver = true);
-                            }
-                          },
-                          icon: const Icon(Icons.center_focus_strong, size: 16),
-                          label: const Text('Center'),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    // GCash
-                    if (canUploadGcash) ...[
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.account_balance_wallet),
-                          label: const Text('Pay with GCash (upload proof)'),
-                          onPressed: () {
-                            showModalBottomSheet(
-                              context: context,
-                              isScrollControlled: true,
-                              builder:
-                                  (_) => GcashProofSheet(
-                                    rideId: widget.rideId,
-                                    amount: fare,
-                                  ),
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-
-                    // Chat
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _primaryGradientButton(
-                            label: 'Chat with Driver',
-                            icon: Icons.message,
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => ChatPage(matchId: _matchId!),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    // Rate after completed
-                    if (status == 'completed' && _driverId != null) ...[
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.star),
-                          label: const Text('Rate your driver'),
-                          onPressed:
-                              () async => _maybePromptRatingIfCompleted(),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
