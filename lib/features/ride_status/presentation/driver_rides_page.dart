@@ -197,21 +197,23 @@ class _DriverRidesPageState extends State<DriverRidesPage>
 
     final raw = await _supabase
         .from('ride_matches')
-        .select('''
-          id,
-          ride_request_id,
-          status,
-          created_at,
-          driver_id,
-          driver_route_id,
-          ride_requests (
-            pickup_lat, pickup_lng,
-            destination_lat, destination_lng,
-            passenger_id, fare,
-            seats, passenger_count,
-            users ( id, name )
-          )
-        ''')
+        .select(r'''
+  id,
+  ride_request_id,
+  status,
+  created_at,
+  driver_id,
+  driver_route_id,
+  seats_allocated,
+  ride_requests:ride_request_id!inner (
+    id,
+    pickup_lat, pickup_lng,
+    destination_lat, destination_lng,
+    passenger_id, fare,
+    seats,
+    users:passenger_id ( id, name )
+  )
+''')
         .eq('driver_id', user.id)
         .order('created_at', ascending: false);
 

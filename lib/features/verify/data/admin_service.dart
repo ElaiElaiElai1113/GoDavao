@@ -1,67 +1,97 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+/// Enum values in your DB (public.verification_status)
+class VerificationStatus {
+  static const pending = 'pending';
+  static const approved = 'approved';
+  static const rejected = 'rejected';
+}
+
 class AdminVerificationService {
   AdminVerificationService(this.client);
   final SupabaseClient client;
 
-  /// Watch for pending requests
+  // -------------------- Streams --------------------
+
   Stream<List<Map<String, dynamic>>> watchPending() {
     return client
         .from('verification_requests')
-        .stream(primaryKey: ['id'])
-        .eq('status', 'pending');
+        .stream(primaryKey: ['id']) // older SDK: no `columns` param
+        .eq('status', VerificationStatus.pending);
   }
 
-  /// Watch for approved requests
   Stream<List<Map<String, dynamic>>> watchApproved() {
     return client
         .from('verification_requests')
         .stream(primaryKey: ['id'])
-        .eq('status', 'approved');
+        .eq('status', VerificationStatus.approved);
   }
 
-  /// Watch for rejected requests
   Stream<List<Map<String, dynamic>>> watchRejected() {
     return client
         .from('verification_requests')
         .stream(primaryKey: ['id'])
-        .eq('status', 'rejected');
+        .eq('status', VerificationStatus.rejected);
   }
 
-  /// Fetch requests (optionally by status)
+  // -------------------- Queries --------------------
+
+  /// Fetch requests (optionally filtered). Newest first.
   Future<List<Map<String, dynamic>>> fetch({String? status}) async {
-    var q = client
-        .from('verification_requests')
-        .select('*, users:users(id, role, verification_status)');
-    if (status != null) q = q.eq('status', status);
-    return await q.order('created_at');
+    final List data =
+        status == null
+            ? await client
+                .from('verification_requests')
+                .select('*, users:users(id, role, verification_status)')
+                .order('created_at')
+            : await client
+                .from('verification_requests')
+                .select('*, users:users(id, role, verification_status)')
+                .eq('status', status) // keep as text; server casts to enum
+                .order('created_at');
+
+    return data.cast<Map<String, dynamic>>();
   }
 
-  /// Approve a request
-  Future<void> approve(String id, {String? notes}) async {
-    final uid = client.auth.currentUser!.id;
-    await client
-        .from('verification_requests')
-        .update({
-          'status': 'approved',
-          'reviewed_by': uid,
-          'reviewed_at': DateTime.now().toIso8601String(),
-          if (notes != null) 'notes': notes,
-        })
-        .eq('id', id);
+  /// Get one request by id (with joined user info).
+  Future<Map<String, dynamic>?> getById(String requestId) async {
+    final row =
+        await client
+            .from('verification_requests')
+            .select('*, users:users(id, role, verification_status)')
+            .eq('id', requestId)
+            .maybeSingle();
+    return row as Map<String, dynamic>?;
   }
 
-  /// Reject a request
-  Future<void> reject(String id, {String? notes}) async {
-    final uid = client.auth.currentUser!.id;
-    await client
-        .from('verification_requests')
-        .update({
-          'status': 'rejected',
-          'reviewed_by': uid,
-          'reviewed_at': DateTime.now().toIso8601String(),
-          if (notes != null) 'notes': notes,
-        })
-        .eq('id', id);
+  // -------------------- Actions (via RPC) --------------------
+
+  Future<void> _process({
+    required String requestId,
+    required String actionEnum, // 'approved' | 'rejected'
+    String? notes,
+  }) async {
+    final cleanedNotes = (notes?.trim().isEmpty ?? true) ? null : notes!.trim();
+
+    await client.rpc(
+      'process_verification_request',
+      params: {
+        'p_request_id': requestId,
+        'p_action': actionEnum, // server maps to ENUM type
+        'p_notes': cleanedNotes,
+      },
+    );
   }
+
+  Future<void> approve(String id, {String? notes}) => _process(
+    requestId: id,
+    actionEnum: VerificationStatus.approved,
+    notes: notes,
+  );
+
+  Future<void> reject(String id, {String? notes}) => _process(
+    requestId: id,
+    actionEnum: VerificationStatus.rejected,
+    notes: notes,
+  ); // <-- not 'reject'
 }

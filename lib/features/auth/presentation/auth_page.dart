@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// Routes you already have
+// Existing routes
 import 'package:godavao/features/dashboard/presentation/dashboard_page.dart';
 import 'package:godavao/features/auth/presentation/vehicle_form.dart';
-
-// New: Verification sheet
 import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
 
 class AuthPage extends StatefulWidget {
@@ -85,40 +83,50 @@ class _AuthPageState extends State<AuthPage> {
     }
   }
 
-  // ---- Verification helpers -------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // Data helpers
+  // ---------------------------------------------------------------------------
 
-  /// Insert the users row on first signup.
-  /// On login, DO NOT reset verification_status.
+  /// **Idempotent** user row creation. On signup we seed a row with
+  /// verification_status='unverified' (or 'pending' if you prefer).
+  /// On login we DO NOT touch verification_status.
   Future<void> _ensureUserRow({
     required String userId,
     required String role,
     String? name,
     String? phone,
-    required bool isSignup,
+    required bool isSignup, // still passed, but logic changes
   }) async {
-    // Check if row exists
+    // read current row
     final existing =
-        await _sb.from('users').select('id').eq('id', userId).maybeSingle();
+        await _sb
+            .from('users')
+            .select('id, verification_status')
+            .eq('id', userId)
+            .maybeSingle();
+
+    final normalizedRole =
+        (role == 'driver' || role == 'passenger') ? role : 'passenger';
 
     if (existing == null) {
-      // First-time insert (signup): start as pending
+      // no row yet (e.g., trigger disabled) -> insert with pending
       await _sb.from('users').insert({
         'id': userId,
-        'role': role,
-        if (name != null) 'name': name,
-        if (phone != null) 'phone': phone,
-        'verification_status': 'pending',
+        'name': (name?.trim().isEmpty ?? true) ? 'EMPTY' : name!.trim(),
+        'role': normalizedRole,
+        'phone': phone?.trim().isEmpty == true ? null : phone!.trim(),
+        'verification_status': 'pending', // or omit to use DB default
       });
     } else {
-      // Login path: update non-sensitive fields only, NEVER touch verification_status
-      await _sb
-          .from('users')
-          .update({
-            'role': role,
-            if (name != null) 'name': name,
-            if (phone != null) 'phone': phone,
-          })
-          .eq('id', userId);
+      // row exists (usually because the trigger created it) -> ALWAYS update fields
+      final patch = <String, dynamic>{
+        'role': normalizedRole,
+        if (name != null && name.trim().isNotEmpty) 'name': name.trim(),
+        if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
+      };
+      if (patch.isNotEmpty) {
+        await _sb.from('users').update(patch).eq('id', userId);
+      }
     }
   }
 
@@ -147,7 +155,9 @@ class _AuthPageState extends State<AuthPage> {
     );
   }
 
-  // ---- Submit (login / signup) ---------------------------------------------
+  // ---------------------------------------------------------------------------
+  // Submit (login / signup)
+  // ---------------------------------------------------------------------------
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
@@ -160,10 +170,10 @@ class _AuthPageState extends State<AuthPage> {
 
     try {
       if (_isLogin) {
-        // LOGIN
+        // -------------------- LOGIN --------------------
         final res = await _sb.auth.signInWithPassword(
-          email: _emailCtrl.text.trim(),
-          password: _passwordCtrl.text.trim(),
+          email: _emailCtrl.text.trim().toLowerCase(),
+          password: _passwordCtrl.text,
         );
         final user = res.user;
         if (user == null) throw 'Login failed';
@@ -188,24 +198,31 @@ class _AuthPageState extends State<AuthPage> {
           MaterialPageRoute(builder: (_) => const DashboardPage()),
         );
       } else {
-        // SIGNUP
+        // -------------------- SIGNUP --------------------
+        final email = _emailCtrl.text.trim().toLowerCase();
+        final pwd = _passwordCtrl.text;
+        final fullName = _nameCtrl.text.trim();
+        final phone = _phoneCtrl.text.trim();
+
+        // Send auth metadata too (helps if you keep a provisioning trigger)
         final res = await _sb.auth.signUp(
-          email: _emailCtrl.text.trim(),
-          password: _passwordCtrl.text.trim(),
+          email: email,
+          password: pwd,
+          data: {'name': fullName, 'phone': phone, 'role': _role},
         );
         final user = res.user;
         if (user == null) throw 'Signup failed';
 
-        // Insert new users row (pending)
+        // Create users row (first time). We start unverified.
         await _ensureUserRow(
           userId: user.id,
           role: _role,
-          name: _nameCtrl.text.trim(),
-          phone: _phoneCtrl.text.trim(),
+          name: fullName,
+          phone: phone,
           isSignup: true,
         );
 
-        // Immediately prompt for verification for new accounts
+        // Immediately prompt for verification
         await _promptVerify(_role);
 
         if (!mounted) return;
@@ -225,6 +242,7 @@ class _AuthPageState extends State<AuthPage> {
     } on AuthException catch (e) {
       setState(() => _error = e.message);
     } on PostgrestException catch (e) {
+      // surface useful PostgREST messages
       setState(() => _error = e.message);
     } catch (e) {
       setState(() => _error = e.toString());
@@ -233,7 +251,9 @@ class _AuthPageState extends State<AuthPage> {
     }
   }
 
-  // ---- UI -------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // UI
+  // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -307,21 +327,25 @@ class _AuthPageState extends State<AuthPage> {
                           TextFormField(
                             controller: _emailCtrl,
                             keyboardType: TextInputType.emailAddress,
+                            autofillHints: const [AutofillHints.email],
                             decoration: _fieldDecor(
                               label: 'Email',
-                              hint: 'Enter your email',
+                              hint: 'you@example.com',
                             ),
-                            validator:
-                                (v) =>
-                                    (v == null || v.trim().isEmpty)
-                                        ? 'Enter your email'
-                                        : null,
+                            validator: (v) {
+                              final s = v?.trim() ?? '';
+                              if (s.isEmpty) return 'Enter your email';
+                              if (!s.contains('@'))
+                                return 'Enter a valid email';
+                              return null;
+                            },
                           ),
                           const SizedBox(height: 12),
 
                           TextFormField(
                             controller: _passwordCtrl,
                             obscureText: _obscure,
+                            autofillHints: const [AutofillHints.password],
                             decoration: _fieldDecor(
                               label: 'Password',
                               hint: 'Enter your password',
@@ -336,8 +360,9 @@ class _AuthPageState extends State<AuthPage> {
                               ),
                             ),
                             validator: (v) {
-                              if (v == null || v.isEmpty)
+                              if (v == null || v.isEmpty) {
                                 return 'Enter your password';
+                              }
                               if (v.length < 6) return 'Password too short';
                               return null;
                             },
@@ -349,28 +374,30 @@ class _AuthPageState extends State<AuthPage> {
                               child: const Text('Forgot Password?'),
                             ),
                           ),
-                          const SizedBox(height: 8),
 
                           if (!_isLogin) ...[
+                            const SizedBox(height: 8),
                             TextFormField(
                               controller: _nameCtrl,
                               decoration: _fieldDecor(label: 'Full Name'),
-                              validator:
-                                  (v) =>
-                                      (v == null || v.trim().isEmpty)
-                                          ? 'Enter your name'
-                                          : null,
+                              validator: (v) {
+                                if (_isLogin) return null;
+                                return (v == null || v.trim().isEmpty)
+                                    ? 'Enter your name'
+                                    : null;
+                              },
                             ),
                             const SizedBox(height: 12),
                             TextFormField(
                               controller: _phoneCtrl,
                               keyboardType: TextInputType.phone,
                               decoration: _fieldDecor(label: 'Phone Number'),
-                              validator:
-                                  (v) =>
-                                      (v == null || v.trim().isEmpty)
-                                          ? 'Enter your phone'
-                                          : null,
+                              validator: (v) {
+                                if (_isLogin) return null;
+                                return (v == null || v.trim().isEmpty)
+                                    ? 'Enter your phone'
+                                    : null;
+                              },
                             ),
                             const SizedBox(height: 12),
                             DropdownButtonFormField<String>(
@@ -390,10 +417,9 @@ class _AuthPageState extends State<AuthPage> {
                                   (v) =>
                                       setState(() => _role = v ?? 'passenger'),
                             ),
-                            const SizedBox(height: 8),
                           ],
 
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 20),
                           SizedBox(
                             width: double.infinity,
                             height: 52,
@@ -473,7 +499,10 @@ class _AuthPageState extends State<AuthPage> {
                             const SizedBox(height: 12),
                             Text(
                               _error!,
-                              style: const TextStyle(color: Colors.redAccent),
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.yellowAccent,
+                              ),
                             ),
                           ],
                           const SizedBox(height: 8),

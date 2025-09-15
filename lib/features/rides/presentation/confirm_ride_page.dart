@@ -228,7 +228,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 'fare': _fare,
                 'driver_route_id': widget.routeId,
                 'status': 'pending',
-                'seats_requested': _seatsRequested,
+                'requested_seats': _seatsRequested,
               }, onConflict: 'client_token')
               .select('id')
               .single();
