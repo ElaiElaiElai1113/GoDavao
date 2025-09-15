@@ -7,13 +7,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:google_polyline_algorithm/google_polyline_algorithm.dart'
     as gpa;
-import 'package:geolocator/geolocator.dart'; // ✅ NEW
+import 'package:geolocator/geolocator.dart';
 
 import 'package:godavao/core/osrm_service.dart';
 import 'package:godavao/core/fare_service.dart';
 import 'package:godavao/main.dart' show localNotify;
 
-// Update paths if needed
 import 'package:godavao/features/routes/presentation/pages/vehicle_switcher.dart';
 import 'package:godavao/features/auth/presentation/vehicle_form.dart';
 
@@ -31,8 +30,8 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
   final _notesCtrl = TextEditingController();
 
   // Fare + fees
-  final FareService _fareService = FareService(); // uses your defaults
-  static const double _platformFeePct = 0.15; // 15% platform/service fee
+  final FareService _fareService = FareService();
+  static const double _platformFeePct = 0.15;
 
   // Mode
   RouteMode _mode = RouteMode.osrm;
@@ -59,14 +58,14 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
   bool _hasAnyVehicle = false;
   String? _error;
 
-  // Location (NEW)
+  // Location
   LatLng? _myPos;
   StreamSubscription<Position>? _posSub;
   bool _followMe = false;
   bool _locPermDenied = false;
   bool _locating = false;
 
-  // Styles
+  // Theme tokens
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
   static const _bg = Color(0xFFF7F7FB);
@@ -77,14 +76,14 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
   void initState() {
     super.initState();
     _checkHasVehicles();
-    _initLocation(); // ✅ NEW
+    _initLocation();
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _notesCtrl.dispose();
-    _posSub?.cancel(); // ✅ NEW
+    _posSub?.cancel();
     super.dispose();
   }
 
@@ -133,7 +132,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
     return sum;
   }
 
-  // ---------- LOCATION (NEW) ----------
+  // ---------- LOCATION ----------
 
   Future<void> _initLocation() async {
     setState(() {
@@ -142,14 +141,12 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
     });
 
     try {
-      // 1) Service enabled?
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         setState(() => _locating = false);
         return;
       }
 
-      // 2) Permission
       LocationPermission perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
@@ -163,7 +160,6 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
         return;
       }
 
-      // 3) Get last known or current
       final last = await Geolocator.getLastKnownPosition();
       if (last != null) {
         _updateMyPos(last);
@@ -175,18 +171,15 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
         _updateMyPos(current);
       }
 
-      // 4) Stream updates
       _posSub?.cancel();
       _posSub = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 5, // meters
+          distanceFilter: 5,
         ),
-      ).listen((pos) {
-        _updateMyPos(pos);
-      });
+      ).listen(_updateMyPos);
     } catch (_) {
-      // silent fail is okay; user can still make routes
+      // silent; user can still make routes
     } finally {
       if (mounted) setState(() => _locating = false);
     }
@@ -195,19 +188,14 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
   void _updateMyPos(Position pos) {
     final p = LatLng(pos.latitude, pos.longitude);
     if (!mounted) return;
-    setState(() {
-      _myPos = p;
-    });
-    if (_followMe) {
-      _map.move(p, _map.camera.zoom);
-    }
+    setState(() => _myPos = p);
+    if (_followMe) _map.move(p, _map.camera.zoom);
   }
 
   void _toggleFollow() {
     setState(() => _followMe = !_followMe);
-    if (_followMe && _myPos != null) {
+    if (_followMe && _myPos != null)
       _map.move(_myPos!, math.max(_map.camera.zoom, 15));
-    }
   }
 
   void _centerOnMe() {
@@ -230,10 +218,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
   Future<void> _recomputeFareEstimate() async {
     try {
       if (_mode == RouteMode.osrm) {
-        if (_start == null || _end == null) {
-          _clearFare();
-          return;
-        }
+        if (_start == null || _end == null) return _clearFare();
         final f = await _fareService.estimate(
           pickup: _start!,
           destination: _end!,
@@ -245,35 +230,27 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
           _driverNet = net;
         });
       } else {
-        if (_manualPoints.length < 2) {
-          _clearFare();
-          return;
-        }
+        if (_manualPoints.length < 2) return _clearFare();
         final rules = _fareService.rules;
         final km = _manualKm ?? _pathKm(_manualPoints);
         const avgKmh = 22.0;
         final mins = math.max((km / avgKmh) * 60.0, 1.0);
-
         double subtotal =
             rules.baseFare +
             (rules.perKm * km) +
             (rules.perMin * mins) +
             rules.bookingFee;
         subtotal = math.max(subtotal, rules.minFare);
-
         bool isNight() {
           final now = DateTime.now();
           final h = now.hour;
-          if (rules.nightStartHour <= rules.nightEndHour) {
+          if (rules.nightStartHour <= rules.nightEndHour)
             return h >= rules.nightStartHour && h <= rules.nightEndHour;
-          } else {
-            return h >= rules.nightStartHour || h <= rules.nightEndHour;
-          }
+          return h >= rules.nightStartHour || h <= rules.nightEndHour;
         }
 
         final surcharge = isNight() ? subtotal * rules.nightSurchargePct : 0.0;
         final total = (subtotal + surcharge).roundToDouble();
-
         final f = FareBreakdown(
           distanceKm: double.parse(km.toStringAsFixed(2)),
           durationMin: double.parse(mins.toStringAsFixed(0)),
@@ -282,7 +259,6 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
           total: total,
         );
         final net = (f.total * (1 - _platformFeePct)).roundToDouble();
-
         if (!mounted) return;
         setState(() {
           _fare = f;
@@ -311,8 +287,6 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
     }
   }
 
-  /// OSRM: long-press 1) set start  2) set end (+fetch)  3) reset with new start
-  /// Manual: long-press opens Undo / Clear
   void _onMapLongPress(TapPosition _, LatLng p) async {
     if (_mode == RouteMode.osrm) {
       if (_start == null) {
@@ -481,8 +455,8 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
         'name': _nameCtrl.text.trim().isEmpty ? null : _nameCtrl.text.trim(),
         'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
         'route_mode': _mode == RouteMode.osrm ? 'osrm' : 'manual',
-        'route_polyline': routePolyline, // set in OSRM mode
-        'manual_polyline': manualPolyline, // set in Manual mode
+        'route_polyline': routePolyline,
+        'manual_polyline': manualPolyline,
         'start_lat': startLat,
         'start_lng': startLng,
         'end_lat': endLat,
@@ -542,63 +516,48 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
 
   // ---------- UI ----------
 
+  String _fareLine() {
+    if (_fare == null) return '—';
+    final dist = _fare!.distanceKm.toStringAsFixed(1);
+    final time =
+        _mode == RouteMode.osrm && _osrmMins != null
+            ? ', ${_fare!.durationMin.toStringAsFixed(0)} min'
+            : '';
+    return '₱${_fare!.total.toStringAsFixed(0)} ($dist km$time)';
+  }
+
+  String _driverNetLine() {
+    if (_driverNet == null) return '—';
+    final pct = (_platformFeePct * 100).toStringAsFixed(0);
+    return '₱${_driverNet!.toStringAsFixed(0)} (after $pct% fee)';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final center = _myPos ?? _start ?? const LatLng(7.1907, 125.4553); // Davao
-
-    String _fareLine() {
-      if (_fare == null) return '—';
-      return '₱${_fare!.total.toStringAsFixed(0)} '
-          '(${_fare!.distanceKm.toStringAsFixed(1)} km'
-          '${_mode == RouteMode.osrm && _osrmMins != null ? ', ${_fare!.durationMin.toStringAsFixed(0)} min' : ''})';
-    }
-
-    String _driverNetLine() {
-      if (_driverNet == null) return '—';
-      final pct = (_platformFeePct * 100).toStringAsFixed(0);
-      return '₱${_driverNet!.toStringAsFixed(0)} (after $pct% fee)';
-    }
+    final center = _myPos ?? _start ?? const LatLng(7.1907, 125.4553);
 
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
         title: const Text('Create Driver Route'),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Center(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: SegmentedButton<RouteMode>(
-                  segments: const [
-                    ButtonSegment(value: RouteMode.osrm, label: Text('OSRM')),
-                    ButtonSegment(
-                      value: RouteMode.manual,
-                      label: Text('Manual'),
-                    ),
-                  ],
-                  selected: {_mode},
-                  onSelectionChanged: (s) async {
-                    setState(() {
-                      _mode = s.first;
-                      _error = null;
-                    });
-                    await _recomputeFareEstimate();
-                  },
-                  style: ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    padding: WidgetStateProperty.all(
-                      const EdgeInsets.symmetric(horizontal: 8),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+      ),
+      floatingActionButton: _PublishFab(
+        enabled:
+            !_publishing &&
+            ((_mode == RouteMode.osrm &&
+                    _start != null &&
+                    _end != null &&
+                    _osrmRoute != null) ||
+                (_mode == RouteMode.manual && _manualPoints.length >= 2)) &&
+            _vehicleId != null,
+        busy: _publishing,
+        onPressed: _publish,
       ),
       body: Stack(
         children: [
+          // MAP
           Positioned.fill(
             child: FlutterMap(
               mapController: _map,
@@ -614,7 +573,6 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                   userAgentPackageName: 'com.yourcompany.godavao',
                 ),
 
-                // My live location (NEW)
                 if (_myPos != null)
                   MarkerLayer(
                     markers: [
@@ -651,6 +609,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                       ),
                     ],
                   ),
+
                 if (_mode == RouteMode.manual && _manualRoute != null)
                   PolylineLayer(
                     polylines: [
@@ -661,6 +620,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                       ),
                     ],
                   ),
+
                 if (_mode == RouteMode.osrm && _start != null)
                   MarkerLayer(
                     markers: [
@@ -676,6 +636,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                       ),
                     ],
                   ),
+
                 if (_mode == RouteMode.osrm && _end != null)
                   MarkerLayer(
                     markers: [
@@ -691,6 +652,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                       ),
                     ],
                   ),
+
                 if (_mode == RouteMode.manual && _manualPoints.isNotEmpty)
                   MarkerLayer(
                     markers: [
@@ -721,7 +683,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
             ),
           ),
 
-          // Center on me / Follow button (NEW)
+          // Top-right map controls
           SafeArea(
             child: Align(
               alignment: Alignment.topRight,
@@ -752,10 +714,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                           _followMe
                               ? _purple
                               : Theme.of(context).colorScheme.primary,
-                      child: Icon(
-                        _followMe ? Icons.gps_fixed : Icons.gps_not_fixed,
-                        color: Colors.white,
-                      ),
+                      child: const Icon(Icons.navigation, color: Colors.white),
                     ),
                   ],
                 ),
@@ -763,13 +722,77 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
             ),
           ),
 
+          // Mode chip + hint (map overlay)
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8, left: 8, right: 100),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _ModeSegment(
+                    mode: _mode,
+                    onChanged: (m) async {
+                      setState(() {
+                        _mode = m;
+                        _error = null;
+                      });
+                      await _recomputeFareEstimate();
+                    },
+                  ),
+                  _HintPill(
+                    text:
+                        _mode == RouteMode.osrm
+                            ? (_start == null
+                                ? 'Long-press map to set START'
+                                : _end == null
+                                ? 'Long-press to set DESTINATION'
+                                : 'Long-press again to reset START')
+                            : 'Tap to add points · Long-press for Undo/Clear',
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Always-visible quick stats over the map (prevents truncation in collapsed sheet)
+          const SizedBox(height: 25),
+          if (_fare != null || _driverNet != null)
+            SafeArea(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Padding(
+                  padding: const EdgeInsets.only(
+                    top: 50,
+                  ), // below the hint/mode chips
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      if (_fare != null)
+                        _InfoChip(
+                          icon: Icons.local_taxi,
+                          text: 'Estimated Fare: ${_fareLine()}',
+                        ),
+                      if (_driverNet != null)
+                        _InfoChip(
+                          icon: Icons.account_balance_wallet_outlined,
+                          text: 'Driver Net: ${_driverNetLine()}',
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
           if (_error != null)
             Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
+              top: 48,
+              left: 8,
+              right: 8,
               child: Material(
                 color: Colors.red.shade100,
+                borderRadius: BorderRadius.circular(10),
                 child: Padding(
                   padding: const EdgeInsets.all(8),
                   child: Text(
@@ -781,322 +804,410 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
               ),
             ),
 
-          // Bottom sheet
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: SafeArea(
-              top: false,
-              child: Container(
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black26,
-                      blurRadius: 10,
-                      offset: Offset(0, -4),
-                    ),
-                  ],
-                ),
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Hint + in-sheet toggle (no overflow)
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.touch_app,
-                          size: 18,
-                          color: Colors.black54,
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            _mode == RouteMode.osrm
-                                ? (_start == null
-                                    ? 'Long-press to set START'
-                                    : _end == null
-                                    ? 'Long-press to set DESTINATION'
-                                    : 'Long-press again to reset START')
-                                : 'Tap to add points. Long-press for Undo/Clear.',
-                            style: const TextStyle(color: Colors.black54),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            softWrap: false,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerRight,
-                            child: SegmentedButton<RouteMode>(
-                              segments: const [
-                                ButtonSegment(
-                                  value: RouteMode.osrm,
-                                  label: Text('Fastest'),
-                                ),
-                                ButtonSegment(
-                                  value: RouteMode.manual,
-                                  label: Text('Manual'),
-                                ),
-                              ],
-                              selected: {_mode},
-                              onSelectionChanged: (s) async {
-                                setState(() {
-                                  _mode = s.first;
-                                  _error = null;
-                                });
-                                await _recomputeFareEstimate();
-                              },
-                              style: ButtonStyle(
-                                visualDensity: VisualDensity.compact,
-                                padding: WidgetStateProperty.all(
-                                  const EdgeInsets.symmetric(horizontal: 8),
-                                ),
-                              ),
+          // COLLAPSIBLE SHEET
+          _CollapsibleRouteSheet(
+            checkingVehicles: _checkingVehicles,
+            hasAnyVehicle: _hasAnyVehicle,
+            vehicleSeats: _vehicleSeats,
+            onAddVehicle: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const VehicleForm()),
+              );
+              await _checkHasVehicles();
+            },
+            onVehicleChanged: (v) async {
+              setState(() {
+                _vehicleId = v['id'] as String?;
+                _vehicleSeats = (v['seats'] as int?) ?? 0;
+              });
+              await _recomputeFareEstimate();
+            },
+            osrmInfo:
+                (_mode == RouteMode.osrm && _osrmRoute != null)
+                    ? '${_osrmKm == null ? '—' : _osrmKm!.toStringAsFixed(1)} km • '
+                        '${_osrmMins == null ? '—' : _osrmMins!.toStringAsFixed(0)} min'
+                    : null,
+            manualInfo:
+                (_mode == RouteMode.manual && _manualRoute != null)
+                    ? '${_manualKm?.toStringAsFixed(1) ?? '—'} km (manual)'
+                    : null,
+            fareText: _fareLine(),
+            netText: _driverNetLine(),
+            nameCtrl: _nameCtrl,
+            notesCtrl: _notesCtrl,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/* ---------- UI pieces ---------- */
+
+class _PublishFab extends StatelessWidget {
+  const _PublishFab({
+    required this.enabled,
+    required this.busy,
+    required this.onPressed,
+  });
+
+  final bool enabled;
+  final bool busy;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 180),
+      opacity: enabled ? 1 : .6,
+      child: FloatingActionButton.extended(
+        onPressed: enabled ? onPressed : null,
+        icon:
+            busy
+                ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+                : const Icon(Icons.publish),
+        label: Text(busy ? 'Publishing…' : 'Publish Route'),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Colors.white,
+      ),
+    );
+  }
+}
+
+class _ModeSegment extends StatelessWidget {
+  const _ModeSegment({required this.mode, required this.onChanged});
+  final RouteMode mode;
+  final ValueChanged<RouteMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white.withOpacity(.95),
+      elevation: 2,
+      borderRadius: BorderRadius.circular(999),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+        child: SegmentedButton<RouteMode>(
+          segments: const [
+            ButtonSegment(value: RouteMode.osrm, label: Text('OSRM')),
+            ButtonSegment(value: RouteMode.manual, label: Text('Manual')),
+          ],
+          selected: {mode},
+          onSelectionChanged: (s) => onChanged(s.first),
+          style: ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            padding: WidgetStateProperty.all(
+              const EdgeInsets.symmetric(horizontal: 8),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HintPill extends StatelessWidget {
+  const _HintPill({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.95),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          Icon(Icons.touch_app, size: 14, color: Colors.black54),
+          SizedBox(width: 6),
+        ],
+      ),
+    );
+  }
+}
+
+class _CollapsibleRouteSheet extends StatelessWidget {
+  const _CollapsibleRouteSheet({
+    required this.checkingVehicles,
+    required this.hasAnyVehicle,
+    required this.vehicleSeats,
+    required this.onAddVehicle,
+    required this.onVehicleChanged,
+    required this.osrmInfo,
+    required this.manualInfo,
+    required this.fareText,
+    required this.netText,
+    required this.nameCtrl,
+    required this.notesCtrl,
+  });
+
+  final bool checkingVehicles;
+  final bool hasAnyVehicle;
+  final int? vehicleSeats;
+  final VoidCallback onAddVehicle;
+  final ValueChanged<Map<String, dynamic>> onVehicleChanged;
+
+  final String? osrmInfo;
+  final String? manualInfo;
+  final String fareText;
+  final String netText;
+
+  final TextEditingController nameCtrl;
+  final TextEditingController notesCtrl;
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      minChildSize: .18,
+      maxChildSize: .88,
+      initialChildSize: .22,
+      snap: true,
+      snapSizes: const [.18, .42, .88],
+      builder: (ctx, scroll) {
+        return Material(
+          elevation: 16,
+          color: Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          child: CustomScrollView(
+            controller: scroll,
+            slivers: [
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const _SheetHandle(),
+                      const SizedBox(height: 10),
+
+                      // quick stats (collapsed view)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _StatRow(
+                              icon: Icons.local_taxi,
+                              label: 'Estimated Fare',
+                              value: fareText,
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 10),
-
-                    // Vehicle area
-                    if (_checkingVehicles)
-                      const SizedBox(
-                        height: 36,
-                        child: Center(
-                          child: SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        ),
-                      )
-                    else if (!_hasAnyVehicle)
-                      Row(
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              'No vehicles yet. Add one to publish routes.',
-                              style: TextStyle(fontWeight: FontWeight.w600),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _StatRow(
+                              icon: Icons.account_balance_wallet_outlined,
+                              label: 'Driver Net',
+                              value: netText,
                             ),
                           ),
-                          OutlinedButton.icon(
-                            icon: const Icon(Icons.add),
-                            label: const Text('Add Vehicle'),
-                            onPressed: () async {
-                              await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const VehicleForm(),
-                                ),
-                              );
-                              await _checkHasVehicles();
-                            },
-                          ),
                         ],
-                      )
-                    else
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Vehicle',
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 8),
-                          VehicleSwitcher(
-                            onChanged: (vehicle) async {
-                              setState(() {
-                                _vehicleId = vehicle['id'] as String?;
-                                _vehicleSeats = (vehicle['seats'] as int?) ?? 0;
-                              });
-                              await _recomputeFareEstimate();
-                            },
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              const Text('Seats'),
-                              const SizedBox(width: 8),
-                              Chip(
-                                label: Text(
-                                  _vehicleSeats == null
-                                      ? '—'
-                                      : '${_vehicleSeats!} seats',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
+                      ),
+                      if (osrmInfo != null || manualInfo != null) ...[
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.route,
+                              size: 16,
+                              color: Colors.black54,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              osrmInfo ?? manualInfo!,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
                               ),
-                            ],
-                          ),
-                        ],
-                      ),
-
-                    const SizedBox(height: 8),
-
-                    // Distance / ETA
-                    if (_mode == RouteMode.osrm && _osrmRoute != null)
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.route,
-                            size: 16,
-                            color: Colors.black54,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '${_osrmKm == null ? '—' : _osrmKm!.toStringAsFixed(1)} km • '
-                            '${_osrmMins == null ? '—' : _osrmMins!.toStringAsFixed(0)} min',
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ],
-                      )
-                    else if (_mode == RouteMode.manual && _manualRoute != null)
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.brush,
-                            size: 16,
-                            color: Colors.black54,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '${_manualKm?.toStringAsFixed(1) ?? '—'} km (manual)',
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ],
-                      ),
-
-                    const SizedBox(height: 6),
-
-                    // Fare + driver net
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.local_taxi,
-                          size: 16,
-                          color: Colors.black54,
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            'Estimated Fare: ${_fareLine()}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.account_balance_wallet_outlined,
-                          size: 16,
-                          color: Colors.black54,
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            'Driver Net: ${_driverNetLine()}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 10),
-
-                    // Meta
-                    TextFormField(
-                      controller: _nameCtrl,
-                      decoration: _decor(
-                        label: 'Route name (optional)',
-                        hint: 'e.g., Morning Commute',
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: _notesCtrl,
-                      decoration: _decor(
-                        label: 'Notes (optional)',
-                        hint: 'e.g., Prefers back roads',
-                      ),
-                      maxLines: 2,
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    // Publish
-                    SizedBox(
-                      height: 52,
-                      width: double.infinity,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(14),
-                          gradient: const LinearGradient(
-                            colors: [_purple, _purpleDark],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _purple.withOpacity(0.25),
-                              blurRadius: 16,
-                              offset: const Offset(0, 8),
                             ),
                           ],
                         ),
-                        child: ElevatedButton.icon(
-                          icon:
-                              _publishing
-                                  ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
+                      ],
+
+                      const SizedBox(height: 12),
+                      const Divider(height: 1),
+                      const SizedBox(height: 12),
+
+                      Text(
+                        'Vehicle',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 8),
+
+                      if (checkingVehicles)
+                        const SizedBox(
+                          height: 36,
+                          child: Center(
+                            child: SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        )
+                      else if (!hasAnyVehicle)
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'No vehicles yet. Add one to publish routes.',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            OutlinedButton.icon(
+                              icon: const Icon(Icons.add),
+                              label: const Text('Add Vehicle'),
+                              onPressed: onAddVehicle,
+                            ),
+                          ],
+                        )
+                      else
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            VehicleSwitcher(onChanged: onVehicleChanged),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                const Text('Seats'),
+                                const SizedBox(width: 8),
+                                Chip(
+                                  label: Text(
+                                    vehicleSeats == null
+                                        ? '—'
+                                        : '$vehicleSeats seats',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
                                     ),
-                                  )
-                                  : const Icon(
-                                    Icons.publish,
-                                    color: Colors.white,
                                   ),
-                          label: Text(
-                            _publishing ? 'Publishing…' : 'Publish Route',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 16,
+                                ),
+                              ],
                             ),
-                          ),
-                          onPressed: _publishing ? null : _publish,
-                          style: ElevatedButton.styleFrom(
-                            elevation: 0,
-                            backgroundColor: Colors.transparent,
-                            shadowColor: Colors.transparent,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
+                          ],
+                        ),
+
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: nameCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Route name (optional)',
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                  ],
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: notesCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Notes (optional)',
+                        ),
+                        maxLines: 2,
+                      ),
+                      const SizedBox(height: 18),
+                    ],
+                  ),
                 ),
               ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SheetHandle extends StatelessWidget {
+  const _SheetHandle();
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        width: 44,
+        height: 5,
+        decoration: BoxDecoration(
+          color: Colors.black12,
+          borderRadius: BorderRadius.circular(999),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatRow extends StatelessWidget {
+  const _StatRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: Colors.black54),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$label: $value',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoChip extends StatelessWidget {
+  const _InfoChip({required this.icon, required this.text});
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.96),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.black12),
+        boxShadow: const [
+          BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 2)),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: Colors.black54),
+          const SizedBox(width: 6),
+          ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: 180,
+            ), // <- prevents overflow
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
         ],
