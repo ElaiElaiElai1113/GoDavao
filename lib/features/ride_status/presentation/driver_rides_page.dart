@@ -195,119 +195,146 @@ class _DriverRidesPageState extends State<DriverRidesPage>
 
     _subscribeToNewMatchesByDriver(user.id);
 
-    final raw = await _supabase
-        .from('ride_matches')
-        .select(r'''
-  id,
-  ride_request_id,
-  status,
-  created_at,
-  driver_id,
-  driver_route_id,
-  seats_allocated,
-  ride_requests:ride_request_id!inner (
-    id,
-    pickup_lat, pickup_lng,
-    destination_lat, destination_lng,
-    passenger_id, fare,
-    seats,
-    users:passenger_id ( id, name )
-  )
-''')
-        .eq('driver_id', user.id)
-        .order('created_at', ascending: false);
+    try {
+      // Keep this selection minimal + schema-safe
+      final raw = await _supabase
+          .from('ride_matches')
+          .select('''
+          id,
+          ride_request_id,
+          status,
+          created_at,
+          driver_id,
+          driver_route_id,
+          ride_requests (
+            id,
+            pickup_lat, pickup_lng,
+            destination_lat, destination_lng,
+            passenger_id,
+            fare,
+            seats,
+            users (
+              id, name
+            )
+          )
+        ''')
+          .eq('driver_id', user.id)
+          .order('created_at', ascending: false);
 
-    final all = <Map<String, dynamic>>[];
-    final rideIds = <String>[];
+      final all = <Map<String, dynamic>>[];
+      final rideIds = <String>[];
 
-    for (final row in (raw as List)) {
-      final m = (row as Map).cast<String, dynamic>();
-      final req = (m['ride_requests'] as Map?)?.cast<String, dynamic>();
-      if (req == null) continue;
+      for (final row in (raw as List)) {
+        final m = (row as Map).cast<String, dynamic>();
 
-      // passenger
-      String passengerName = 'Passenger';
-      String? passengerId;
-      final usersRel = req['users'];
-      if (usersRel is Map) {
-        passengerName = (usersRel['name'] as String?) ?? passengerName;
-        passengerId = usersRel['id']?.toString();
-      } else if (usersRel is List &&
-          usersRel.isNotEmpty &&
-          usersRel.first is Map) {
-        final first = (usersRel.first as Map).cast<String, dynamic>();
-        passengerName = (first['name'] as String?) ?? passengerName;
-        passengerId = first['id']?.toString();
+        // child can be null if RLS blocks it
+        final req = (m['ride_requests'] as Map?)?.cast<String, dynamic>();
+
+        // passenger info (best effort)
+        String passengerName = 'Passenger';
+        String? passengerId;
+        final usersRel = req?['users'];
+        if (usersRel is Map) {
+          passengerName = (usersRel['name'] as String?) ?? passengerName;
+          passengerId = usersRel['id']?.toString();
+        } else if (usersRel is List &&
+            usersRel.isNotEmpty &&
+            usersRel.first is Map) {
+          final first = (usersRel.first as Map).cast<String, dynamic>();
+          passengerName = (first['name'] as String?) ?? passengerName;
+          passengerId = first['id']?.toString();
+        }
+        passengerId ??= req?['passenger_id']?.toString();
+
+        // pax (fallbacks)
+        final pax =
+            (req?['seats'] as num?)?.toInt() ??
+            (req?['passenger_count'] as num?)?.toInt() ??
+            1;
+
+        // reverse geocode only if coords exist (no exceptions)
+        String pickupAddr = 'Pickup';
+        String destAddr = 'Destination';
+        try {
+          if (req?['pickup_lat'] != null && req?['pickup_lng'] != null) {
+            final pm =
+                (await placemarkFromCoordinates(
+                  (req!['pickup_lat'] as num).toDouble(),
+                  (req['pickup_lng'] as num).toDouble(),
+                )).first;
+            final s = [
+              pm.thoroughfare,
+              pm.subLocality,
+              pm.locality,
+            ].whereType<String>().where((s) => s.isNotEmpty).join(', ');
+            if (s.isNotEmpty) pickupAddr = s;
+          }
+          if (req?['destination_lat'] != null &&
+              req?['destination_lng'] != null) {
+            final pm =
+                (await placemarkFromCoordinates(
+                  (req!['destination_lat'] as num).toDouble(),
+                  (req['destination_lng'] as num).toDouble(),
+                )).first;
+            final s = [
+              pm.thoroughfare,
+              pm.subLocality,
+              pm.locality,
+            ].whereType<String>().where((s) => s.isNotEmpty).join(', ');
+            if (s.isNotEmpty) destAddr = s;
+          }
+        } catch (_) {
+          // non-fatal
+        }
+
+        final fare = (req?['fare'] as num?)?.toDouble();
+
+        all.add({
+          'match_id': m['id'],
+          'ride_request_id': m['ride_request_id'],
+          'driver_route_id': m['driver_route_id'],
+          'status': m['status'],
+          'created_at': m['created_at'],
+          'passenger': passengerName,
+          'passenger_id': passengerId,
+          'pickup_address': pickupAddr,
+          'destination_address': destAddr,
+          'fare': fare,
+          'pax': pax,
+        });
+
+        final rrid = m['ride_request_id'];
+        if (rrid is String) rideIds.add(rrid);
       }
-      passengerId ??= req['passenger_id']?.toString();
 
-      // pax
-      final pax =
-          (req['seats'] as num?)?.toInt() ??
-          (req['passenger_count'] as num?)?.toInt() ??
-          1;
+      await _loadPaymentIntents(rideIds);
 
-      // reverse geocode (best effort)
-      String fmt(Placemark pm) => [
-        pm.thoroughfare,
-        pm.subLocality,
-        pm.locality,
-      ].whereType<String>().where((s) => s.isNotEmpty).join(', ');
-
-      String pickupAddr = 'Pickup';
-      String destAddr = 'Destination';
-      try {
-        final pickupMark =
-            (await placemarkFromCoordinates(
-              (req['pickup_lat'] as num).toDouble(),
-              (req['pickup_lng'] as num).toDouble(),
-            )).first;
-        final s = fmt(pickupMark);
-        pickupAddr = s.isEmpty ? 'Pickup' : s;
-      } catch (_) {}
-      try {
-        final destMark =
-            (await placemarkFromCoordinates(
-              (req['destination_lat'] as num).toDouble(),
-              (req['destination_lng'] as num).toDouble(),
-            )).first;
-        final s = fmt(destMark);
-        destAddr = s.isEmpty ? 'Destination' : s;
-      } catch (_) {}
-
-      final fare = (req['fare'] as num?)?.toDouble();
-
-      all.add({
-        'match_id': m['id'],
-        'ride_request_id': m['ride_request_id'],
-        'driver_route_id': m['driver_route_id'],
-        'status': m['status'],
-        'created_at': m['created_at'],
-        'passenger': passengerName,
-        'passenger_id': passengerId,
-        'pickup_address': pickupAddr,
-        'destination_address': destAddr,
-        'fare': fare,
-        'pax': pax,
+      if (!mounted) return;
+      setState(() {
+        _upcoming =
+            all
+                .where(
+                  (e) =>
+                      e['status'] != 'declined' && e['status'] != 'completed',
+                )
+                .toList();
+        _declined = all.where((e) => e['status'] == 'declined').toList();
+        _completed = all.where((e) => e['status'] == 'completed').toList();
+        _loading = false;
       });
-
-      rideIds.add(m['ride_request_id'] as String);
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Load matches failed: ${e.message}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Load matches failed: $e')));
     }
-
-    await _loadPaymentIntents(rideIds);
-
-    if (!mounted) return;
-    setState(() {
-      _upcoming =
-          all
-              .where(
-                (e) => e['status'] != 'declined' && e['status'] != 'completed',
-              )
-              .toList();
-      _declined = all.where((e) => e['status'] == 'declined').toList();
-      _completed = all.where((e) => e['status'] == 'completed').toList();
-      _loading = false;
-    });
   }
 
   Future<void> _loadPaymentIntents(List<String> rideIds) async {
