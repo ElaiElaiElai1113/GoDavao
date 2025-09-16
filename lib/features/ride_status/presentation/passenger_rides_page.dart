@@ -1,16 +1,16 @@
+// lib/features/ride_status/presentation/passenger_rides_page.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:godavao/core/reverse_geocoder.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'package:godavao/features/ride_status/presentation/passenger_ride_status_page.dart';
-
-import 'package:godavao/features/ratings/presentation/user_rating.dart';
-
-// OSRM
+import 'package:godavao/core/reverse_geocoder.dart';
 import 'package:godavao/core/osrm_service.dart';
+
+import 'package:godavao/features/ride_status/presentation/passenger_ride_status_page.dart';
+import 'package:godavao/features/ratings/presentation/user_rating.dart';
 
 class PassengerRidesPage extends StatefulWidget {
   const PassengerRidesPage({super.key});
@@ -20,14 +20,22 @@ class PassengerRidesPage extends StatefulWidget {
 }
 
 class _PassengerRidesPageState extends State<PassengerRidesPage> {
-  final supabase = Supabase.instance.client;
+  final sb = Supabase.instance.client;
 
+  // UI state
   bool _loading = true;
-  bool _working = false; // prevents double taps while cancelling
+  bool _working = false; // prevent double actions
   String? _error;
 
+  // Data
   List<Map<String, dynamic>> _upcoming = [];
   List<Map<String, dynamic>> _history = [];
+
+  // Realtime sub
+  StreamSubscription<List<Map<String, dynamic>>>? _ridesSub;
+
+  // Tiny address cache to avoid repeated reverse-geocoding
+  final Map<String, String> _addrCache = {}; // key: "lat,lng" -> text
 
   // Theme tokens
   static const _purple = Color(0xFF6A27F7);
@@ -37,35 +45,38 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
   @override
   void initState() {
     super.initState();
-    _loadRides();
+    _bootstrap();
   }
 
-  Future<String> _formatAddress(double lat, double lng) {
-    return reverseGeocodeText(lat, lng);
+  @override
+  void dispose() {
+    _ridesSub?.cancel();
+    super.dispose();
   }
 
-  // Safely extract driverId from a ride row (handles map or list shapes)
-  String? _extractDriverId(Map<String, dynamic> ride) {
+  /* ------------------------------ BOOTSTRAP ------------------------------ */
+  String? _driverNameFromRel(Map<String, dynamic> ride) {
     final rel = ride['driver_routes'];
-    if (rel is Map && rel['driver_id'] != null)
-      return rel['driver_id'].toString();
-    if (rel is List &&
-        rel.isNotEmpty &&
-        rel.first is Map &&
-        rel.first['driver_id'] != null) {
-      return rel.first['driver_id'].toString();
+
+    if (rel is Map) {
+      final u = rel['users'];
+      if (u is Map && u['name'] != null) return u['name'].toString();
+    }
+    if (rel is List && rel.isNotEmpty) {
+      final u = rel.first['users'];
+      if (u is Map && u['name'] != null) return u['name'].toString();
     }
     return null;
   }
 
-  Future<void> _loadRides() async {
+  Future<void> _bootstrap() async {
     setState(() {
       _loading = true;
       _error = null;
     });
 
-    final user = supabase.auth.currentUser;
-    if (user == null) {
+    final me = sb.auth.currentUser;
+    if (me == null) {
       setState(() {
         _loading = false;
         _error = 'You are not signed in.';
@@ -73,76 +84,169 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
       return;
     }
 
+    // 1) Prime with an initial fetch (so the page isn’t blank on first paint)
     try {
-      final data = await supabase
+      final rows = await sb
           .from('ride_requests')
-          .select(r'''
-            id,
-            pickup_lat,
-            pickup_lng,
-            destination_lat,
-            destination_lng,
-            fare,
-            status,
-            created_at,
-            driver_route_id,
-            driver_routes ( id, driver_id )
-          ''')
-          .eq('passenger_id', user.id)
-          .order('created_at', ascending: false);
+          .select('''
+      id, status, created_at, fare,
+      pickup_lat, pickup_lng, destination_lat, destination_lng,
+      driver_route_id,
+      driver_routes (
+        id, driver_id,
+        users!driver_routes_driver_id_fkey ( id, name )
+      )
+    ''')
+          .eq('passenger_id', me.id);
 
-      final raw =
-          (data as List)
-              .map((e) => Map<String, dynamic>.from(e as Map))
-              .toList();
-
-      // Enrich with human-readable addresses (best-effort)
-      final enriched = await Future.wait(
-        raw.map((ride) async {
-          final pLat = (ride['pickup_lat'] as num).toDouble();
-          final pLng = (ride['pickup_lng'] as num).toDouble();
-          final dLat = (ride['destination_lat'] as num).toDouble();
-          final dLng = (ride['destination_lng'] as num).toDouble();
-          return {
-            ...ride,
-            'pickup_address': await _formatAddress(pLat, pLng),
-            'destination_address': await _formatAddress(dLat, dLng),
-          };
-        }),
+      await _ingestRows(
+        (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList(),
       );
-
-      setState(() {
-        _upcoming =
-            enriched
-                .where(
-                  (r) => [
-                    'pending',
-                    'accepted',
-                    'en_route',
-                  ].contains(r['status'] as String),
-                )
-                .toList();
-
-        _history =
-            enriched
-                .where(
-                  (r) => [
-                    'completed',
-                    'declined',
-                    'cancelled',
-                    'canceled',
-                  ].contains(r['status'] as String),
-                )
-                .toList();
-      });
     } catch (e) {
       setState(() => _error = 'Failed to load rides.');
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
+    }
+
+    // 2) Realtime stream (no .order() on streams; we sort locally)
+    _ridesSub?.cancel();
+    _ridesSub = sb
+        .from('ride_requests')
+        .stream(primaryKey: ['id'])
+        .eq('passenger_id', me.id)
+        .listen((rows) async {
+          await _ingestRows(
+            rows.map((e) => Map<String, dynamic>.from(e)).toList(),
+          );
+        });
+  }
+
+  /* ------------------------------ INGEST ------------------------------ */
+
+  Future<void> _ingestRows(List<Map<String, dynamic>> rows) async {
+    // Enrich with human-readable addresses (cached)
+    Future<String> addr(double lat, double lng) async {
+      final key = '${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}';
+      final cached = _addrCache[key];
+      if (cached != null) return cached;
+      final text = await reverseGeocodeText(lat, lng);
+      _addrCache[key] = text;
+      return text;
+    }
+
+    final enriched = await Future.wait(
+      rows.map((r) async {
+        final pLat = (r['pickup_lat'] as num).toDouble();
+        final pLng = (r['pickup_lng'] as num).toDouble();
+        final dLat = (r['destination_lat'] as num).toDouble();
+        final dLng = (r['destination_lng'] as num).toDouble();
+
+        return {
+          ...r,
+          'pickup_address': await addr(pLat, pLng),
+          'destination_address': await addr(dLat, dLng),
+        };
+      }),
+    );
+
+    // Sort newest first
+    enriched.sort(
+      (a, b) => DateTime.parse(
+        b['created_at'].toString(),
+      ).compareTo(DateTime.parse(a['created_at'].toString())),
+    );
+
+    // Partition into upcoming vs history by status
+    List<String> up = const ['pending', 'accepted', 'en_route'];
+    List<String> hist = const [
+      'completed',
+      'declined',
+      'cancelled',
+      'canceled',
+    ];
+
+    if (!mounted) return;
+    setState(() {
+      _upcoming =
+          enriched.where((r) => up.contains(r['status'] as String)).toList();
+      _history =
+          enriched.where((r) => hist.contains(r['status'] as String)).toList();
+    });
+  }
+
+  /* ------------------------------ ACTIONS ------------------------------ */
+
+  Future<void> _cancelRide(String rideId, {String? reason}) async {
+    if (_working) return;
+    setState(() => _working = true);
+    try {
+      await sb.rpc(
+        'cancel_ride',
+        params: {'p_ride_id': rideId, 'p_reason': reason},
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Ride canceled')));
+      // Stream will update the list for us; no manual reload needed
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Cancel failed: ${e.message}')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Cancel failed: $e')));
+    } finally {
+      if (mounted) setState(() => _working = false);
     }
   }
 
-  // -------- UI bits
+  Future<void> _confirmCancel(String rideId) async {
+    final ctrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Cancel this ride?'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'You can optionally tell the driver why you’re cancelling.',
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: ctrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Reason (optional)',
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 2,
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Keep Ride'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Cancel Ride'),
+              ),
+            ],
+          ),
+    );
+    if (ok == true) {
+      final reason = ctrl.text.trim().isEmpty ? null : ctrl.text.trim();
+      await _cancelRide(rideId, reason: reason);
+    }
+  }
+
+  /* ------------------------------ UI HELPERS ------------------------------ */
 
   Color _statusColor(String s) {
     switch (s) {
@@ -166,29 +270,22 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
   Widget _statusPill(String status) {
     final c = _statusColor(status);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: c.withOpacity(0.12),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         status.toUpperCase(),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: c,
-          fontWeight: FontWeight.w700,
-          fontSize: 12,
-          letterSpacing: .3,
-        ),
+        style: TextStyle(color: c, fontWeight: FontWeight.w800, fontSize: 12),
       ),
     );
   }
 
-  Widget _primaryGradientButton({
+  Widget _primaryButton({
     required String label,
-    required VoidCallback? onPressed,
     IconData? icon,
+    required VoidCallback? onPressed,
   }) {
     return SizedBox(
       height: 44,
@@ -216,11 +313,10 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                   : Icon(icon, color: Colors.white, size: 18),
           label: Text(
             label,
-            maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: Colors.white,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w800,
             ),
           ),
           style: ElevatedButton.styleFrom(
@@ -236,89 +332,34 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
     );
   }
 
-  Future<void> _cancelRide(String rideId, {String? reason}) async {
-    if (_working) return;
-    setState(() => _working = true);
-    try {
-      await supabase.rpc(
-        'cancel_ride',
-        params: {'p_ride_id': rideId, 'p_reason': reason},
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Ride canceled')));
-      await _loadRides();
-    } on PostgrestException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Cancel failed: ${e.message}')));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Cancel failed: $e')));
-    } finally {
-      if (mounted) setState(() => _working = false);
+  String _peso(num? v) =>
+      v == null ? '₱0.00' : '₱${v.toDouble().toStringAsFixed(2)}';
+
+  String? _driverIdFromRel(Map<String, dynamic> ride) {
+    final rel = ride['driver_routes'];
+    if (rel is Map && rel['driver_id'] != null)
+      return rel['driver_id'].toString();
+    if (rel is List &&
+        rel.isNotEmpty &&
+        rel.first is Map &&
+        rel.first['driver_id'] != null) {
+      return rel.first['driver_id'].toString();
     }
+    return null;
   }
 
-  Future<void> _confirmCancel(String rideId) async {
-    final reasonCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder:
-          (ctx) => AlertDialog(
-            title: const Text('Cancel this ride?'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'You can optionally tell the driver why you’re cancelling.',
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: reasonCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Reason (optional)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Keep Ride'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Cancel Ride'),
-              ),
-            ],
-          ),
-    );
-    if (ok == true) {
-      final reason =
-          reasonCtrl.text.trim().isEmpty ? null : reasonCtrl.text.trim();
-      await _cancelRide(rideId, reason: reason);
-    }
-  }
-
-  Widget _buildCard(Map<String, dynamic> ride, {required bool upcoming}) {
-    final dt = DateFormat(
+  Widget _rideCard(Map<String, dynamic> ride, {required bool upcoming}) {
+    final status = (ride['status'] as String).toLowerCase();
+    final created = DateFormat(
       'MMM d, y • h:mm a',
-    ).format(DateTime.parse(ride['created_at'] as String));
-    final status = ride['status'] as String;
-    final fare = (ride['fare'] as num?)?.toDouble() ?? 0.0;
+    ).format(DateTime.parse(ride['created_at'].toString()));
 
+    final fare = (ride['fare'] as num?)?.toDouble();
     final pLat = (ride['pickup_lat'] as num).toDouble();
     final pLng = (ride['pickup_lng'] as num).toDouble();
     final dLat = (ride['destination_lat'] as num).toDouble();
     final dLng = (ride['destination_lng'] as num).toDouble();
-
-    final driverId = _extractDriverId(ride);
+    final driverId = _driverIdFromRel(ride);
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
@@ -330,7 +371,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Mini-map preview (OSRM with fallback line)
+            // Mini map
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: SizedBox(
@@ -351,10 +392,8 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                           color: Colors.purple.shade700,
                         ),
                     ];
-
                     return FlutterMap(
                       options: MapOptions(
-                        // keep static; user cannot pan/zoom this preview
                         initialCenter: LatLng(
                           (pLat + dLat) / 2,
                           (pLng + dLng) / 2,
@@ -397,62 +436,79 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                 ),
               ),
             ),
-
             const SizedBox(height: 10),
 
-            // Addresses (constrain long strings)
+            // Addresses
             Text(
               '${ride['pickup_address']} → ${ride['destination_address']}',
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 4),
-
-            // Driver row + rating badge (if assigned)
-            Row(
-              children: [
-                const Icon(
-                  Icons.directions_car,
-                  size: 14,
-                  color: Colors.black54,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'Driver: ${driverId ?? 'unassigned'}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (driverId != null)
-                  UserRatingBadge(userId: driverId, iconSize: 14),
-              ],
-            ),
-            const SizedBox(height: 4),
-
-            // Fare + time
-            Row(
-              children: [
-                Text(
-                  '₱${fare.toStringAsFixed(2)}',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(width: 10),
-                const Icon(Icons.access_time, size: 14, color: Colors.black54),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    dt,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.black54),
-                  ),
-                ),
-              ],
+              style: const TextStyle(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 6),
-            _statusPill(status),
+
+            // Meta (driver, fare, time)
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.directions_car,
+                      size: 14,
+                      color: Colors.black54,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      driverId == null
+                          ? 'Driver: unassigned'
+                          : 'Driver: ${_driverNameFromRel(ride) ?? driverId.substring(0, 8)}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+
+                    if (driverId != null) ...[
+                      const SizedBox(width: 6),
+                      UserRatingBadge(userId: driverId, iconSize: 14),
+                    ],
+                  ],
+                ),
+                if (fare != null)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.payments,
+                        size: 14,
+                        color: Colors.black54,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _peso(fare),
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.access_time,
+                      size: 14,
+                      color: Colors.black54,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      created,
+                      style: const TextStyle(color: Colors.black54),
+                    ),
+                  ],
+                ),
+                _statusPill(status),
+              ],
+            ),
 
             const SizedBox(height: 10),
 
@@ -462,20 +518,20 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                 children: [
                   if (status == 'pending' || status == 'accepted')
                     Expanded(
-                      child: _primaryGradientButton(
+                      child: _primaryButton(
                         label: _working ? 'Cancelling…' : 'Cancel Ride',
                         icon: Icons.close,
-                        onPressed: () => _confirmCancel(ride['id'] as String),
+                        onPressed: () => _confirmCancel(ride['id'].toString()),
                       ),
                     ),
                   if (status == 'accepted' || status == 'en_route') ...[
                     const SizedBox(width: 10),
                     Expanded(
-                      child: _primaryGradientButton(
+                      child: _primaryButton(
                         label: 'Contact Driver',
                         icon: Icons.phone,
                         onPressed: () {
-                          // TODO: wire to your preferred contact flow (call/text)
+                          // wire up your call/text flow here
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('Contacting driver…')),
                           );
@@ -495,17 +551,13 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                     MaterialPageRoute(
                       builder:
                           (_) => PassengerRideStatusPage(
-                            rideId: ride['id'] as String,
+                            rideId: ride['id'].toString(),
                           ),
                     ),
                   );
                 },
                 icon: const Icon(Icons.chevron_right),
-                label: const Text(
-                  'View details',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                label: const Text('View details'),
                 style: TextButton.styleFrom(foregroundColor: _purple),
               ),
             ),
@@ -515,14 +567,13 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
     );
   }
 
-  // ---------------- Scaffold ----------------
+  /* ------------------------------ SCAFFOLD ------------------------------ */
 
   @override
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-
     if (_error != null) {
       return Scaffold(
         backgroundColor: _bg,
@@ -531,7 +582,6 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
           backgroundColor: Colors.white,
           elevation: 0,
           surfaceTintColor: Colors.white,
-          actions: const [_AdminMenuButton()],
         ),
         body: Center(child: Text(_error!)),
       );
@@ -546,7 +596,6 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.white,
           elevation: 0,
-          actions: const [_AdminMenuButton()],
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(56),
             child: Padding(
@@ -554,33 +603,27 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
               child: Material(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(999),
-                child: Theme(
-                  data: Theme.of(context).copyWith(
-                    tabBarTheme: const TabBarThemeData(
-                      labelColor: Colors.white,
-                      unselectedLabelColor: Colors.black87,
-                      indicatorSize: TabBarIndicatorSize.tab,
-                    ),
-                  ),
-
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(999),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: const TabBar(
-                      indicator: BoxDecoration(
-                        color: Color(0xFF6A27F7),
-                        borderRadius: BorderRadius.all(Radius.circular(30)),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(999),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
                       ),
-                      tabs: [Tab(text: 'Upcoming'), Tab(text: 'History')],
+                    ],
+                  ),
+                  child: const TabBar(
+                    indicator: BoxDecoration(
+                      color: _purple,
+                      borderRadius: BorderRadius.all(Radius.circular(30)),
                     ),
+                    labelColor: Colors.white,
+                    unselectedLabelColor: Colors.black87,
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    dividerColor: Colors.transparent,
+                    tabs: [Tab(text: 'Upcoming'), Tab(text: 'History')],
                   ),
                 ),
               ),
@@ -590,57 +633,24 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
         body: TabBarView(
           children: [
             RefreshIndicator(
-              onRefresh: _loadRides,
+              onRefresh: _bootstrap,
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children:
-                    _upcoming
-                        .map((r) => _buildCard(r, upcoming: true))
-                        .toList(),
+                    _upcoming.map((r) => _rideCard(r, upcoming: true)).toList(),
               ),
             ),
             RefreshIndicator(
-              onRefresh: _loadRides,
+              onRefresh: _bootstrap,
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children:
-                    _history
-                        .map((r) => _buildCard(r, upcoming: false))
-                        .toList(),
+                    _history.map((r) => _rideCard(r, upcoming: false)).toList(),
               ),
             ),
           ],
         ),
       ),
-    );
-  }
-}
-
-/// Small, AppBar-safe popup menu (no ListTile, no unbounded width)
-class _AdminMenuButton extends StatelessWidget {
-  const _AdminMenuButton();
-
-  @override
-  Widget build(BuildContext context) {
-    return PopupMenuButton<String>(
-      tooltip: 'Admin',
-      icon: const Icon(Icons.admin_panel_settings),
-      onSelected: (value) {
-        // TODO: navigate to your admin pages depending on value
-        // if (value == 'verification') { Navigator.push(...); }
-        // if (value == 'vehicle') { Navigator.push(...); }
-      },
-      itemBuilder:
-          (ctx) => const [
-            PopupMenuItem(
-              value: 'verification',
-              child: Text('Verification Review'),
-            ),
-            PopupMenuItem(
-              value: 'vehicle',
-              child: Text('Vehicle Verification'),
-            ),
-          ],
     );
   }
 }

@@ -1,6 +1,5 @@
 // lib/features/ride_status/presentation/passenger_ride_status_page.dart
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -25,17 +24,18 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
   final _map = MapController();
 
   // Data
-  Map<String, dynamic>? _ride; // ride_requests row (+ joined bits)
-  Map<String, dynamic>? _match; // ride_matches row (driver, route, status)
-  Map<String, dynamic>? _payment; // payment_intents row
+  Map<String, dynamic>? _ride;
+  Map<String, dynamic>? _match;
+  Map<String, dynamic>? _payment;
+
   bool _loading = true;
   String? _error;
 
-  // Realtime channels
-  RealtimeChannel? _rideCh;
-  RealtimeChannel? _matchCh;
+  // Stream subs
+  StreamSubscription<List<Map<String, dynamic>>>? _rideSub;
+  StreamSubscription<List<Map<String, dynamic>>>? _matchSub;
 
-  // Style tokens
+  // Theme tokens
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
   static const _bg = Color(0xFFF7F7FB);
@@ -48,8 +48,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
 
   @override
   void dispose() {
-    if (_rideCh != null) _sb.removeChannel(_rideCh!);
-    if (_matchCh != null) _sb.removeChannel(_matchCh!);
+    _rideSub?.cancel();
+    _matchSub?.cancel();
     super.dispose();
   }
 
@@ -59,9 +59,9 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
       _error = null;
     });
     try {
-      await _loadAll();
-      _subscribeRide();
-      _subscribeMatch();
+      await Future.wait([_loadRide(), _loadMatch(), _loadPayment()]);
+      _watchRide();
+      _watchMatch();
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = 'Failed to load: $e');
@@ -70,12 +70,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     }
   }
 
-  Future<void> _loadAll() async {
-    await Future.wait([_loadRide(), _loadMatch(), _loadPayment()]);
-  }
-
   Future<void> _loadRide() async {
-    // Join minimal data needed for the page
     final res =
         await _sb
             .from('ride_requests')
@@ -86,15 +81,12 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
           users:passenger_id ( id, name )
         ''')
             .eq('id', widget.rideId)
-            .maybeSingle();
-
+            .single();
     if (!mounted) return;
-    setState(() => _ride = (res as Map?)?.cast<String, dynamic>());
+    setState(() => _ride = (res as Map).cast<String, dynamic>());
   }
 
   Future<void> _loadMatch() async {
-    // Single match row (by ride_id); there may be more historically,
-    // we show the latest by created_at.
     final rows = await _sb
         .from('ride_matches')
         .select('''
@@ -104,14 +96,12 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
           routes:driver_route_id ( id )
         ''')
         .eq('ride_request_id', widget.rideId)
-        .order('created_at', ascending: false)
-        .limit(1);
-
+        .order('created_at', ascending: true);
     if (!mounted) return;
     setState(() {
       _match =
           (rows is List && rows.isNotEmpty)
-              ? (rows.first as Map).cast<String, dynamic>()
+              ? (rows.last as Map).cast<String, dynamic>()
               : null;
     });
   }
@@ -127,80 +117,39 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     setState(() => _payment = (res as Map?)?.cast<String, dynamic>());
   }
 
-  void _subscribeRide() {
-    _rideCh?.unsubscribe();
-    _rideCh =
-        _sb.channel('ride_requests:${widget.rideId}')
-          ..onPostgresChanges(
-            schema: 'public',
-            table: 'ride_requests',
-            event: PostgresChangeEvent.update,
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'id',
-              value: widget.rideId,
-            ),
-            callback: (_) async {
-              await _loadRide();
-              await _loadPayment(); // payment status often follows ride status
-              if (!mounted) return;
-              setState(() {}); // refresh UI
-            },
-          )
-          ..subscribe();
+  void _watchRide() {
+    _rideSub?.cancel();
+    _rideSub = _sb
+        .from('ride_requests')
+        .stream(primaryKey: ['id'])
+        .eq('id', widget.rideId)
+        .listen((rows) async {
+          if (!mounted) return;
+          if (rows.isNotEmpty) {
+            setState(() => _ride = Map<String, dynamic>.from(rows.first));
+            await _loadPayment(); // keep payment in sync
+          }
+        });
   }
 
-  void _subscribeMatch() {
-    _matchCh?.unsubscribe();
-    _matchCh =
-        _sb.channel('ride_matches:${widget.rideId}')
-          ..onPostgresChanges(
-            schema: 'public',
-            table: 'ride_matches',
-            event: PostgresChangeEvent.all,
-            filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq,
-              column: 'ride_request_id',
-              value: widget.rideId,
-            ),
-            callback: (_) async {
-              await _loadMatch();
-              if (!mounted) return;
-              setState(() {});
-            },
-          )
-          ..subscribe();
+  void _watchMatch() {
+    _matchSub?.cancel();
+    _matchSub = _sb
+        .from('ride_matches')
+        .stream(primaryKey: ['id'])
+        .eq('ride_request_id', widget.rideId)
+        .order('created_at')
+        .listen((rows) {
+          if (!mounted) return;
+          if (rows.isEmpty) {
+            setState(() => _match = null);
+            return;
+          }
+          setState(() => _match = Map<String, dynamic>.from(rows.last));
+        });
   }
 
-  // ====== Actions ======
-  Future<void> _cancelRide() async {
-    if (_ride == null) return;
-    setState(() => _loading = true);
-    try {
-      await _sb
-          .from('ride_requests')
-          .update({'status': 'canceled'})
-          .eq('id', widget.rideId);
-      // Also cancel payment intent if any
-      await _sb
-          .from('payment_intents')
-          .update({'status': 'canceled'})
-          .eq('ride_id', widget.rideId);
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Ride canceled')));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Cancel failed: $e')));
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  // ====== UI helpers ======
+  // ====== Helpers ======
   String get _status {
     final s = (_ride?['status'] as String?) ?? 'pending';
     return s.toLowerCase();
@@ -242,6 +191,30 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     return LatLng(lat.toDouble(), lng.toDouble());
   }
 
+  // ====== Actions ======
+  Future<void> _cancelRide() async {
+    if (_ride == null) return;
+    try {
+      await _sb
+          .from('ride_requests')
+          .update({'status': 'canceled'})
+          .eq('id', widget.rideId);
+      await _sb
+          .from('payment_intents')
+          .update({'status': 'canceled'})
+          .eq('ride_id', widget.rideId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Ride canceled')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Cancel failed: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final fare = (_ride?['fare'] as num?)?.toDouble();
@@ -256,9 +229,11 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
       backgroundColor: _bg,
       appBar: AppBar(
         title: const Text('Ride Status'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.white,
         actions: [
           if (driverId != null) VerifiedBadge(userId: driverId, size: 22),
-          const SizedBox(width: 8),
           if (driverId != null)
             IconButton(
               tooltip: 'Chat with driver',
@@ -279,167 +254,183 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
               ? const Center(child: CircularProgressIndicator())
               : _error != null
               ? Center(child: Text('Error: $_error'))
-              : Column(
-                children: [
-                  // ===== Header chips (status, fare, payment) =====
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _Chip(
-                          icon: Icons.info_outline,
-                          label: _status.toUpperCase(),
-                          color: _statusColor(_status).withOpacity(.12),
-                          textColor: _statusColor(_status),
-                        ),
-                        if (fare != null)
-                          _Chip(
-                            icon: Icons.payments_outlined,
-                            label: 'Fare: ₱${fare.toStringAsFixed(2)}',
-                          ),
-                        if (_payment != null)
-                          PaymentStatusChip(
-                            status: _payment!['status'] as String?,
-                            amount: (_payment!['amount'] as num?)?.toDouble(),
-                          ),
-                      ],
-                    ),
-                  ),
-
-                  // ===== Map =====
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: FlutterMap(
-                          mapController: _map,
-                          options: MapOptions(center: center, zoom: 13),
-                          children: [
-                            TileLayer(
-                              urlTemplate:
-                                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                              userAgentPackageName: 'com.yourcompany.godavao',
-                            ),
-                            // Pickup & Dropoff markers
-                            MarkerLayer(
-                              markers: [
-                                if (_pickup != null)
-                                  Marker(
-                                    point: _pickup!,
-                                    width: 30,
-                                    height: 30,
-                                    child: const Icon(
-                                      Icons.place,
-                                      color: Colors.green,
-                                      size: 28,
-                                    ),
-                                  ),
-                                if (_dropoff != null)
-                                  Marker(
-                                    point: _dropoff!,
-                                    width: 30,
-                                    height: 30,
-                                    child: const Icon(
-                                      Icons.flag,
-                                      color: Colors.red,
-                                      size: 26,
-                                    ),
-                                  ),
-                                // Driver marker (optional — you can add live location stream later)
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // ===== Driver + actions =====
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.directions_car_outlined,
-                          color: Colors.black54,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            driverId == null
-                                ? 'Waiting for driver'
-                                : 'Driver: $driverName',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        if (driverId != null)
-                          UserRatingBadge(userId: driverId, iconSize: 16),
-                      ],
-                    ),
-                  ),
-
-                  // Sticky bottom bar
-                  SafeArea(
-                    top: false,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      child: Row(
+              : RefreshIndicator(
+                onRefresh:
+                    () async => await Future.wait([
+                      _loadRide(),
+                      _loadMatch(),
+                      _loadPayment(),
+                    ]),
+                child: ListView(
+                  padding: const EdgeInsets.only(bottom: 80),
+                  children: [
+                    // ===== Header chips =====
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              icon: const Icon(Icons.info_outline),
-                              label: const Text('View details'),
-                              onPressed:
-                                  () => _openDetailsSheet(
-                                    context: context,
-                                    passengerName: passenger,
-                                    driverName: driverName,
-                                    fare: fare,
-                                  ),
-                            ),
+                          _Chip(
+                            icon: Icons.info_outline,
+                            label: _status.toUpperCase(),
+                            color: _statusColor(_status).withOpacity(.12),
+                            textColor: _statusColor(_status),
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _PrimaryButton(
-                              label:
-                                  _status == 'pending' || _status == 'accepted'
-                                      ? 'Cancel ride'
-                                      : _status == 'en_route'
-                                      ? 'SOS'
-                                      : 'Close',
-                              icon:
-                                  _status == 'en_route'
-                                      ? Icons.emergency_share
-                                      : Icons.cancel_outlined,
-                              onPressed: () {
-                                if (_status == 'en_route') {
-                                  _showSosDialog();
-                                } else if (_status == 'pending' ||
-                                    _status == 'accepted') {
-                                  _cancelRide();
-                                } else {
-                                  Navigator.maybePop(context);
-                                }
-                              },
+                          if (fare != null)
+                            _Chip(
+                              icon: Icons.payments_outlined,
+                              label: '₱${fare.toStringAsFixed(2)}',
                             ),
-                          ),
+                          if (_payment != null)
+                            PaymentStatusChip(
+                              status: _payment!['status'] as String?,
+                              amount: (_payment!['amount'] as num?)?.toDouble(),
+                            ),
                         ],
                       ),
                     ),
-                  ),
-                ],
+
+                    // ===== Map preview =====
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: SizedBox(
+                          height: 220,
+                          child: FlutterMap(
+                            mapController: _map,
+                            options: MapOptions(center: center, zoom: 13),
+                            children: [
+                              TileLayer(
+                                urlTemplate:
+                                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                userAgentPackageName: 'com.godavao.app',
+                              ),
+                              MarkerLayer(
+                                markers: [
+                                  if (_pickup != null)
+                                    Marker(
+                                      point: _pickup!,
+                                      width: 30,
+                                      height: 30,
+                                      child: const Icon(
+                                        Icons.place,
+                                        color: Colors.green,
+                                        size: 28,
+                                      ),
+                                    ),
+                                  if (_dropoff != null)
+                                    Marker(
+                                      point: _dropoff!,
+                                      width: 30,
+                                      height: 30,
+                                      child: const Icon(
+                                        Icons.flag,
+                                        color: Colors.red,
+                                        size: 26,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // ===== Driver info =====
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.directions_car_outlined,
+                            color: Colors.black54,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              driverId == null
+                                  ? 'Waiting for driver'
+                                  : 'Driver: $driverName',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          if (driverId != null)
+                            UserRatingBadge(userId: driverId, iconSize: 16),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
+      bottomNavigationBar: _buildBottomBar(passenger, driverName, fare),
+    );
+  }
+
+  Widget _buildBottomBar(String passenger, String driverName, double? fare) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black26.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, -3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.info_outline),
+                label: const Text('Details'),
+                onPressed:
+                    () => _openDetailsSheet(
+                      context: context,
+                      passengerName: passenger,
+                      driverName: driverName,
+                      fare: fare,
+                    ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _PrimaryButton(
+                label:
+                    _status == 'pending' || _status == 'accepted'
+                        ? 'Cancel ride'
+                        : _status == 'en_route'
+                        ? 'SOS'
+                        : 'Close',
+                icon:
+                    _status == 'en_route'
+                        ? Icons.emergency_share
+                        : Icons.cancel_outlined,
+                onPressed: () {
+                  if (_status == 'en_route') {
+                    _showSosDialog();
+                  } else if (_status == 'pending' || _status == 'accepted') {
+                    _cancelRide();
+                  } else {
+                    Navigator.maybePop(context);
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -524,7 +515,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('SOS triggered')),
                   );
-                  // Hook into your SOS flow here
                 },
               ),
             ],
