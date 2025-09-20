@@ -298,20 +298,33 @@ class _AuthPageState extends State<AuthPage> {
                                 ),
                               ],
                             ),
-                            child: const CircleAvatar(
-                              radius: 60,
-                              backgroundImage: AssetImage(
-                                'assets/images/godavao_logo.png',
+                            child: Container(
+                              padding: const EdgeInsets.all(
+                                3,
+                              ), // thickness of outline
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.white, // outline color
                               ),
-                              backgroundColor: Colors.white,
+                              child: const CircleAvatar(
+                                radius: 60,
+                                backgroundImage: AssetImage(
+                                  'lib/assets/Logo.jpg',
+                                ),
+                                backgroundColor: Colors.white,
+                              ),
                             ),
                           ),
                           const SizedBox(height: 24),
 
                           Text(
                             _isLogin ? 'Welcome back' : 'Create your account',
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(fontWeight: FontWeight.w700),
+                            style: Theme.of(
+                              context,
+                            ).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
                           ),
                           const SizedBox(height: 4),
                           Text(
@@ -319,7 +332,7 @@ class _AuthPageState extends State<AuthPage> {
                                 ? 'Sign in to book rides around Davao.'
                                 : 'Join GoDavao to start riding or driving.',
                             style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(color: Colors.black54),
+                                ?.copyWith(color: Colors.white),
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 24),
@@ -371,7 +384,10 @@ class _AuthPageState extends State<AuthPage> {
                             alignment: Alignment.centerRight,
                             child: TextButton(
                               onPressed: _forgotPassword,
-                              child: const Text('Forgot Password?'),
+                              child: const Text(
+                                'Forgot Password?',
+                                style: TextStyle(color: Colors.white),
+                              ),
                             ),
                           ),
 
@@ -422,15 +438,16 @@ class _AuthPageState extends State<AuthPage> {
                           const SizedBox(height: 20),
                           SizedBox(
                             width: double.infinity,
-                            height: 52,
+                            height: 50,
                             child: DecoratedBox(
                               decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(14),
-                                gradient: const LinearGradient(
-                                  colors: [_purple, _purpleDark],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
+                                borderRadius: BorderRadius.circular(20),
+                                color: Colors.white,
+                                // gradient: const LinearGradient(
+                                //   colors: [_purple, Colors.white70],
+                                //   begin: Alignment.topLeft,
+                                //   end: Alignment.bottomRight,
+                                // ),
                                 boxShadow: [
                                   BoxShadow(
                                     color: _purple.withOpacity(0.25),
@@ -464,7 +481,7 @@ class _AuthPageState extends State<AuthPage> {
                                         : Text(
                                           _isLogin ? 'Login' : 'Register',
                                           style: const TextStyle(
-                                            color: Colors.white,
+                                            color: Colors.black,
                                             fontWeight: FontWeight.w700,
                                             fontSize: 16,
                                           ),
