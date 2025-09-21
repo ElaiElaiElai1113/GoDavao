@@ -466,7 +466,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
         backgroundColor: Color(_purple.value),
         centerTitle: true,
         title: const Text(
-          'Find a Route & Set Your Trip',
+          'Find a Route',
           style: TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
@@ -474,7 +474,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
           ),
         ),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(64),
+          preferredSize: const Size.fromHeight(50),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: SizedBox(
@@ -697,19 +697,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
               ),
             ),
 
-          // Quick “center on me” button (NEW)
-          Positioned(
-            right: 12,
-            bottom: 120,
-            child: SafeArea(
-              child: FloatingActionButton.small(
-                heroTag: 'center_me_fab',
-                onPressed: _centerOnMe,
-                child: const Icon(Icons.my_location),
-              ),
-            ),
-          ),
-
           Align(
             alignment: Alignment.bottomCenter,
             child: SafeArea(
@@ -780,137 +767,133 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     // const SizedBox(height: 14),
 
                     // 🔹 Status + toggles
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        _Pill(
-                          icon: Icons.flag,
-                          label:
-                              _searchedDestination == null
-                                  ? 'Destination: —'
-                                  : 'Destination set',
-                        ),
-                        GestureDetector(
-                          onTap:
-                              _selectedRoute == null
-                                  ? null
-                                  : () =>
-                                      setState(() => _editTarget = 'pickup'),
-                          child: _Pill(
-                            icon: Icons.location_pin,
+                    if (_selectedRoute != null) ...[
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          _Pill(
+                            icon: Icons.flag,
                             label:
-                                _pickup == null
-                                    ? 'Pickup: —'
-                                    : _editTarget == 'pickup'
-                                    ? 'Pickup (editing)'
-                                    : 'Pickup set',
-                            borderEmphasis: _editTarget == 'pickup',
+                                _searchedDestination == null
+                                    ? 'Destination'
+                                    : 'Destination ✓',
                           ),
-                        ),
-                        GestureDetector(
-                          onTap:
-                              _selectedRoute == null
-                                  ? null
-                                  : () =>
-                                      setState(() => _editTarget = 'dropoff'),
-                          child: _Pill(
-                            icon: Icons.outbound,
-                            label:
-                                _dropoff == null
-                                    ? 'Dropoff: —'
-                                    : _editTarget == 'dropoff'
-                                    ? 'Dropoff (editing)'
-                                    : 'Dropoff set',
-                            borderEmphasis: _editTarget == 'dropoff',
+                          GestureDetector(
+                            onTap: () => setState(() => _editTarget = 'pickup'),
+                            child: _Pill(
+                              icon: Icons.location_pin,
+                              label: _pickup == null ? 'Pickup' : 'Pickup ✓',
+                              borderEmphasis: _editTarget == 'pickup',
+                            ),
                           ),
-                        ),
-                        if (_pickup != null || _dropoff != null)
-                          OutlinedButton.icon(
-                            onPressed: () {
-                              setState(() {
-                                _pickup = null;
-                                _dropoff = null;
-                                _osrmSegment = null;
-                                _editTarget = 'auto';
-                              });
-                            },
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
+                          GestureDetector(
+                            onTap:
+                                () => setState(() => _editTarget = 'dropoff'),
+                            child: _Pill(
+                              icon: Icons.outbound,
+                              label: _dropoff == null ? 'Dropoff' : 'Dropoff ✓',
+                              borderEmphasis: _editTarget == 'dropoff',
+                            ),
+                          ),
+                          // Quick “center on me” button (themed)
+                          SafeArea(
+                            child: FloatingActionButton.small(
+                              heroTag: 'center_me_fab',
+                              onPressed: _centerOnMe,
+                              backgroundColor: _purple, // match your theme
+                              foregroundColor: Colors.white, // white icon
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(30),
+                                borderRadius: BorderRadius.circular(
+                                  14,
+                                ), // subtle rounded style
                               ),
+                              elevation: 4,
+                              child: const Icon(Icons.my_location, size: 22),
                             ),
-                            icon: const Icon(Icons.refresh, size: 18),
-                            label: const Text('Reset points'),
                           ),
 
-                        // 🔹 Follow me toggle
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text(
-                              'Follow me',
-                              style: TextStyle(
-                                color: Colors.black54,
-                                fontSize: 13,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Switch(
-                              value: _followMe,
-                              onChanged: (v) {
-                                setState(() => _followMe = v);
-                                if (v && _me != null) {
-                                  _safeMove(_me!, _map.camera.zoom);
-                                }
+                          if (_pickup != null || _dropoff != null)
+                            IconButton(
+                              onPressed: () {
+                                setState(() {
+                                  _pickup = null;
+                                  _dropoff = null;
+                                  _osrmSegment = null;
+                                  _editTarget = 'auto';
+                                });
                               },
+                              style: IconButton.styleFrom(
+                                backgroundColor: Colors.grey.shade200,
+                                shape: const CircleBorder(),
+                              ),
+                              icon: const Icon(
+                                Icons.refresh,
+                                size: 18,
+                                color: Colors.black54,
+                              ),
+                              tooltip: 'Reset points',
                             ),
-                          ],
-                        ),
-                      ],
-                    ),
 
-                    const SizedBox(height: 16),
+                          // 🔹 Follow me toggle (minimal row)
+                          // Row(
+                          //   mainAxisSize: MainAxisSize.min,
+                          //   children: [
+                          //     const Text(
+                          //       'Follow me',
+                          //       style: TextStyle(
+                          //         color: Colors.black54,
+                          //         fontSize: 13,
+                          //       ),
+                          //     ),
+                          //     Switch(
+                          //       value: _followMe,
+                          //       onChanged: (v) {
+                          //         setState(() => _followMe = v);
+                          //         if (v && _me != null) {
+                          //           _safeMove(_me!, _map.camera.zoom);
+                          //         }
+                          //       },
+                          //     ),
+                          //   ],
+                          // ),
+                        ],
+                      ),
 
-                    // 🔹 CTA button
-                    SizedBox(
-                      height: 50,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          backgroundColor:
-                              _pickup != null &&
-                                      _dropoff != null &&
-                                      _selectedRoute != null
-                                  ? _purple
-                                  : Colors.grey.shade300,
-                          disabledBackgroundColor: Colors.grey.shade300,
-                          shadowColor: Colors.transparent,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                      const SizedBox(height: 16),
+
+                      // 🔹 Sleeker CTA button
+                      SizedBox(
+                        height: 48,
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor:
+                                (_pickup != null && _dropoff != null)
+                                    ? _purple
+                                    : Colors.grey.shade300,
+                            disabledBackgroundColor: Colors.grey.shade300,
+                            shadowColor: Colors.transparent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
-                        ),
-                        onPressed:
-                            (_pickup != null &&
-                                    _dropoff != null &&
-                                    _selectedRoute != null)
-                                ? _openConfirm
-                                : null,
-                        child: const Text(
-                          'Review Fare',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 16,
+                          onPressed:
+                              (_pickup != null && _dropoff != null)
+                                  ? _openConfirm
+                                  : null,
+                          child: const Text(
+                            'Review Fare',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -979,6 +962,7 @@ class _SearchBarState extends State<_SearchBar> {
           const SizedBox(width: 8),
           Expanded(
             child: TextField(
+              textAlignVertical: TextAlignVertical.top,
               controller: widget.controller,
               textInputAction: TextInputAction.search,
               decoration: const InputDecoration(
@@ -997,17 +981,17 @@ class _SearchBarState extends State<_SearchBar> {
                 widget.onClear();
               },
             ),
-          FilledButton(
-            onPressed: () => widget.onSubmit(widget.controller.text),
-            style: FilledButton.styleFrom(
-              backgroundColor: _purple,
-              padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(30),
-              ),
-            ),
-            child: const Text('Search'),
-          ),
+          // FilledButton(
+          //   onPressed: () => widget.onSubmit(widget.controller.text),
+          //   style: FilledButton.styleFrom(
+          //     backgroundColor: _purple,
+          //     padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
+          //     shape: RoundedRectangleBorder(
+          //       borderRadius: BorderRadius.circular(30),
+          //     ),
+          //   ),
+          //   child: const Text('Search'),
+          // ),
         ],
       ),
     );
@@ -1031,15 +1015,12 @@ class _RouteChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return ChoiceChip(
       label: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 10,
-          vertical: 4,
-        ), // smaller
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         child: Text(
           label,
           style: TextStyle(
             fontWeight: FontWeight.w600,
-            fontSize: 12, // smaller font
+            fontSize: 12,
             color: selected ? Colors.white : Colors.black87,
           ),
         ),
@@ -1047,16 +1028,16 @@ class _RouteChip extends StatelessWidget {
       selected: selected,
       selectedColor: _purple,
       backgroundColor: Colors.white,
-      elevation: selected ? 6 : 1, // tiny lift
+      elevation: selected ? 6 : 1,
       pressElevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8), // modern subtle rounding
+        borderRadius: BorderRadius.circular(8),
         side: BorderSide(
           color: selected ? _purple : Colors.grey.shade300,
           width: 1,
         ),
       ),
-      // Glow effect when selected
+      checkmarkColor: Colors.white,
       avatar:
           selected
               ? Container(
