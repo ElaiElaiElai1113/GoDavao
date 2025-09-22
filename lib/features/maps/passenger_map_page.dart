@@ -462,34 +462,46 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     final hasDest = _searchedDestination != null;
 
     return Scaffold(
-      backgroundColor: _bg,
       appBar: AppBar(
-        title: const Text('Find a Route & Set Your Trip'),
+        backgroundColor: Color(_purple.value),
         centerTitle: true,
+        title: const Text(
+          'Find a Route',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(64),
+          preferredSize: const Size.fromHeight(50),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: _SearchBar(
-              controller: _destCtrl,
-              onSubmit: _searchByAddress,
-              onClear: () {
-                setState(() {
-                  _searchedDestination = null;
-                  _candidateRoutes = [];
-                  _selectedRoute = null;
-                  _selectedRoutePoints = [];
-                  _pickup = null;
-                  _dropoff = null;
-                  _osrmSegment = null;
-                  _error = null;
-                  _editTarget = 'auto';
-                });
-              },
+            child: SizedBox(
+              height: 44,
+              width: double.infinity,
+              child: _SearchBar(
+                controller: _destCtrl,
+                onSubmit: _searchByAddress,
+                onClear: () {
+                  setState(() {
+                    _searchedDestination = null;
+                    _candidateRoutes = [];
+                    _selectedRoute = null;
+                    _selectedRoutePoints = [];
+                    _pickup = null;
+                    _dropoff = null;
+                    _osrmSegment = null;
+                    _error = null;
+                    _editTarget = 'auto';
+                  });
+                },
+              ),
             ),
           ),
         ),
       ),
+
       body: Stack(
         children: [
           // Map
@@ -525,7 +537,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     polylines: [
                       Polyline(
                         points: _selectedRoutePoints,
-                        strokeWidth: 5,
+                        strokeWidth: 3,
                         color: Colors.black.withOpacity(0.6),
                       ),
                     ],
@@ -537,8 +549,8 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     polylines: [
                       Polyline(
                         points: _osrmSegment!.points,
-                        strokeWidth: 6,
-                        color: _purple,
+                        strokeWidth: 3,
+                        color: _purpleDark,
                       ),
                     ],
                   ),
@@ -600,8 +612,8 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                         width: 30,
                         height: 30,
                         child: const Icon(
-                          Icons.place,
-                          color: Colors.orange,
+                          Icons.pin_drop,
+                          color: Colors.red,
                           size: 28,
                         ),
                       ),
@@ -685,20 +697,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
               ),
             ),
 
-          // Quick “center on me” button (NEW)
-          Positioned(
-            right: 12,
-            bottom: 120,
-            child: SafeArea(
-              child: FloatingActionButton.small(
-                heroTag: 'center_me_fab',
-                onPressed: _centerOnMe,
-                child: const Icon(Icons.my_location),
-              ),
-            ),
-          ),
-
-          // Bottom sheet
           Align(
             alignment: Alignment.bottomCenter,
             child: SafeArea(
@@ -715,159 +713,174 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     ),
                   ],
                 ),
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Step helper
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.touch_app,
-                          size: 18,
-                          color: Colors.black54,
-                        ),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            _searchedDestination == null
-                                ? 'Type an address to find matching driver routes'
-                                : _selectedRoute == null
-                                ? 'Pick a route above'
-                                : _pickup == null
-                                ? 'Tap the map to set your PICKUP on the route'
-                                : _dropoff == null
-                                ? 'Tap again to set your DROPOFF'
-                                : _editTarget == 'pickup'
-                                ? 'Tap the map to adjust your PICKUP'
-                                : _editTarget == 'dropoff'
-                                ? 'Tap the map to adjust your DROPOFF'
-                                : 'Tap the map to start over (new pickup)',
-                            style: const TextStyle(color: Colors.black54),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-
-                    // Status + tiny edit toggles + Follow me (NEW)
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        _Pill(
-                          icon: Icons.flag,
-                          label:
-                              _searchedDestination == null
-                                  ? 'Destination (search): —'
-                                  : 'Destination set',
-                        ),
-                        GestureDetector(
-                          onTap:
-                              _selectedRoute == null
-                                  ? null
-                                  : () =>
-                                      setState(() => _editTarget = 'pickup'),
-                          child: _Pill(
-                            icon: Icons.location_pin,
-                            label:
-                                _pickup == null
-                                    ? 'Pickup: —'
-                                    : _editTarget == 'pickup'
-                                    ? 'Pickup (editing)'
-                                    : 'Pickup set',
-                            borderEmphasis: _editTarget == 'pickup',
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap:
-                              _selectedRoute == null
-                                  ? null
-                                  : () =>
-                                      setState(() => _editTarget = 'dropoff'),
-                          child: _Pill(
-                            icon: Icons.outbound,
-                            label:
-                                _dropoff == null
-                                    ? 'Dropoff: —'
-                                    : _editTarget == 'dropoff'
-                                    ? 'Dropoff (editing)'
-                                    : 'Dropoff set',
-                            borderEmphasis: _editTarget == 'dropoff',
-                          ),
-                        ),
-                        if (_pickup != null || _dropoff != null)
-                          TextButton.icon(
-                            onPressed: () {
-                              setState(() {
-                                _pickup = null;
-                                _dropoff = null;
-                                _osrmSegment = null;
-                                _editTarget = 'auto';
-                              });
-                            },
-                            icon: const Icon(Icons.refresh, size: 18),
-                            label: const Text('Reset points'),
-                          ),
-                        // Follow me toggle (NEW)
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text(
-                              'Follow me',
-                              style: TextStyle(color: Colors.black54),
-                            ),
-                            const SizedBox(width: 6),
-                            Switch(
-                              value: _followMe,
-                              onChanged: (v) {
-                                setState(() => _followMe = v);
-                                if (v && _me != null) {
-                                  _safeMove(_me!, _map.camera.zoom);
-                                }
-                              },
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    // CTA
-                    SizedBox(
-                      height: 52,
-                      width: double.infinity,
-                      child: DecoratedBox(
+                    // 🔹 Drag handle
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 12),
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(14),
-                          gradient: const LinearGradient(
-                            colors: [_purple, _purpleDark],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _purple.withOpacity(0.25),
-                              blurRadius: 16,
-                              offset: const Offset(0, 8),
-                            ),
-                          ],
+                          color: Colors.black26,
+                          borderRadius: BorderRadius.circular(2),
                         ),
+                      ),
+                    ),
+
+                    // 🔹 Step helper text
+                    // Row(
+                    //   children: [
+                    //     const Icon(
+                    //       Icons.touch_app,
+                    //       size: 18,
+                    //       color: Colors.black54,
+                    //     ),
+                    //     const SizedBox(width: 6),
+                    //     Expanded(
+                    //       child: Text(
+                    //         _searchedDestination == null
+                    //             ? 'Type an address to find matching driver routes'
+                    //             : _selectedRoute == null
+                    //             ? 'Pick a route above'
+                    //             : _pickup == null
+                    //             ? 'Tap the map to set your PICKUP on the route'
+                    //             : _dropoff == null
+                    //             ? 'Tap again to set your DROPOFF'
+                    //             : _editTarget == 'pickup'
+                    //             ? 'Tap the map to adjust your PICKUP'
+                    //             : _editTarget == 'dropoff'
+                    //             ? 'Tap the map to adjust your DROPOFF'
+                    //             : 'Tap the map to start over (new pickup)',
+                    //         style: const TextStyle(
+                    //           color: Colors.black54,
+                    //           fontSize: 13,
+                    //           fontWeight: FontWeight.w500,
+                    //         ),
+                    //       ),
+                    //     ),
+                    //   ],
+                    // ),
+                    // const SizedBox(height: 14),
+
+                    // 🔹 Status + toggles
+                    if (_selectedRoute != null) ...[
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          _Pill(
+                            icon: Icons.flag,
+                            label:
+                                _searchedDestination == null
+                                    ? 'Destination'
+                                    : 'Destination ✓',
+                          ),
+                          GestureDetector(
+                            onTap: () => setState(() => _editTarget = 'pickup'),
+                            child: _Pill(
+                              icon: Icons.location_pin,
+                              label: _pickup == null ? 'Pickup' : 'Pickup ✓',
+                              borderEmphasis: _editTarget == 'pickup',
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap:
+                                () => setState(() => _editTarget = 'dropoff'),
+                            child: _Pill(
+                              icon: Icons.outbound,
+                              label: _dropoff == null ? 'Dropoff' : 'Dropoff ✓',
+                              borderEmphasis: _editTarget == 'dropoff',
+                            ),
+                          ),
+                          // Quick “center on me” button (themed)
+                          SafeArea(
+                            child: FloatingActionButton.small(
+                              heroTag: 'center_me_fab',
+                              onPressed: _centerOnMe,
+                              backgroundColor: _purple, // match your theme
+                              foregroundColor: Colors.white, // white icon
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  14,
+                                ), // subtle rounded style
+                              ),
+                              elevation: 4,
+                              child: const Icon(Icons.my_location, size: 22),
+                            ),
+                          ),
+
+                          if (_pickup != null || _dropoff != null)
+                            IconButton(
+                              onPressed: () {
+                                setState(() {
+                                  _pickup = null;
+                                  _dropoff = null;
+                                  _osrmSegment = null;
+                                  _editTarget = 'auto';
+                                });
+                              },
+                              style: IconButton.styleFrom(
+                                backgroundColor: Colors.grey.shade200,
+                                shape: const CircleBorder(),
+                              ),
+                              icon: const Icon(
+                                Icons.refresh,
+                                size: 18,
+                                color: Colors.black54,
+                              ),
+                              tooltip: 'Reset points',
+                            ),
+
+                          // 🔹 Follow me toggle (minimal row)
+                          // Row(
+                          //   mainAxisSize: MainAxisSize.min,
+                          //   children: [
+                          //     const Text(
+                          //       'Follow me',
+                          //       style: TextStyle(
+                          //         color: Colors.black54,
+                          //         fontSize: 13,
+                          //       ),
+                          //     ),
+                          //     Switch(
+                          //       value: _followMe,
+                          //       onChanged: (v) {
+                          //         setState(() => _followMe = v);
+                          //         if (v && _me != null) {
+                          //           _safeMove(_me!, _map.camera.zoom);
+                          //         }
+                          //       },
+                          //     ),
+                          //   ],
+                          // ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // 🔹 Sleeker CTA button
+                      SizedBox(
+                        height: 48,
+                        width: double.infinity,
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
-                            elevation: 0,
-                            backgroundColor: Colors.transparent,
+                            backgroundColor:
+                                (_pickup != null && _dropoff != null)
+                                    ? _purple
+                                    : Colors.grey.shade300,
+                            disabledBackgroundColor: Colors.grey.shade300,
                             shadowColor: Colors.transparent,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: BorderRadius.circular(12),
                             ),
                           ),
                           onPressed:
-                              (_pickup != null &&
-                                      _dropoff != null &&
-                                      _selectedRoute != null)
+                              (_pickup != null && _dropoff != null)
                                   ? _openConfirm
                                   : null,
                           child: const Text(
@@ -875,12 +888,12 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w700,
-                              fontSize: 16,
+                              fontSize: 15,
                             ),
                           ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -949,6 +962,7 @@ class _SearchBarState extends State<_SearchBar> {
           const SizedBox(width: 8),
           Expanded(
             child: TextField(
+              textAlignVertical: TextAlignVertical.top,
               controller: widget.controller,
               textInputAction: TextInputAction.search,
               decoration: const InputDecoration(
@@ -967,17 +981,17 @@ class _SearchBarState extends State<_SearchBar> {
                 widget.onClear();
               },
             ),
-          FilledButton(
-            onPressed: () => widget.onSubmit(widget.controller.text),
-            style: FilledButton.styleFrom(
-              backgroundColor: _purple,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-            child: const Text('Search'),
-          ),
+          // FilledButton(
+          //   onPressed: () => widget.onSubmit(widget.controller.text),
+          //   style: FilledButton.styleFrom(
+          //     backgroundColor: _purple,
+          //     padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
+          //     shape: RoundedRectangleBorder(
+          //       borderRadius: BorderRadius.circular(30),
+          //     ),
+          //   ),
+          //   child: const Text('Search'),
+          // ),
         ],
       ),
     );
@@ -1001,21 +1015,44 @@ class _RouteChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return ChoiceChip(
       label: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         child: Text(
           label,
           style: TextStyle(
             fontWeight: FontWeight.w600,
-            color: selected ? Colors.white : null,
+            fontSize: 12,
+            color: selected ? Colors.white : Colors.black87,
           ),
         ),
       ),
       selected: selected,
       selectedColor: _purple,
       backgroundColor: Colors.white,
-      shape: StadiumBorder(
-        side: BorderSide(color: selected ? _purple : Colors.black12),
+      elevation: selected ? 6 : 1,
+      pressElevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(
+          color: selected ? _purple : Colors.grey.shade300,
+          width: 1,
+        ),
       ),
+      checkmarkColor: Colors.white,
+      avatar:
+          selected
+              ? Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: _purple.withOpacity(0.6),
+                      blurRadius: 12,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+              )
+              : null,
       onSelected: (_) => onTap(),
     );
   }

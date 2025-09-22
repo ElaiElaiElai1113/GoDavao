@@ -109,7 +109,10 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
 
       if (!mounted) return;
       setState(() {
-        _routePolyline = d.toPolyline(color: Color(0xFF6A27F7), width: 4);
+        _routePolyline = d.toPolyline(
+          color: _purpleDark.withOpacity(0.8),
+          width: 3,
+        );
         _distanceKm = double.parse(km.toStringAsFixed(2));
         _durationMin = double.parse(mins.toStringAsFixed(0));
         _fare = total.roundToDouble();
@@ -129,8 +132,8 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       setState(() {
         _routePolyline = Polyline(
           points: [widget.pickup, widget.destination],
-          strokeWidth: 4,
-          color: Color(0xFF6A27F7),
+          strokeWidth: 3,
+          color: _purpleDark.withOpacity(0.8),
         );
         _distanceKm = double.parse(km.toStringAsFixed(2));
         _durationMin = double.parse(mins.toStringAsFixed(0));

@@ -71,7 +71,7 @@ class GoDavaoApp extends StatelessWidget {
       navigatorObservers: [routeObserver],
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.purple),
       ),
       initialRoute: '/',
       routes: {

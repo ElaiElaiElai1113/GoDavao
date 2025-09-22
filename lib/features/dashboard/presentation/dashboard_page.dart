@@ -549,7 +549,7 @@ class _HeroHeader extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Welcome back,',
+                      'Welcome,',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(
@@ -655,38 +655,43 @@ class _ActionGrid extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           child: Ink(
             decoration: BoxDecoration(
-              color: Colors.white,
+              gradient: const LinearGradient(
+                colors: [Color(0xFF6A27F7), Color(0xFF4B18C9)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               borderRadius: BorderRadius.circular(16),
-              boxShadow: const [
+              boxShadow: [
                 BoxShadow(
-                  color: Color(0x15000000),
-                  blurRadius: 10,
-                  offset: Offset(0, 4),
+                  color: const Color(0xFF6A27F7).withOpacity(0.3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 6),
                 ),
               ],
             ),
+
             child: Padding(
               padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(it.icon, color: Colors.black87, size: 26),
+                  Icon(it.icon, color: Colors.white, size: 28),
                   const Spacer(),
                   Text(
                     it.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 15,
+                      color: Colors.white,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     it.subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.black54, fontSize: 12),
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.8),
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
@@ -713,16 +718,21 @@ class _StatCard extends StatelessWidget {
     return Container(
       height: 84,
       decoration: BoxDecoration(
-        color: Colors.white,
+        gradient: const LinearGradient(
+          colors: [Color(0xFF6A27F7), Color(0xFF4B18C9)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
-            color: Color(0x15000000),
-            blurRadius: 10,
-            offset: Offset(0, 4),
+            color: const Color(0xFF6A27F7).withOpacity(0.25),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
+
       padding: const EdgeInsets.all(14),
       child: Row(
         children: [
@@ -730,10 +740,10 @@ class _StatCard extends StatelessWidget {
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-              color: const Color(0xFFEFF1FF),
+              color: Colors.white.withOpacity(0.2),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.analytics, color: Color(0xFF3A3F73)),
+            child: const Icon(Icons.analytics, color: Colors.white),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -744,16 +754,17 @@ class _StatCard extends StatelessWidget {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.black54, fontSize: 12),
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   value,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
                 ),
               ],
             ),

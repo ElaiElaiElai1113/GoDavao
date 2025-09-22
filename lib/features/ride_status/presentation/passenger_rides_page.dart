@@ -1,4 +1,3 @@
-// lib/features/ride_status/presentation/passenger_rides_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -14,7 +13,6 @@ import 'package:godavao/features/ratings/presentation/user_rating.dart';
 
 class PassengerRidesPage extends StatefulWidget {
   const PassengerRidesPage({super.key});
-
   @override
   State<PassengerRidesPage> createState() => _PassengerRidesPageState();
 }
@@ -22,22 +20,20 @@ class PassengerRidesPage extends StatefulWidget {
 class _PassengerRidesPageState extends State<PassengerRidesPage> {
   final sb = Supabase.instance.client;
 
-  // UI state
   bool _loading = true;
-  bool _working = false; // prevent double actions
+  bool _working = false;
   String? _error;
 
-  // Data
   List<Map<String, dynamic>> _upcoming = [];
   List<Map<String, dynamic>> _history = [];
 
-  // Realtime sub
-  StreamSubscription<List<Map<String, dynamic>>>? _ridesSub;
+  StreamSubscription<List<Map<String, dynamic>>>? _rideReqSub;
+  StreamSubscription<List<Map<String, dynamic>>>? _rideMatchSub;
 
-  // Tiny address cache to avoid repeated reverse-geocoding
-  final Map<String, String> _addrCache = {}; // key: "lat,lng" -> text
+  // address cache
+  final Map<String, String> _addr = {}; // "lat,lng" -> text
 
-  // Theme tokens
+  // theme
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
   static const _bg = Color(0xFFF7F7FB);
@@ -50,31 +46,18 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
 
   @override
   void dispose() {
-    _ridesSub?.cancel();
+    _rideReqSub?.cancel();
+    _rideMatchSub?.cancel();
     super.dispose();
   }
 
-  /* ------------------------------ BOOTSTRAP ------------------------------ */
-  String? _driverNameFromRel(Map<String, dynamic> ride) {
-    final rel = ride['driver_routes'];
-
-    if (rel is Map) {
-      final u = rel['users'];
-      if (u is Map && u['name'] != null) return u['name'].toString();
-    }
-    if (rel is List && rel.isNotEmpty) {
-      final u = rel.first['users'];
-      if (u is Map && u['name'] != null) return u['name'].toString();
-    }
-    return null;
-  }
+  // --------------------------- bootstrap ---------------------------
 
   Future<void> _bootstrap() async {
     setState(() {
       _loading = true;
       _error = null;
     });
-
     final me = sb.auth.currentUser;
     if (me == null) {
       setState(() {
@@ -84,23 +67,16 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
       return;
     }
 
-    // 1) Prime with an initial fetch (so the page isn’t blank on first paint)
     try {
-      final rows = await sb
-          .from('ride_requests')
-          .select('''
-      id, status, created_at, fare,
-      pickup_lat, pickup_lng, destination_lat, destination_lng,
-      driver_route_id,
-      driver_routes (
-        id, driver_id,
-        users!driver_routes_driver_id_fkey ( id, name )
-      )
-    ''')
-          .eq('passenger_id', me.id);
-
-      await _ingestRows(
-        (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList(),
+      // initial fetch from the view (already merges match + request)
+      final rows =
+          await sb
+              .rpc(
+                'passenger_rides_for_user',
+              ) // <— instead of from('v_passenger_ride_status')
+              .select();
+      await _ingestFromView(
+        (rows as List).map((e) => Map<String, dynamic>.from(e)).toList(),
       );
     } catch (e) {
       setState(() => _error = 'Failed to load rides.');
@@ -108,30 +84,68 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
       if (mounted) setState(() => _loading = false);
     }
 
-    // 2) Realtime stream (no .order() on streams; we sort locally)
-    _ridesSub?.cancel();
-    _ridesSub = sb
+    // realtime: listen to both parents → then refetch from the view
+    _rideReqSub?.cancel();
+    _rideReqSub = sb
         .from('ride_requests')
         .stream(primaryKey: ['id'])
         .eq('passenger_id', me.id)
         .listen((rows) async {
-          await _ingestRows(
-            rows.map((e) => Map<String, dynamic>.from(e)).toList(),
-          );
+          final ids =
+              rows
+                  .map((r) => r['id'])
+                  .where((id) => id != null)
+                  .cast<String>()
+                  .toList();
+          if (ids.isNotEmpty) await _refreshRides(ids);
         });
+
+    _rideMatchSub?.cancel();
+    _rideMatchSub = sb.from('ride_matches').stream(primaryKey: ['id']).listen((
+      rows,
+    ) async {
+      // only refetch if those matches belong to this user’s rides
+      final rideIds =
+          rows
+              .map((r) => r['ride_request_id'])
+              .where((id) => id != null)
+              .cast<String>()
+              .toSet()
+              .toList();
+      if (rideIds.isNotEmpty) {
+        await _refreshRides(rideIds);
+      }
+    });
   }
 
-  /* ------------------------------ INGEST ------------------------------ */
+  Future<void> _refreshRides(List<String> rideIds) async {
+    try {
+      final rows = await sb
+          .from('v_passenger_ride_status')
+          .select('''
+            id, effective_status, created_at, fare,
+            pickup_lat, pickup_lng, destination_lat, destination_lng,
+            passenger_id, driver_id, driver_name
+          ''')
+          .inFilter('id', rideIds);
 
-  Future<void> _ingestRows(List<Map<String, dynamic>> rows) async {
-    // Enrich with human-readable addresses (cached)
-    Future<String> addr(double lat, double lng) async {
+      await _ingestFromView(
+        (rows as List).map((e) => Map<String, dynamic>.from(e)).toList(),
+      );
+    } catch (_) {
+      // non-fatal
+    }
+  }
+
+  // --------------------------- ingest ---------------------------
+
+  Future<void> _ingestFromView(List<Map<String, dynamic>> rows) async {
+    Future<String> geotext(double lat, double lng) async {
       final key = '${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}';
-      final cached = _addrCache[key];
-      if (cached != null) return cached;
-      final text = await reverseGeocodeText(lat, lng);
-      _addrCache[key] = text;
-      return text;
+      if (_addr.containsKey(key)) return _addr[key]!;
+      final t = await reverseGeocodeText(lat, lng);
+      _addr[key] = t;
+      return t;
     }
 
     final enriched = await Future.wait(
@@ -143,38 +157,43 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
 
         return {
           ...r,
-          'pickup_address': await addr(pLat, pLng),
-          'destination_address': await addr(dLat, dLng),
+          'pickup_address': await geotext(pLat, pLng),
+          'destination_address': await geotext(dLat, dLng),
         };
       }),
     );
 
-    // Sort newest first
     enriched.sort(
       (a, b) => DateTime.parse(
         b['created_at'].toString(),
       ).compareTo(DateTime.parse(a['created_at'].toString())),
     );
 
-    // Partition into upcoming vs history by status
-    List<String> up = const ['pending', 'accepted', 'en_route'];
-    List<String> hist = const [
-      'completed',
-      'declined',
-      'cancelled',
-      'canceled',
-    ];
+    const up = ['pending', 'accepted', 'en_route'];
+    const hist = ['completed', 'declined', 'canceled', 'cancelled'];
 
     if (!mounted) return;
     setState(() {
       _upcoming =
-          enriched.where((r) => up.contains(r['status'] as String)).toList();
+          enriched
+              .where(
+                (r) => up.contains(
+                  (r['effective_status'] as String).toLowerCase(),
+                ),
+              )
+              .toList();
       _history =
-          enriched.where((r) => hist.contains(r['status'] as String)).toList();
+          enriched
+              .where(
+                (r) => hist.contains(
+                  (r['effective_status'] as String).toLowerCase(),
+                ),
+              )
+              .toList();
     });
   }
 
-  /* ------------------------------ ACTIONS ------------------------------ */
+  // --------------------------- actions ---------------------------
 
   Future<void> _cancelRide(String rideId, {String? reason}) async {
     if (_working) return;
@@ -188,7 +207,6 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Ride canceled')));
-      // Stream will update the list for us; no manual reload needed
     } on PostgrestException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -246,7 +264,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
     }
   }
 
-  /* ------------------------------ UI HELPERS ------------------------------ */
+  // --------------------------- ui helpers ---------------------------
 
   Color _statusColor(String s) {
     switch (s) {
@@ -259,75 +277,25 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
       case 'completed':
         return Colors.green;
       case 'declined':
-      case 'cancelled':
       case 'canceled':
+      case 'cancelled':
         return Colors.red;
       default:
         return Colors.black87;
     }
   }
 
-  Widget _statusPill(String status) {
-    final c = _statusColor(status);
+  Widget _statusPill(String s) {
+    final c = _statusColor(s);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: c.withOpacity(0.12),
+        color: c.withOpacity(.12),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        status.toUpperCase(),
+        s.toUpperCase(),
         style: TextStyle(color: c, fontWeight: FontWeight.w800, fontSize: 12),
-      ),
-    );
-  }
-
-  Widget _primaryButton({
-    required String label,
-    IconData? icon,
-    required VoidCallback? onPressed,
-  }) {
-    return SizedBox(
-      height: 44,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          gradient: const LinearGradient(
-            colors: [_purple, _purpleDark],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: _purple.withOpacity(0.25),
-              blurRadius: 12,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: ElevatedButton.icon(
-          onPressed: onPressed,
-          icon:
-              icon == null
-                  ? const SizedBox.shrink()
-                  : Icon(icon, color: Colors.white, size: 18),
-          label: Text(
-            label,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          style: ElevatedButton.styleFrom(
-            elevation: 0,
-            backgroundColor: Colors.transparent,
-            shadowColor: Colors.transparent,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -335,31 +303,22 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
   String _peso(num? v) =>
       v == null ? '₱0.00' : '₱${v.toDouble().toStringAsFixed(2)}';
 
-  String? _driverIdFromRel(Map<String, dynamic> ride) {
-    final rel = ride['driver_routes'];
-    if (rel is Map && rel['driver_id'] != null)
-      return rel['driver_id'].toString();
-    if (rel is List &&
-        rel.isNotEmpty &&
-        rel.first is Map &&
-        rel.first['driver_id'] != null) {
-      return rel.first['driver_id'].toString();
-    }
-    return null;
-  }
+  // --------------------------- card ---------------------------
 
   Widget _rideCard(Map<String, dynamic> ride, {required bool upcoming}) {
-    final status = (ride['status'] as String).toLowerCase();
+    final status = (ride['effective_status'] as String).toLowerCase();
     final created = DateFormat(
       'MMM d, y • h:mm a',
     ).format(DateTime.parse(ride['created_at'].toString()));
-
     final fare = (ride['fare'] as num?)?.toDouble();
+
     final pLat = (ride['pickup_lat'] as num).toDouble();
     final pLng = (ride['pickup_lng'] as num).toDouble();
     final dLat = (ride['destination_lat'] as num).toDouble();
     final dLng = (ride['destination_lng'] as num).toDouble();
-    final driverId = _driverIdFromRel(ride);
+
+    final driverId = ride['driver_id'] as String?;
+    final driverName = ride['driver_name'] as String?;
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
@@ -371,7 +330,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Mini map
+            // mini map
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: SizedBox(
@@ -436,9 +395,10 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                 ),
               ),
             ),
+
             const SizedBox(height: 10),
 
-            // Addresses
+            // addresses
             Text(
               '${ride['pickup_address']} → ${ride['destination_address']}',
               maxLines: 2,
@@ -447,7 +407,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
             ),
             const SizedBox(height: 6),
 
-            // Meta (driver, fare, time)
+            // meta
             Wrap(
               spacing: 8,
               runSpacing: 6,
@@ -465,10 +425,9 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                     Text(
                       driverId == null
                           ? 'Driver: unassigned'
-                          : 'Driver: ${_driverNameFromRel(ride) ?? driverId.substring(0, 8)}',
+                          : 'Driver: ${driverName ?? driverId.substring(0, 8)}',
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
-
                     if (driverId != null) ...[
                       const SizedBox(width: 6),
                       UserRatingBadge(userId: driverId, iconSize: 14),
@@ -512,7 +471,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
 
             const SizedBox(height: 10),
 
-            // Actions
+            // actions
             if (upcoming)
               Row(
                 children: [
@@ -531,7 +490,6 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                         label: 'Contact Driver',
                         icon: Icons.phone,
                         onPressed: () {
-                          // wire up your call/text flow here
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('Contacting driver…')),
                           );
@@ -545,6 +503,8 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
+                icon: const Icon(Icons.chevron_right),
+                label: const Text('View details'),
                 onPressed: () {
                   Navigator.push(
                     context,
@@ -556,8 +516,6 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                     ),
                   );
                 },
-                icon: const Icon(Icons.chevron_right),
-                label: const Text('View details'),
                 style: TextButton.styleFrom(foregroundColor: _purple),
               ),
             ),
@@ -567,7 +525,57 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
     );
   }
 
-  /* ------------------------------ SCAFFOLD ------------------------------ */
+  Widget _primaryButton({
+    required String label,
+    required VoidCallback? onPressed,
+    IconData? icon,
+  }) {
+    return SizedBox(
+      height: 44,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          gradient: const LinearGradient(
+            colors: [_purple, _purpleDark],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: _purple.withOpacity(0.25),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: ElevatedButton.icon(
+          onPressed: onPressed,
+          icon:
+              icon == null
+                  ? const SizedBox.shrink()
+                  : Icon(icon, color: Colors.white, size: 18),
+          label: Text(
+            label,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            elevation: 0,
+            backgroundColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // --------------------------- scaffold ---------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -580,8 +588,8 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
         appBar: AppBar(
           title: const Text('My Rides'),
           backgroundColor: Colors.white,
-          elevation: 0,
           surfaceTintColor: Colors.white,
+          elevation: 0,
         ),
         body: Center(child: Text(_error!)),
       );
