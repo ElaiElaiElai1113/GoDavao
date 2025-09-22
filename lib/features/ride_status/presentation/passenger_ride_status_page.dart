@@ -7,6 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/features/chat/presentation/chat_page.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
+import 'package:godavao/features/ratings/presentation/rate_user.dart';
+import 'package:godavao/features/ratings/data/ratings_service.dart';
 import 'package:godavao/features/payments/presentation/payment_status_chip.dart';
 
 class PassengerRideStatusPage extends StatefulWidget {
@@ -22,14 +24,13 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
   final _sb = Supabase.instance.client;
   final _map = MapController();
 
-  // Data (flat from the view)
-  Map<String, dynamic>? _ride; // fields from v_passenger_ride_status
+  Map<String, dynamic>? _ride; // merged from RPC view
   Map<String, dynamic>? _payment;
 
   bool _loading = true;
   String? _error;
+  bool _ratingPromptShown = false;
 
-  // Streams
   StreamSubscription<List<Map<String, dynamic>>>? _rideReqSub;
   StreamSubscription<List<Map<String, dynamic>>>? _rideMatchSub;
 
@@ -57,6 +58,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     try {
       await Future.wait([_loadRideComposite(), _loadPayment()]);
       _watchParents();
+      await _maybePromptRatingIfCompleted();
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = 'Failed to load: $e');
@@ -95,6 +97,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
         .listen((_) async {
           await _loadRideComposite();
           await _loadPayment();
+          await _maybePromptRatingIfCompleted();
         });
 
     _rideMatchSub?.cancel();
@@ -105,12 +108,15 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
         .listen((_) async {
           await _loadRideComposite();
           await _loadPayment();
+          await _maybePromptRatingIfCompleted();
         });
   }
 
   // ====== Helpers ======
   String get _status =>
-      (_ride?['effective_status'] as String?)?.toLowerCase() ?? 'pending';
+      (_ride?['effective_status'] as String?)?.toLowerCase() ??
+      (_ride?['status'] as String?)?.toLowerCase() ??
+      'pending';
 
   Color _statusColor(String s) {
     switch (s) {
@@ -131,24 +137,19 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
   }
 
   LatLng? get _pickup {
-    final r = _ride;
-    if (r == null) return null;
-    final lat = r['pickup_lat'] as num?;
-    final lng = r['pickup_lng'] as num?;
+    final lat = _ride?['pickup_lat'] as num?;
+    final lng = _ride?['pickup_lng'] as num?;
     if (lat == null || lng == null) return null;
     return LatLng(lat.toDouble(), lng.toDouble());
   }
 
   LatLng? get _dropoff {
-    final r = _ride;
-    if (r == null) return null;
-    final lat = r['destination_lat'] as num?;
-    final lng = r['destination_lng'] as num?;
+    final lat = _ride?['destination_lat'] as num?;
+    final lng = _ride?['destination_lng'] as num?;
     if (lat == null || lng == null) return null;
     return LatLng(lat.toDouble(), lng.toDouble());
   }
 
-  // ====== Actions ======
   Future<void> _cancelRide() async {
     try {
       await _sb
@@ -171,6 +172,35 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     }
   }
 
+  Future<void> _maybePromptRatingIfCompleted() async {
+    if (_ratingPromptShown || _status != 'completed') return;
+    final me = _sb.auth.currentUser?.id;
+    final driverId = _ride?['driver_id']?.toString();
+    if (me == null || driverId == null) return;
+
+    final existing = await RatingsService(_sb).getExistingRating(
+      rideId: widget.rideId,
+      raterUserId: me,
+      rateeUserId: driverId,
+    );
+    if (existing != null) return;
+
+    if (!mounted) return;
+    _ratingPromptShown = true;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder:
+          (_) => RateUserSheet(
+            rideId: widget.rideId,
+            raterUserId: me,
+            rateeUserId: driverId,
+            rateeName: (_ride?['driver_name']?.toString() ?? 'Driver'),
+            rateeRole: 'driver',
+          ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final fare = (_ride?['fare'] as num?)?.toDouble();
@@ -179,7 +209,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     final driverName = (_ride?['driver_name'] as String?) ?? '—';
 
     final center =
-        _pickup ?? _dropoff ?? const LatLng(7.1907, 125.4553); // Davao fallback
+        _pickup ?? _dropoff ?? const LatLng(7.1907, 125.4553); // fallback
 
     return Scaffold(
       backgroundColor: _bg,
@@ -195,8 +225,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
               tooltip: 'Chat with driver',
               icon: const Icon(Icons.message_outlined),
               onPressed: () {
-                // You may need a matchId to open chat; keep your existing flow.
-                // If your ChatPage uses matchId, fetch it via a quick query here.
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -216,11 +244,12 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                 onRefresh: () async {
                   await _loadRideComposite();
                   await _loadPayment();
+                  await _maybePromptRatingIfCompleted();
                 },
                 child: ListView(
-                  padding: const EdgeInsets.only(bottom: 90),
+                  padding: const EdgeInsets.only(bottom: 100),
                   children: [
-                    // Status + fare + payment chips
+                    // Status & chips
                     Padding(
                       padding: const EdgeInsets.all(16),
                       child: Wrap(
@@ -322,6 +351,17 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                         ],
                       ),
                     ),
+
+                    // Rating button
+                    if (_status == 'completed' && driverId != null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.star),
+                          label: const Text('Rate your driver'),
+                          onPressed: _maybePromptRatingIfCompleted,
+                        ),
+                      ),
                   ],
                 ),
               ),

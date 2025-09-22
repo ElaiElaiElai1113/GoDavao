@@ -10,6 +10,7 @@ import 'package:godavao/core/osrm_service.dart';
 
 import 'package:godavao/features/ride_status/presentation/passenger_ride_status_page.dart';
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
+import 'package:godavao/features/ratings/presentation/rate_user.dart'; // <— for rating sheet
 
 class PassengerRidesPage extends StatefulWidget {
   const PassengerRidesPage({super.key});
@@ -32,6 +33,9 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
 
   // address cache
   final Map<String, String> _addr = {}; // "lat,lng" -> text
+
+  // rating cache (rides already rated by current user)
+  final Set<String> _ratedRideIds = {};
 
   // theme
   static const _purple = Color(0xFF6A27F7);
@@ -68,16 +72,12 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
     }
 
     try {
-      // initial fetch from the view (already merges match + request)
-      final rows =
-          await sb
-              .rpc(
-                'passenger_rides_for_user',
-              ) // <— instead of from('v_passenger_ride_status')
-              .select();
-      await _ingestFromView(
-        (rows as List).map((e) => Map<String, dynamic>.from(e)).toList(),
-      );
+      // initial fetch from the RPC/view that already merges match + request
+      final rows = await sb.rpc('passenger_rides_for_user').select();
+      final list =
+          (rows as List).map((e) => Map<String, dynamic>.from(e)).toList();
+      await _ingestFromView(list);
+      await _refreshRatedFlagsForCompleted(list);
     } catch (e) {
       setState(() => _error = 'Failed to load rides.');
     } finally {
@@ -104,7 +104,6 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
     _rideMatchSub = sb.from('ride_matches').stream(primaryKey: ['id']).listen((
       rows,
     ) async {
-      // only refetch if those matches belong to this user’s rides
       final rideIds =
           rows
               .map((r) => r['ride_request_id'])
@@ -129,9 +128,11 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
           ''')
           .inFilter('id', rideIds);
 
-      await _ingestFromView(
-        (rows as List).map((e) => Map<String, dynamic>.from(e)).toList(),
-      );
+      final list =
+          (rows as List).map((e) => Map<String, dynamic>.from(e)).toList();
+
+      await _ingestFromView(list);
+      await _refreshRatedFlagsForCompleted(list);
     } catch (_) {
       // non-fatal
     }
@@ -191,6 +192,48 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
               )
               .toList();
     });
+  }
+
+  /// Batch-check which completed rides already have a rating from current user.
+  Future<void> _refreshRatedFlagsForCompleted(
+    List<Map<String, dynamic>> justFetched,
+  ) async {
+    final me = sb.auth.currentUser?.id;
+    if (me == null) return;
+
+    // collect completed ride ids from either list
+    final ids = <String>{};
+    for (final r in justFetched) {
+      final status = (r['effective_status'] as String?)?.toLowerCase();
+      final id = r['id']?.toString();
+      if (id != null && status == 'completed') ids.add(id);
+    }
+    if (ids.isEmpty) return;
+
+    try {
+      final rows = await sb
+          .from('ratings')
+          .select('ride_id')
+          .eq('rater_user_id', me)
+          .inFilter('ride_id', ids.toList());
+
+      final rated =
+          rows is List
+              ? rows
+                  .map((e) => (e as Map)['ride_id']?.toString())
+                  .whereType<String>()
+                  .toSet()
+              : <String>{};
+
+      if (!mounted) return;
+      setState(() {
+        _ratedRideIds
+          ..removeWhere((id) => ids.contains(id)) // clean stale
+          ..addAll(rated);
+      });
+    } catch (_) {
+      // ignore
+    }
   }
 
   // --------------------------- actions ---------------------------
@@ -317,8 +360,14 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
     final dLat = (ride['destination_lat'] as num).toDouble();
     final dLng = (ride['destination_lng'] as num).toDouble();
 
+    final rideId = ride['id'].toString();
     final driverId = ride['driver_id'] as String?;
     final driverName = ride['driver_name'] as String?;
+
+    final needsRating =
+        status == 'completed' &&
+        driverId != null &&
+        !_ratedRideIds.contains(rideId);
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
@@ -480,7 +529,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                       child: _primaryButton(
                         label: _working ? 'Cancelling…' : 'Cancel Ride',
                         icon: Icons.close,
-                        onPressed: () => _confirmCancel(ride['id'].toString()),
+                        onPressed: () => _confirmCancel(rideId),
                       ),
                     ),
                   if (status == 'accepted' || status == 'en_route') ...[
@@ -500,6 +549,35 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                 ],
               ),
 
+            // rating action (only when completed and not yet rated)
+            if (!upcoming && needsRating)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.star),
+                  label: const Text('Rate your driver'),
+                  onPressed: () async {
+                    final me = sb.auth.currentUser?.id;
+                    if (me == null || driverId == null) return;
+                    await showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      builder:
+                          (_) => RateUserSheet(
+                            rideId: rideId,
+                            raterUserId: me,
+                            rateeUserId: driverId,
+                            rateeName: driverName ?? 'Driver',
+                            rateeRole: 'driver',
+                          ),
+                    );
+                    // After rating, refresh rated flags for this single ride
+                    await _refreshRatedFlagsForCompleted([ride]);
+                    if (mounted) setState(() {}); // refresh UI
+                  },
+                ),
+              ),
+
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
@@ -509,10 +587,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder:
-                          (_) => PassengerRideStatusPage(
-                            rideId: ride['id'].toString(),
-                          ),
+                      builder: (_) => PassengerRideStatusPage(rideId: rideId),
                     ),
                   );
                 },
