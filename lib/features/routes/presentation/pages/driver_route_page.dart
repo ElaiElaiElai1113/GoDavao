@@ -217,52 +217,54 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
 
   Future<void> _recomputeFareEstimate() async {
     try {
+      // Use vehicle seats if known; at least 1
+      final seats = (_vehicleSeats ?? 1).clamp(1, 99);
+
       if (_mode == RouteMode.osrm) {
-        if (_start == null || _end == null) return _clearFare();
+        if (_start == null || _end == null) {
+          _clearFare();
+          return;
+        }
+
+        // Let the service compute OSRM distance/time + pricing
         final f = await _fareService.estimate(
           pickup: _start!,
           destination: _end!,
+          seats: seats,
+          platformFeeRate: _platformFeePct, // 0.15
+          surgeMultiplier: 1.0,
         );
-        final net = (f.total * (1 - _platformFeePct)).roundToDouble();
+
         if (!mounted) return;
         setState(() {
           _fare = f;
-          _driverNet = net;
+          _driverNet = f.driverTake; // already after platform fee
         });
       } else {
-        if (_manualPoints.length < 2) return _clearFare();
-        final rules = _fareService.rules;
-        final km = _manualKm ?? _pathKm(_manualPoints);
-        const avgKmh = 22.0;
-        final mins = math.max((km / avgKmh) * 60.0, 1.0);
-        double subtotal =
-            rules.baseFare +
-            (rules.perKm * km) +
-            (rules.perMin * mins) +
-            rules.bookingFee;
-        subtotal = math.max(subtotal, rules.minFare);
-        bool isNight() {
-          final now = DateTime.now();
-          final h = now.hour;
-          if (rules.nightStartHour <= rules.nightEndHour)
-            return h >= rules.nightStartHour && h <= rules.nightEndHour;
-          return h >= rules.nightStartHour || h <= rules.nightEndHour;
+        // Manual mode: we estimate distance & an ETA, then call estimateForDistance
+        if (_manualPoints.length < 2) {
+          _clearFare();
+          return;
         }
 
-        final surcharge = isNight() ? subtotal * rules.nightSurchargePct : 0.0;
-        final total = (subtotal + surcharge).roundToDouble();
-        final f = FareBreakdown(
-          distanceKm: double.parse(km.toStringAsFixed(2)),
-          durationMin: double.parse(mins.toStringAsFixed(0)),
-          subtotal: double.parse(subtotal.toStringAsFixed(2)),
-          surcharge: double.parse(surcharge.toStringAsFixed(2)),
-          total: total,
+        final km = _manualKm ?? _pathKm(_manualPoints);
+
+        // Fallback ETA from average city speed
+        const avgKmh = 22.0;
+        final mins = math.max((km / avgKmh) * 60.0, 1.0);
+
+        final f = _fareService.estimateForDistance(
+          distanceKm: km,
+          durationMin: mins,
+          seats: seats,
+          platformFeeRate: _platformFeePct,
+          surgeMultiplier: 1.0,
         );
-        final net = (f.total * (1 - _platformFeePct)).roundToDouble();
+
         if (!mounted) return;
         setState(() {
           _fare = f;
-          _driverNet = net;
+          _driverNet = f.driverTake; // already after platform fee
         });
       }
     } catch (_) {
