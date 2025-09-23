@@ -15,6 +15,7 @@ class DriverRoute {
   final String id;
   final String driverId;
   final String? routeMode; // 'osrm' | 'manual' | null
+  final String? name;
   final String? routePolyline; // encoded OSRM line
   final String? manualPolyline; // encoded manual line
 
@@ -22,6 +23,7 @@ class DriverRoute {
     : id = m['id'] as String,
       driverId = m['driver_id'] as String,
       routeMode = (m['route_mode'] as String?),
+      name = (m['name'] as String?),
       routePolyline = (m['route_polyline'] as String?),
       manualPolyline = (m['manual_polyline'] as String?);
 }
@@ -45,7 +47,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
   // Brand tokens
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
-  static const _bg = Color(0xFFF7F7FB);
 
   // Map readiness guard
   bool _mapReady = false;
@@ -80,7 +81,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
   StreamSubscription<Position>? _posSub;
   LatLng? _me;
   double? _meAccuracy; // meters
-  bool _followMe = false;
+  final bool _followMe = false;
 
   @override
   void initState() {
@@ -102,7 +103,9 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     try {
       final data = await supabase
           .from('driver_routes')
-          .select('id, driver_id, route_mode, route_polyline, manual_polyline')
+          .select(
+            'id, driver_id, route_mode, route_polyline, manual_polyline, name',
+          )
           .eq('is_active', true);
       _allRoutes =
           (data as List)
@@ -686,8 +689,15 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                             itemBuilder: (context, i) {
                               final r = _candidateRoutes[i];
                               final sel = r.id == _selectedRoute?.id;
+
+                              // ✅ use name if present, fallback to "Route N"
+                              final label =
+                                  (r.name != null && r.name!.trim().isNotEmpty)
+                                      ? r.name!
+                                      : 'Route ${i + 1}';
+
                               return _RouteChip(
-                                label: 'Route ${i + 1}',
+                                label: label,
                                 selected: sel,
                                 onTap: () => _selectRoute(r),
                               );
@@ -923,8 +933,6 @@ class _SearchBar extends StatefulWidget {
 }
 
 class _SearchBarState extends State<_SearchBar> {
-  static const _purple = Color(0xFF6A27F7);
-
   @override
   void initState() {
     super.initState();

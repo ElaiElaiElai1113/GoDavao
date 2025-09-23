@@ -5,8 +5,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:google_polyline_algorithm/google_polyline_algorithm.dart'
-    as gpa;
+import 'package:google_polyline_algorithm/google_polyline_algorithm.dart' as gpa;
 import 'package:geolocator/geolocator.dart';
 
 import 'package:godavao/core/osrm_service.dart';
@@ -108,11 +107,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
       if (uid == null) {
         _hasAnyVehicle = false;
       } else {
-        final res = await _sb
-            .from('vehicles')
-            .select('id')
-            .eq('driver_id', uid)
-            .limit(1);
+        final res = await _sb.from('vehicles').select('id').eq('driver_id', uid).limit(1);
         _hasAnyVehicle = (res as List).isNotEmpty;
       }
     } catch (e) {
@@ -151,8 +146,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
       if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
       }
-      if (perm == LocationPermission.denied ||
-          perm == LocationPermission.deniedForever) {
+      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
         setState(() {
           _locating = false;
           _locPermDenied = true;
@@ -194,8 +188,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
 
   void _toggleFollow() {
     setState(() => _followMe = !_followMe);
-    if (_followMe && _myPos != null)
-      _map.move(_myPos!, math.max(_map.camera.zoom, 15));
+    if (_followMe && _myPos != null) _map.move(_myPos!, math.max(_map.camera.zoom, 15));
   }
 
   void _centerOnMe() {
@@ -217,7 +210,6 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
 
   Future<void> _recomputeFareEstimate() async {
     try {
-      // Use vehicle seats if known; at least 1
       final seats = (_vehicleSeats ?? 1).clamp(1, 99);
 
       if (_mode == RouteMode.osrm) {
@@ -226,7 +218,6 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
           return;
         }
 
-        // Let the service compute OSRM distance/time + pricing
         final f = await _fareService.estimate(
           pickup: _start!,
           destination: _end!,
@@ -238,18 +229,15 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
         if (!mounted) return;
         setState(() {
           _fare = f;
-          _driverNet = f.driverTake; // already after platform fee
+          _driverNet = f.driverTake;
         });
       } else {
-        // Manual mode: we estimate distance & an ETA, then call estimateForDistance
         if (_manualPoints.length < 2) {
           _clearFare();
           return;
         }
 
         final km = _manualKm ?? _pathKm(_manualPoints);
-
-        // Fallback ETA from average city speed
         const avgKmh = 22.0;
         final mins = math.max((km / avgKmh) * 60.0, 1.0);
 
@@ -264,12 +252,37 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
         if (!mounted) return;
         setState(() {
           _fare = f;
-          _driverNet = f.driverTake; // already after platform fee
+          _driverNet = f.driverTake;
         });
       }
     } catch (_) {
       _clearFare();
     }
+  }
+
+  // Build breakdown rows from FareBreakdown
+  List<Widget> _fareBreakdownLines() {
+    if (_fare == null) return [];
+    final f = _fare!;
+
+    String seatsLabel() {
+      if (f.seatsBilled <= 1) return '1';
+      final disc = (f.seatDiscountPct * 100).toStringAsFixed(0);
+      return '${f.seatsBilled} (disc $disc%)';
+    }
+
+    return [
+      _StatRow(icon: Icons.flag, label: 'Base + Distance + Time', value: '₱${f.subtotal.toStringAsFixed(0)}'),
+      if (f.nightSurcharge > 0)
+        _StatRow(icon: Icons.nightlight_round, label: 'Night Surcharge', value: '₱${f.nightSurcharge.toStringAsFixed(0)}'),
+      if (f.surgeMultiplier != 1.0)
+        _StatRow(icon: Icons.trending_up, label: 'Surge Multiplier', value: '×${f.surgeMultiplier.toStringAsFixed(2)}'),
+      _StatRow(icon: Icons.event_seat, label: 'Seats Billed', value: seatsLabel()),
+      const Divider(height: 18),
+      _StatRow(icon: Icons.attach_money, label: 'Passenger Total', value: '₱${f.total.toStringAsFixed(0)}'),
+      _StatRow(icon: Icons.receipt_long, label: 'Platform Fee', value: '₱${f.platformFee.toStringAsFixed(0)}'),
+      _StatRow(icon: Icons.account_balance_wallet_outlined, label: 'Driver Net', value: '₱${f.driverTake.toStringAsFixed(0)}'),
+    ];
   }
 
   // ---------- map interactions ----------
@@ -335,58 +348,56 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
     } else {
       showModalBottomSheet(
         context: context,
-        builder:
-            (_) => SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.undo),
-                      label: const Text('Undo'),
-                      onPressed: () async {
-                        Navigator.pop(context);
-                        if (_manualPoints.isNotEmpty) {
-                          setState(() {
-                            _manualPoints.removeLast();
-                            _manualKm = _pathKm(_manualPoints);
-                            _manualRoute =
-                                _manualPoints.length >= 2
-                                    ? Polyline(
-                                      points: List.of(_manualPoints),
-                                      strokeWidth: 4,
-                                      color: Colors.blue,
-                                    )
-                                    : null;
-                          });
-                          await _recomputeFareEstimate();
-                        }
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.clear),
-                      label: const Text('Clear'),
-                      onPressed: () async {
-                        Navigator.pop(context);
-                        setState(() {
-                          _manualPoints.clear();
-                          _manualKm = 0;
-                          _manualRoute = null;
-                        });
-                        await _recomputeFareEstimate();
-                      },
-                    ),
-                    const Spacer(),
-                    TextButton.icon(
-                      icon: const Icon(Icons.check),
-                      label: const Text('Done'),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
+        builder: (_) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.undo),
+                  label: const Text('Undo'),
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    if (_manualPoints.isNotEmpty) {
+                      setState(() {
+                        _manualPoints.removeLast();
+                        _manualKm = _pathKm(_manualPoints);
+                        _manualRoute = _manualPoints.length >= 2
+                            ? Polyline(
+                                points: List.of(_manualPoints),
+                                strokeWidth: 4,
+                                color: Colors.blue,
+                              )
+                            : null;
+                      });
+                      await _recomputeFareEstimate();
+                    }
+                  },
                 ),
-              ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.clear),
+                  label: const Text('Clear'),
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    setState(() {
+                      _manualPoints.clear();
+                      _manualKm = 0;
+                      _manualRoute = null;
+                    });
+                    await _recomputeFareEstimate();
+                  },
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  icon: const Icon(Icons.check),
+                  label: const Text('Done'),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
             ),
+          ),
+        ),
       );
     }
   }
@@ -404,9 +415,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
     if (_mode == RouteMode.osrm) {
       if (_start == null || _end == null || _osrmRoute == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Long-press to set START and DESTINATION.'),
-          ),
+          const SnackBar(content: Text('Long-press to set START and DESTINATION.')),
         );
         return;
       }
@@ -434,16 +443,14 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
       double? endLng;
 
       if (_mode == RouteMode.osrm) {
-        final coords =
-            _osrmRoute!.points.map((p) => [p.latitude, p.longitude]).toList();
+        final coords = _osrmRoute!.points.map((p) => [p.latitude, p.longitude]).toList();
         routePolyline = gpa.encodePolyline(coords);
         startLat = _start!.latitude;
         startLng = _start!.longitude;
         endLat = _end!.latitude;
         endLng = _end!.longitude;
       } else {
-        final coords =
-            _manualPoints.map((p) => [p.latitude, p.longitude]).toList();
+        final coords = _manualPoints.map((p) => [p.latitude, p.longitude]).toList();
         manualPolyline = gpa.encodePolyline(coords);
         startLat = _manualPoints.first.latitude;
         startLng = _manualPoints.first.longitude;
@@ -469,9 +476,9 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Route published!')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Route published!')),
+        );
       }
 
       await localNotify.show(
@@ -521,11 +528,9 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
   String _fareLine() {
     if (_fare == null) return '—';
     final dist = _fare!.distanceKm.toStringAsFixed(1);
-    final time =
-        _mode == RouteMode.osrm && _osrmMins != null
-            ? ', ${_fare!.durationMin.toStringAsFixed(0)} min'
-            : '';
+    final time = _mode == RouteMode.osrm && _osrmMins != null ? ', ${_fare!.durationMin.toStringAsFixed(0)} min' : '';
     return '₱${_fare!.total.toStringAsFixed(0)} ($dist km$time)';
+    // note: total is passenger's pay; breakdown shows fee + driver take
   }
 
   String _driverNetLine() {
@@ -546,12 +551,8 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
         surfaceTintColor: Colors.white,
       ),
       floatingActionButton: _PublishFab(
-        enabled:
-            !_publishing &&
-            ((_mode == RouteMode.osrm &&
-                    _start != null &&
-                    _end != null &&
-                    _osrmRoute != null) ||
+        enabled: !_publishing &&
+            ((_mode == RouteMode.osrm && _start != null && _end != null && _osrmRoute != null) ||
                 (_mode == RouteMode.manual && _manualPoints.length >= 2)) &&
             _vehicleId != null,
         busy: _publishing,
@@ -697,14 +698,13 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                     FloatingActionButton.small(
                       heroTag: 'centerOnMe',
                       onPressed: _myPos == null ? null : _centerOnMe,
-                      tooltip:
-                          _myPos == null
-                              ? (_locPermDenied
-                                  ? 'Location permission denied'
-                                  : _locating
+                      tooltip: _myPos == null
+                          ? (_locPermDenied
+                              ? 'Location permission denied'
+                              : _locating
                                   ? 'Locating…'
                                   : 'Location unavailable')
-                              : 'Center on me',
+                          : 'Center on me',
                       child: const Icon(Icons.my_location),
                     ),
                     const SizedBox(height: 8),
@@ -712,10 +712,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                       heroTag: 'followMe',
                       onPressed: _myPos == null ? null : _toggleFollow,
                       tooltip: _followMe ? 'Disable follow' : 'Enable follow',
-                      backgroundColor:
-                          _followMe
-                              ? _purple
-                              : Theme.of(context).colorScheme.primary,
+                      backgroundColor: _followMe ? _purple : Theme.of(context).colorScheme.primary,
                       child: const Icon(Icons.navigation, color: Colors.white),
                     ),
                   ],
@@ -743,44 +740,35 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                     },
                   ),
                   _HintPill(
-                    text:
-                        _mode == RouteMode.osrm
-                            ? (_start == null
-                                ? 'Long-press map to set START'
-                                : _end == null
+                    text: _mode == RouteMode.osrm
+                        ? (_start == null
+                            ? 'Long-press map to set START'
+                            : _end == null
                                 ? 'Long-press to set DESTINATION'
                                 : 'Long-press again to reset START')
-                            : 'Tap to add points · Long-press for Undo/Clear',
+                        : 'Tap to add points · Long-press for Undo/Clear',
                   ),
                 ],
               ),
             ),
           ),
-          // Always-visible quick stats over the map (prevents truncation in collapsed sheet)
+
+          // Always-visible quick stats
           const SizedBox(height: 25),
           if (_fare != null || _driverNet != null)
             SafeArea(
               child: Align(
                 alignment: Alignment.topCenter,
                 child: Padding(
-                  padding: const EdgeInsets.only(
-                    top: 50,
-                  ), // below the hint/mode chips
+                  padding: const EdgeInsets.only(top: 50),
                   child: Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     alignment: WrapAlignment.center,
                     children: [
-                      if (_fare != null)
-                        _InfoChip(
-                          icon: Icons.local_taxi,
-                          text: 'Estimated Fare: ${_fareLine()}',
-                        ),
+                      if (_fare != null) _InfoChip(icon: Icons.local_taxi, text: 'Estimated Fare: ${_fareLine()}'),
                       if (_driverNet != null)
-                        _InfoChip(
-                          icon: Icons.account_balance_wallet_outlined,
-                          text: 'Driver Net: ${_driverNetLine()}',
-                        ),
+                        _InfoChip(icon: Icons.account_balance_wallet_outlined, text: 'Driver Net: ${_driverNetLine()}'),
                     ],
                   ),
                 ),
@@ -812,10 +800,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
             hasAnyVehicle: _hasAnyVehicle,
             vehicleSeats: _vehicleSeats,
             onAddVehicle: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const VehicleForm()),
-              );
+              await Navigator.push(context, MaterialPageRoute(builder: (_) => const VehicleForm()));
               await _checkHasVehicles();
             },
             onVehicleChanged: (v) async {
@@ -825,19 +810,20 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
               });
               await _recomputeFareEstimate();
             },
-            osrmInfo:
-                (_mode == RouteMode.osrm && _osrmRoute != null)
-                    ? '${_osrmKm == null ? '—' : _osrmKm!.toStringAsFixed(1)} km • '
-                        '${_osrmMins == null ? '—' : _osrmMins!.toStringAsFixed(0)} min'
-                    : null,
-            manualInfo:
-                (_mode == RouteMode.manual && _manualRoute != null)
-                    ? '${_manualKm?.toStringAsFixed(1) ?? '—'} km (manual)'
-                    : null,
+            osrmInfo: (_mode == RouteMode.osrm && _osrmRoute != null)
+                ? '${_osrmKm == null ? '—' : _osrmKm!.toStringAsFixed(1)} km • '
+                    '${_osrmMins == null ? '—' : _osrmMins!.toStringAsFixed(0)} min'
+                : null,
+            manualInfo: (_mode == RouteMode.manual && _manualRoute != null)
+                ? '${_manualKm?.toStringAsFixed(1) ?? '—'} km (manual)'
+                : null,
             fareText: _fareLine(),
             netText: _driverNetLine(),
             nameCtrl: _nameCtrl,
             notesCtrl: _notesCtrl,
+
+            // NEW: full breakdown widgets
+            fareBreakdown: _fareBreakdownLines(),
           ),
         ],
       ),
@@ -865,17 +851,16 @@ class _PublishFab extends StatelessWidget {
       opacity: enabled ? 1 : .6,
       child: FloatingActionButton.extended(
         onPressed: enabled ? onPressed : null,
-        icon:
-            busy
-                ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-                : const Icon(Icons.publish),
+        icon: busy
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Icon(Icons.publish),
         label: Text(busy ? 'Publishing…' : 'Publish Route'),
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
@@ -906,9 +891,7 @@ class _ModeSegment extends StatelessWidget {
           onSelectionChanged: (s) => onChanged(s.first),
           style: ButtonStyle(
             visualDensity: VisualDensity.compact,
-            padding: WidgetStateProperty.all(
-              const EdgeInsets.symmetric(horizontal: 8),
-            ),
+            padding: WidgetStateProperty.all(const EdgeInsets.symmetric(horizontal: 8)),
           ),
         ),
       ),
@@ -929,9 +912,9 @@ class _HintPill extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: Colors.black12),
       ),
-      child: Row(
+      child: const Row(
         mainAxisSize: MainAxisSize.min,
-        children: const [
+        children: [
           Icon(Icons.touch_app, size: 14, color: Colors.black54),
           SizedBox(width: 6),
         ],
@@ -953,6 +936,7 @@ class _CollapsibleRouteSheet extends StatelessWidget {
     required this.netText,
     required this.nameCtrl,
     required this.notesCtrl,
+    this.fareBreakdown, // NEW
   });
 
   final bool checkingVehicles;
@@ -968,6 +952,8 @@ class _CollapsibleRouteSheet extends StatelessWidget {
 
   final TextEditingController nameCtrl;
   final TextEditingController notesCtrl;
+
+  final List<Widget>? fareBreakdown; // NEW
 
   @override
   Widget build(BuildContext context) {
@@ -1018,20 +1004,27 @@ class _CollapsibleRouteSheet extends StatelessWidget {
                         const SizedBox(height: 6),
                         Row(
                           children: [
-                            const Icon(
-                              Icons.route,
-                              size: 16,
-                              color: Colors.black54,
-                            ),
+                            const Icon(Icons.route, size: 16, color: Colors.black54),
                             const SizedBox(width: 6),
                             Text(
                               osrmInfo ?? manualInfo!,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                              ),
+                              style: const TextStyle(fontWeight: FontWeight.w600),
                             ),
                           ],
                         ),
+                      ],
+
+                      // NEW: Fare breakdown
+                      if (fareBreakdown != null && fareBreakdown!.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        const Divider(height: 1),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Fare Breakdown',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 8),
+                        Column(children: fareBreakdown!),
                       ],
 
                       const SizedBox(height: 12),
@@ -1040,8 +1033,7 @@ class _CollapsibleRouteSheet extends StatelessWidget {
 
                       Text(
                         'Vehicle',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                       ),
                       const SizedBox(height: 8),
 
@@ -1084,12 +1076,8 @@ class _CollapsibleRouteSheet extends StatelessWidget {
                                 const SizedBox(width: 8),
                                 Chip(
                                   label: Text(
-                                    vehicleSeats == null
-                                        ? '—'
-                                        : '$vehicleSeats seats',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                                    vehicleSeats == null ? '—' : '$vehicleSeats seats',
+                                    style: const TextStyle(fontWeight: FontWeight.w600),
                                   ),
                                 ),
                               ],
@@ -1100,16 +1088,12 @@ class _CollapsibleRouteSheet extends StatelessWidget {
                       const SizedBox(height: 16),
                       TextFormField(
                         controller: nameCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Route name (optional)',
-                        ),
+                        decoration: const InputDecoration(labelText: 'Route name (optional)'),
                       ),
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: notesCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Notes (optional)',
-                        ),
+                        decoration: const InputDecoration(labelText: 'Notes (optional)'),
                         maxLines: 2,
                       ),
                       const SizedBox(height: 18),
@@ -1202,9 +1186,7 @@ class _InfoChip extends StatelessWidget {
           Icon(icon, size: 16, color: Colors.black54),
           const SizedBox(width: 6),
           ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: 180,
-            ), // <- prevents overflow
+            constraints: const BoxConstraints(maxWidth: 180),
             child: Text(
               text,
               maxLines: 1,
