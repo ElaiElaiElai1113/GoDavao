@@ -3,20 +3,41 @@ import 'dart:math';
 import 'package:latlong2/latlong.dart';
 import 'package:godavao/core/osrm_service.dart';
 
-/// Pricing rules
 class FareRules {
-  final double baseFare; // flag-down
-  final double perKm; // per kilometer
-  final double perMin; // per minute
-  final double minFare; // minimum before surcharges
-  final double bookingFee; // fixed booking fee
-  final double nightSurchargePct; // e.g., 0.15 = 15%
-  final int nightStartHour; // 0-23
-  final int nightEndHour; // exclusive (0-23)
+  /// Flag-down (peso)
+  final double baseFare;
+
+  /// Per kilometer (peso/km)
+  final double perKm;
+
+  /// Per minute (peso/min)
+  final double perMin;
+
+  /// Minimum charge before surcharges
+  final double minFare;
+
+  /// Fixed fee added once (e.g., booking)
+  final double bookingFee;
+
+  /// Nighttime surcharge percentage (0.15 = 15%)
+  final double nightSurchargePct;
+
+  /// Night starts at this hour (0-23)
+  final int nightStartHour;
+
+  /// Night ends **before** this hour (exclusive, 0-23). e.g., 5 => up to 4:59
+  final int nightEndHour;
+
+  /// Default platform fee rate (0..1)
   final double defaultPlatformFeeRate;
-  final double perSeatDiscount; // pooled trips discount
+
+  /// Surge clamp
   final double minSurgeMultiplier;
   final double maxSurgeMultiplier;
+
+  /// Carpool discount table by unique riders (1..N) -> pct (0..1)
+  /// e.g., {2: 0.06, 3: 0.12, 4: 0.20}
+  final Map<int, double> carpoolDiscountByPax;
 
   const FareRules({
     this.baseFare = 25.0,
@@ -28,22 +49,44 @@ class FareRules {
     this.nightStartHour = 21,
     this.nightEndHour = 5,
     this.defaultPlatformFeeRate = 0.0,
-    this.perSeatDiscount = 0.0,
     this.minSurgeMultiplier = 0.7,
     this.maxSurgeMultiplier = 2.0,
+    this.carpoolDiscountByPax = const <int, double>{
+      // 1 rider => 0% (implicit)
+      2: 0.06,
+      3: 0.12,
+      4: 0.20,
+      5: 0.25,
+    },
   });
 }
 
-/// Detailed breakdown for receipts
 class FareBreakdown {
   final double distanceKm;
   final double durationMin;
+
+  /// Base+distance+time+booking (after min-fare)
   final double subtotal;
+
+  /// Peso amount added for night surcharge
   final double nightSurcharge;
+
+  /// Surge used (clamped)
   final double surgeMultiplier;
+
+  /// Seats billed (>=1). Seat count multiplies price; discount is *carpool-based*, not per seat.
   final int seatsBilled;
-  final double seatDiscountPct;
+
+  /// Unique riders sharing (carpool participants)
+  final int carpoolPassengers;
+
+  /// Discount pct applied based on carpool size (0..1)
+  final double carpoolDiscountPct;
+
+  /// Final passenger total (rounded to peso)
   final double total;
+
+  /// Platform & driver (2 decimals)
   final double platformFee;
   final double driverTake;
 
@@ -54,7 +97,8 @@ class FareBreakdown {
     required this.nightSurcharge,
     required this.surgeMultiplier,
     required this.seatsBilled,
-    required this.seatDiscountPct,
+    required this.carpoolPassengers,
+    required this.carpoolDiscountPct,
     required this.total,
     required this.platformFee,
     required this.driverTake,
@@ -67,24 +111,27 @@ class FareBreakdown {
     'night_surcharge': nightSurcharge,
     'surge_multiplier': surgeMultiplier,
     'seats_billed': seatsBilled,
-    'seat_discount_pct': seatDiscountPct,
+    'carpool_passengers': carpoolPassengers,
+    'carpool_discount_pct': carpoolDiscountPct,
     'total': total,
     'platform_fee': platformFee,
     'driver_take': driverTake,
   };
 }
 
-/// Fare engine
 class FareService {
   final FareRules rules;
   FareService({this.rules = const FareRules()});
 
-  // --- Main entrypoint using coordinates ---
+  // -------- Public APIs --------
+
+  /// End-to-end estimate from coordinates (OSRM with Haversine fallback)
   Future<FareBreakdown> estimate({
     required LatLng pickup,
     required LatLng destination,
     DateTime? when,
     int seats = 1,
+    int carpoolPassengers = 1,
     double? platformFeeRate,
     double surgeMultiplier = 1.0,
   }) async {
@@ -94,31 +141,34 @@ class FareService {
       durationMin: mins,
       when: when,
       seats: seats,
+      carpoolPassengers: carpoolPassengers,
       platformFeeRate: platformFeeRate,
       surgeMultiplier: surgeMultiplier,
     );
   }
 
-  // --- Use if you already know segment distance/time ---
+  /// Use this when you already have distance/time (e.g., partial segment).
   FareBreakdown estimateForDistance({
     required double distanceKm,
     required double durationMin,
     DateTime? when,
     int seats = 1,
+    int carpoolPassengers = 1,
     double? platformFeeRate,
     double surgeMultiplier = 1.0,
   }) {
     final now = when ?? DateTime.now();
 
-    // 1) Subtotal
+    // 1) Baseline subtotal
     double subtotal =
         rules.baseFare +
         (rules.perKm * distanceKm) +
         (rules.perMin * durationMin) +
         rules.bookingFee;
+
     subtotal = _max(subtotal, rules.minFare);
 
-    // 2) Night surcharge
+    // 2) Night surcharge in pesos
     final night = _isNight(now);
     final nightSurcharge = night ? subtotal * rules.nightSurchargePct : 0.0;
 
@@ -129,18 +179,23 @@ class FareService {
       rules.maxSurgeMultiplier,
     );
 
-    // 4) Seats
+    // 4) Seats billed (no per-seat discount; discount is carpool-based)
     final seatsBilled = _max(seats.toDouble(), 1).toInt();
-    final seatDiscountPct = (seatsBilled > 1) ? rules.perSeatDiscount : 0.0;
-    final seatFactor = seatsBilled * (1.0 - seatDiscountPct);
 
-    // 5) Raw total
-    final raw = (subtotal + nightSurcharge) * clampSurge * seatFactor;
-    final total = _roundPeso(raw);
+    // 5) Carpool discount pct based on unique riders
+    final pax = carpoolPassengers < 1 ? 1 : carpoolPassengers;
+    final carpoolDiscountPct = rules.carpoolDiscountByPax[pax] ?? 0.0;
 
-    // 6) Platform/driver
+    // Compose price then apply discount
+    final raw = (subtotal + nightSurcharge) * clampSurge * seatsBilled;
+    final discounted = raw * (1.0 - carpoolDiscountPct);
+
+    // Passenger total rounded to peso first
+    final total = _roundPeso(discounted);
+
+    // Platform & driver (2dp)
     final feeRate = _clamp(
-      (platformFeeRate ?? rules.defaultPlatformFeeRate),
+      platformFeeRate ?? rules.defaultPlatformFeeRate,
       0.0,
       1.0,
     );
@@ -154,54 +209,16 @@ class FareService {
       nightSurcharge: _round2(nightSurcharge),
       surgeMultiplier: clampSurge,
       seatsBilled: seatsBilled,
-      seatDiscountPct: _round2(seatDiscountPct),
+      carpoolPassengers: pax,
+      carpoolDiscountPct: _round2(carpoolDiscountPct),
       total: total,
       platformFee: platformFee,
       driverTake: driverTake,
     );
   }
 
-  // --- Convenience: if you measured meters/seconds already ---
-  FareBreakdown estimateFromMeters({
-    required double meters,
-    double? seconds,
-    double avgKmh = 22.0,
-    DateTime? when,
-    int seats = 1,
-    double? platformFeeRate,
-    double surgeMultiplier = 1.0,
-  }) {
-    final km = meters / 1000.0;
-    final mins = seconds != null ? (seconds / 60.0) : ((km / avgKmh) * 60.0);
-    return estimateForDistance(
-      distanceKm: km,
-      durationMin: _max(mins, 1.0),
-      when: when,
-      seats: seats,
-      platformFeeRate: platformFeeRate,
-      surgeMultiplier: surgeMultiplier,
-    );
-  }
+  // -------- Internals --------
 
-  // --- NEW: adapter for polyline segment measurement ---
-  FareBreakdown estimateFromSegment({
-    required ({double km, double mins}) segment,
-    DateTime? when,
-    int seats = 1,
-    double? platformFeeRate,
-    double surgeMultiplier = 1.0,
-  }) {
-    return estimateForDistance(
-      distanceKm: segment.km,
-      durationMin: segment.mins,
-      when: when,
-      seats: seats,
-      platformFeeRate: platformFeeRate,
-      surgeMultiplier: surgeMultiplier,
-    );
-  }
-
-  // --- internals ---
   Future<(double km, double mins)> _distanceAndTime(
     LatLng from,
     LatLng to,
@@ -211,19 +228,22 @@ class FareService {
       final km = d.distanceMeters / 1000.0;
       final mins = d.durationSeconds / 60.0;
       if (km > 0) return (km, _max(mins, 1.0));
-    } catch (_) {}
+    } catch (_) {
+      // fall through
+    }
     final km = _haversineKm(from, to);
-    const avgKmh = 22.0;
+    const avgKmh = 22.0; // fallback city speed
     final mins = (km / avgKmh) * 60.0;
     return (km, _max(mins, 1.0));
   }
 
   double _haversineKm(LatLng a, LatLng b) {
     const r = 6371.0;
-    final dLat = _deg2rad(b.latitude - a.latitude);
-    final dLon = _deg2rad(b.longitude - a.longitude);
-    final lat1 = _deg2rad(a.latitude);
-    final lat2 = _deg2rad(b.latitude);
+    double dLat = _deg2rad(b.latitude - a.latitude);
+    double dLon = _deg2rad(b.longitude - a.longitude);
+    double lat1 = _deg2rad(a.latitude);
+    double lat2 = _deg2rad(b.latitude);
+
     final h =
         sin(dLat / 2) * sin(dLat / 2) +
         sin(dLon / 2) * sin(dLon / 2) * cos(lat1) * cos(lat2);
@@ -232,15 +252,20 @@ class FareService {
   }
 
   double _deg2rad(double d) => d * pi / 180.0;
+
+  /// Treat `nightEndHour` as exclusive to avoid boundary double-charge.
   bool _isNight(DateTime now) {
     final h = now.hour;
     if (rules.nightStartHour < rules.nightEndHour) {
+      // same-day window (e.g., 18..21)
       return h >= rules.nightStartHour && h < rules.nightEndHour;
     } else {
+      // spans midnight (e.g., 21..5)
       return h >= rules.nightStartHour || h < rules.nightEndHour;
     }
   }
 
+  // rounding + math helpers
   double _round(double v, int places) =>
       double.parse(v.toStringAsFixed(places));
   double _round2(double v) => _round(v, 2);
