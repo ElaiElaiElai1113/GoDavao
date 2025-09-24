@@ -100,7 +100,6 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   Widget build(BuildContext context) {
     const purple = Color(0xFF6A27F7);
-    const purpleDark = Color(0xFF4B18C9);
 
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -109,34 +108,68 @@ class _ProfilePageState extends State<ProfilePage> {
     final uid = Supabase.instance.client.auth.currentUser!.id;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7FB),
-      drawer: const AppDrawer(), // ✅ Drawer added
-      body: ListView(
-        padding: EdgeInsets.zero,
+      drawer: const AppDrawer(),
+      body: Stack(
         children: [
-          // HERO HEADER (same style as Dashboard)
-          Builder(
-            builder:
-                (ctx) => _HeroHeader(
-                  purple: purple,
-                  purpleDark: purpleDark,
-                  onMenu: () => Scaffold.of(ctx).openDrawer(),
-                ),
+          // 🔹 Gradient Background Fade
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  purple.withOpacity(0.9), // heavy at top
+                  purple.withOpacity(0.6),
+                  purple.withOpacity(0.3),
+                  Colors.transparent,
+                ],
+                stops: const [0.0, 0.2, 0.4, 1.0],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+            ),
           ),
 
-          // PROFILE FORM
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          // 🔹 Scrollable content
+          SafeArea(
+            child: ListView(
+              padding: EdgeInsets.zero,
               children: [
-                // Avatar + verified badge
+                // AppBar-style row
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    children: [
+                      Builder(
+                        builder:
+                            (ctx) => IconButton(
+                              icon: const Icon(Icons.menu, color: Colors.white),
+                              onPressed: () => Scaffold.of(ctx).openDrawer(),
+                            ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Profile',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // Avatar with badge
                 Center(
                   child: Stack(
                     alignment: Alignment.bottomRight,
                     children: [
                       const CircleAvatar(
-                        radius: 42,
+                        radius: 48,
                         backgroundImage: AssetImage(
                           'assets/images/avatar_placeholder.png',
                         ),
@@ -144,114 +177,148 @@ class _ProfilePageState extends State<ProfilePage> {
                       Positioned(
                         right: 0,
                         bottom: 0,
-                        child: VerifiedBadge(userId: uid, size: 20),
+                        child: VerifiedBadge(userId: uid, size: 22),
                       ),
                     ],
                   ),
                 ),
+
                 const SizedBox(height: 24),
 
-                _label('Full name'),
-                TextField(
-                  controller: _name,
-                  decoration: const InputDecoration(
-                    hintText: 'Your name',
-                    border: UnderlineInputBorder(),
+                // Card-style form
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 24,
                   ),
-                ),
-                const SizedBox(height: 16),
-
-                _label('Email address'),
-                TextField(
-                  controller: _email,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    hintText: 'name@example.com',
-                    border: UnderlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                _label('Phone number'),
-                TextField(
-                  controller: _phone,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
-                    hintText: '09xxxxxxxxx',
-                    border: UnderlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                _label('Password'),
-                TextField(
-                  controller: _password,
-                  obscureText: _obscure,
-                  decoration: InputDecoration(
-                    hintText: '••••••••',
-                    border: const UnderlineInputBorder(),
-                    suffixIcon: IconButton(
-                      onPressed: () => setState(() => _obscure = !_obscure),
-                      icon: Icon(
-                        _obscure ? Icons.visibility_off : Icons.visibility,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 10,
+                        offset: Offset(0, 4),
                       ),
-                    ),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 24),
-
-                // Save button with gradient
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      gradient: const LinearGradient(
-                        colors: [purple, purpleDark],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: purple.withOpacity(0.28),
-                          blurRadius: 12,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.transparent,
-                        shadowColor: Colors.transparent,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _label('Full name'),
+                      TextField(
+                        controller: _name,
+                        decoration: const InputDecoration(
+                          hintText: 'Your name',
+                          border: UnderlineInputBorder(),
                         ),
                       ),
-                      onPressed: _saving ? null : _save,
-                      child:
-                          _saving
-                              ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white,
-                                  ),
-                                ),
-                              )
-                              : const Text(
-                                'Save',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 16,
-                                ),
+                      const SizedBox(height: 16),
+
+                      _label('Email address'),
+                      TextField(
+                        controller: _email,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: const InputDecoration(
+                          hintText: 'name@example.com',
+                          border: UnderlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      _label('Phone number'),
+                      TextField(
+                        controller: _phone,
+                        keyboardType: TextInputType.phone,
+                        decoration: const InputDecoration(
+                          hintText: '09xxxxxxxxx',
+                          border: UnderlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      _label('Password'),
+                      TextField(
+                        controller: _password,
+                        obscureText: _obscure,
+                        decoration: InputDecoration(
+                          hintText: '••••••••',
+                          border: const UnderlineInputBorder(),
+                          suffixIcon: IconButton(
+                            onPressed:
+                                () => setState(() => _obscure = !_obscure),
+                            icon: Icon(
+                              _obscure
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Save button with gradient
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            gradient: const LinearGradient(
+                              colors: [
+                                Color(0xFF6A27F7), // purple
+                                Color(0xFF4B18C9), // purpleDark
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Colors.black26,
+                                blurRadius: 10,
+                                offset: Offset(0, 4),
                               ),
-                    ),
+                            ],
+                          ),
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onPressed: _saving ? null : _save,
+                            child:
+                                _saving
+                                    ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              Colors.white,
+                                            ),
+                                      ),
+                                    )
+                                    : const Text(
+                                      'Save',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
+
+                const SizedBox(height: 40),
               ],
             ),
           ),
@@ -271,48 +338,4 @@ class _ProfilePageState extends State<ProfilePage> {
       ),
     ),
   );
-}
-
-/// Custom Hero-style header (like DashboardPage)
-class _HeroHeader extends StatelessWidget {
-  final Color purple;
-  final Color purpleDark;
-  final VoidCallback onMenu;
-
-  const _HeroHeader({
-    required this.purple,
-    required this.purpleDark,
-    required this.onMenu,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 48, 16, 24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [purple, purpleDark],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.menu, color: Colors.white),
-            onPressed: onMenu,
-          ),
-          const SizedBox(width: 8),
-          const Text(
-            'Profile',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
