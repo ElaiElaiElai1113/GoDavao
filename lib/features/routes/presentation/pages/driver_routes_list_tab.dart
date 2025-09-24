@@ -160,7 +160,8 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      elevation: 0,
+      elevation: 2,
+      color: Colors.white,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
         child: Column(
@@ -170,7 +171,7 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: SizedBox(
-                  height: 110,
+                  height: 120,
                   child: FutureBuilder<Polyline>(
                     future: fetchOsrmRoute(start: start, end: end),
                     builder: (_, snap) {
@@ -181,7 +182,7 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
                           Polyline(
                             points: [start, end],
                             strokeWidth: 3,
-                            color: Colors.purple.shade700,
+                            color: _purple,
                           ),
                       ];
                       return FlutterMap(
@@ -241,7 +242,11 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
                         : 'Route ${id.substring(0, 8)}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                      color: Colors.black87,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -251,15 +256,15 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: (isActive ? Colors.green : Colors.grey).withOpacity(
-                      .12,
+                    color: (isActive ? Colors.green : Colors.red).withOpacity(
+                      0.1,
                     ),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
                     isActive ? 'ACTIVE' : 'INACTIVE',
                     style: TextStyle(
-                      color: isActive ? Colors.green : Colors.grey,
+                      color: isActive ? Colors.green : Colors.red,
                       fontWeight: FontWeight.w800,
                       fontSize: 12,
                     ),
@@ -272,7 +277,7 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
               '${r['start_address']} → ${r['end_address']}',
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.black87),
+              style: const TextStyle(color: Colors.black54),
             ),
             const SizedBox(height: 8),
             Wrap(
@@ -291,7 +296,7 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
@@ -307,7 +312,6 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
                     label: 'Edit',
                     icon: Icons.edit_outlined,
                     onPressed: () {
-                      // hook to your editor with this route
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('Open editor with this route'),
@@ -329,17 +333,21 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.grey.shade100,
-        border: Border.all(color: Colors.black12),
+        border: Border.all(color: Colors.grey.shade300),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: Colors.black54),
+          Icon(icon, size: 14, color: _purpleDark),
           const SizedBox(width: 6),
           Text(
             text,
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+              color: Colors.black87,
+            ),
           ),
         ],
       ),
@@ -389,28 +397,92 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
     );
   }
 
+  /// 🔹 Reusable AppBar with translucent gradient (like confirm/passenger screens)
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      flexibleSpace: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [_purple.withOpacity(0.4), Colors.transparent],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+      ),
+      backgroundColor: const Color.fromARGB(3, 0, 0, 0),
+      elevation: 1,
+      scrolledUnderElevation: 0,
+      centerTitle: true,
+      automaticallyImplyLeading: false,
+      leading: Padding(
+        padding: const EdgeInsets.only(left: 12),
+        child: CircleAvatar(
+          backgroundColor: Colors.white.withOpacity(0.9),
+          child: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new,
+              color: _purple,
+              size: 18,
+            ),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+      ),
+      title: const Text(
+        'My Routes',
+        style: TextStyle(
+          fontWeight: FontWeight.w700,
+          color: _purpleDark,
+          fontSize: 18,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
-    if (_error != null) return Center(child: Text(_error!));
+    if (_loading) {
+      return Scaffold(
+        appBar: _buildAppBar(),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_error != null) {
+      return Scaffold(
+        appBar: _buildAppBar(),
+        body: Center(child: Text(_error!)),
+      );
+    }
 
     if (_routes.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: _bootstrap,
-        child: ListView(
-          children: const [
-            SizedBox(height: 200),
-            Center(child: Text('No routes yet. Create one in the next tab.')),
-          ],
+      return Scaffold(
+        appBar: _buildAppBar(),
+        body: RefreshIndicator(
+          onRefresh: _bootstrap,
+          child: ListView(
+            children: const [
+              SizedBox(height: 200),
+              Center(
+                child: Text(
+                  'No routes yet. Create one in the next tab.',
+                  style: TextStyle(color: Colors.black54),
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: _bootstrap,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: _routes.map(_card).toList(),
+    return Scaffold(
+      appBar: _buildAppBar(),
+      body: RefreshIndicator(
+        onRefresh: _bootstrap,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: _routes.map(_card).toList(),
+        ),
       ),
     );
   }

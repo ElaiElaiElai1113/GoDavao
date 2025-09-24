@@ -564,7 +564,7 @@ class _HeroHeader extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Welcome back,',
+                      'Welcome',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(

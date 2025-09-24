@@ -465,9 +465,39 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     final hasDest = _searchedDestination != null;
 
     return Scaffold(
+      extendBodyBehindAppBar: true, // 👈 important for translucency
       appBar: AppBar(
-        backgroundColor: Color(_purple.value),
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                _purple.withOpacity(0.4), // top fade
+                Colors.transparent,
+              ],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        ),
+        backgroundColor: const Color.fromARGB(3, 0, 0, 0),
+
+        elevation: 0,
         centerTitle: true,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: CircleAvatar(
+            backgroundColor: Colors.white.withOpacity(0.9),
+            child: IconButton(
+              icon: const Icon(
+                Icons.arrow_back_ios_new,
+                color: _purple,
+                size: 18,
+              ),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
+        ),
+
         title: const Text(
           'Find a Route',
           style: TextStyle(
@@ -476,6 +506,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
             fontSize: 18,
           ),
         ),
+
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(50),
           child: Padding(
@@ -712,28 +743,34 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
             child: SafeArea(
               top: false,
               child: Container(
-                decoration: const BoxDecoration(
+                margin: const EdgeInsets.all(
+                  8,
+                ), // 👈 less space than big padding
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                  borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black26,
-                      blurRadius: 12,
-                      offset: Offset(0, -6),
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, -2),
                     ),
                   ],
                 ),
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisSize: MainAxisSize.min, // 👈 only take needed height
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     // 🔹 Drag handle
                     Center(
                       child: Container(
-                        width: 40,
+                        width: 32,
                         height: 4,
-                        margin: const EdgeInsets.only(bottom: 12),
+                        margin: const EdgeInsets.only(bottom: 8),
                         decoration: BoxDecoration(
                           color: Colors.black26,
                           borderRadius: BorderRadius.circular(2),
@@ -741,46 +778,10 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                       ),
                     ),
 
-                    // 🔹 Step helper text
-                    // Row(
-                    //   children: [
-                    //     const Icon(
-                    //       Icons.touch_app,
-                    //       size: 18,
-                    //       color: Colors.black54,
-                    //     ),
-                    //     const SizedBox(width: 6),
-                    //     Expanded(
-                    //       child: Text(
-                    //         _searchedDestination == null
-                    //             ? 'Type an address to find matching driver routes'
-                    //             : _selectedRoute == null
-                    //             ? 'Pick a route above'
-                    //             : _pickup == null
-                    //             ? 'Tap the map to set your PICKUP on the route'
-                    //             : _dropoff == null
-                    //             ? 'Tap again to set your DROPOFF'
-                    //             : _editTarget == 'pickup'
-                    //             ? 'Tap the map to adjust your PICKUP'
-                    //             : _editTarget == 'dropoff'
-                    //             ? 'Tap the map to adjust your DROPOFF'
-                    //             : 'Tap the map to start over (new pickup)',
-                    //         style: const TextStyle(
-                    //           color: Colors.black54,
-                    //           fontSize: 13,
-                    //           fontWeight: FontWeight.w500,
-                    //         ),
-                    //       ),
-                    //     ),
-                    //   ],
-                    // ),
-                    // const SizedBox(height: 14),
-
-                    // 🔹 Status + toggles
                     if (_selectedRoute != null) ...[
                       Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
+                        spacing: 6,
+                        runSpacing: 6,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           _Pill(
@@ -807,23 +808,17 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                               borderEmphasis: _editTarget == 'dropoff',
                             ),
                           ),
-                          // Quick “center on me” button (themed)
-                          SafeArea(
-                            child: FloatingActionButton.small(
-                              heroTag: 'center_me_fab',
-                              onPressed: _centerOnMe,
-                              backgroundColor: _purple, // match your theme
-                              foregroundColor: Colors.white, // white icon
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(
-                                  14,
-                                ), // subtle rounded style
-                              ),
-                              elevation: 4,
-                              child: const Icon(Icons.my_location, size: 22),
+                          FloatingActionButton.small(
+                            heroTag: 'center_me_fab',
+                            onPressed: _centerOnMe,
+                            backgroundColor: _purple,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
                             ),
+                            elevation: 2,
+                            child: const Icon(Icons.my_location, size: 20),
                           ),
-
                           if (_pickup != null || _dropoff != null)
                             IconButton(
                               onPressed: () {
@@ -843,39 +838,14 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                                 size: 18,
                                 color: Colors.black54,
                               ),
-                              tooltip: 'Reset points',
                             ),
-
-                          // 🔹 Follow me toggle (minimal row)
-                          // Row(
-                          //   mainAxisSize: MainAxisSize.min,
-                          //   children: [
-                          //     const Text(
-                          //       'Follow me',
-                          //       style: TextStyle(
-                          //         color: Colors.black54,
-                          //         fontSize: 13,
-                          //       ),
-                          //     ),
-                          //     Switch(
-                          //       value: _followMe,
-                          //       onChanged: (v) {
-                          //         setState(() => _followMe = v);
-                          //         if (v && _me != null) {
-                          //           _safeMove(_me!, _map.camera.zoom);
-                          //         }
-                          //       },
-                          //     ),
-                          //   ],
-                          // ),
                         ],
                       ),
 
-                      const SizedBox(height: 16),
-
-                      // 🔹 Sleeker CTA button
+                      const SizedBox(height: 12), // 👈 smaller gap than 16
+                      // 🔹 CTA button
                       SizedBox(
-                        height: 48,
+                        height: 44,
                         width: double.infinity,
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
@@ -886,7 +856,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                             disabledBackgroundColor: Colors.grey.shade300,
                             shadowColor: Colors.transparent,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(10),
                             ),
                           ),
                           onPressed:
@@ -897,7 +867,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                             'Review Fare',
                             style: TextStyle(
                               color: Colors.white,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w600,
                               fontSize: 15,
                             ),
                           ),

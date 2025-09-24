@@ -296,10 +296,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
             .eq('id', rideReqId);
       } catch (_) {}
 
-      await _showNotification(
-        'Ride Requested',
-        'Seats reserved & payment on hold.',
-      );
+      await _showNotification('Ride Requested', 'Seats reserved & payment .');
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/passenger_rides');
     } on PostgrestException catch (e) {
@@ -358,8 +355,72 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     final amount = _fare?.total ?? 0.0;
 
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(title: const Text('Confirm Your Ride')),
+      extendBodyBehindAppBar: true, // allows content behind AppBar
+
+      appBar: AppBar(
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                _purple.withOpacity(0.8), // top fade
+                const Color.fromARGB(0, 0, 0, 0),
+              ],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        ),
+        backgroundColor: const Color.fromARGB(5, 0, 0, 0),
+        elevation: 0,
+        scrolledUnderElevation: 0, // <-- prevent dark overlay in Material 3
+        centerTitle: true,
+        automaticallyImplyLeading: false, // we’re customizing buttons
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: CircleAvatar(
+            backgroundColor: Colors.white.withOpacity(0.9),
+            child: IconButton(
+              icon: const Icon(
+                Icons.arrow_back_ios_new,
+                color: _purple,
+                size: 18,
+              ),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
+        ),
+        title: Column(
+          children: const [
+            Text(
+              'Confirm Your Ride',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+                fontSize: 18,
+              ),
+            ),
+            SizedBox(height: 2),
+            Text(
+              'Review details before booking',
+              style: TextStyle(fontSize: 12, color: Colors.white),
+            ),
+          ],
+        ),
+
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: CircleAvatar(
+              backgroundColor: Colors.white.withOpacity(0.9),
+              child: IconButton(
+                icon: const Icon(Icons.info_outline, color: _purple),
+                onPressed: () {},
+              ),
+            ),
+          ),
+        ],
+      ),
+
       body: Stack(
         children: [
           // Map background with route
@@ -403,27 +464,41 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
           ),
 
           // Bottom summary card
+          // Bottom summary card
           Align(
             alignment: Alignment.bottomCenter,
             child: SafeArea(
               top: false,
               child: Container(
                 width: double.infinity,
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24),
+                  ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black26,
-                      blurRadius: 10,
-                      offset: Offset(0, -4),
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 20,
+                      offset: const Offset(0, -6),
                     ),
                   ],
                 ),
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // Grab handle
+                    Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+
                     if (_error != null)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 6),
@@ -433,14 +508,35 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                         ),
                       ),
 
+                    // Distance + Time
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Distance: ${_distanceKm.toStringAsFixed(2)} km'),
-                        Text('Time: ${_durationMin.toStringAsFixed(0)} min'),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.directions_car,
+                              size: 18,
+                              color: _purple,
+                            ),
+                            const SizedBox(width: 6),
+                            Text('${_distanceKm.toStringAsFixed(2)} km'),
+                          ],
+                        ),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.access_time,
+                              size: 18,
+                              color: _purple,
+                            ),
+                            const SizedBox(width: 6),
+                            Text('${_durationMin.toStringAsFixed(0)} min'),
+                          ],
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
 
                     // Fare line + payment chip
                     Row(
@@ -449,25 +545,48 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                           'Estimated Fare: ',
                           style: TextStyle(fontWeight: FontWeight.w600),
                         ),
-                        Text(
-                          '₱${amount.toStringAsFixed(0)}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            color: _purple,
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 250),
+                          child: Text(
+                            '₱${amount.toStringAsFixed(0)}',
+                            key: ValueKey(amount),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: _purple,
+                              fontSize: 18,
+                            ),
                           ),
                         ),
                         const Spacer(),
-                        PaymentStatusChip(status: 'on_hold'),
+                        Chip(
+                          label: Row(
+                            children: const [
+                              Icon(
+                                Icons.account_balance_wallet,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                              SizedBox(width: 4),
+                              Text("GCash"),
+                            ],
+                          ),
+                          backgroundColor: _purple,
+                          labelStyle: const TextStyle(color: Colors.white),
+                        ),
                       ],
                     ),
 
                     // Carpool note
                     if (_fare != null) ...[
-                      const SizedBox(height: 6),
-                      Align(
-                        alignment: Alignment.centerLeft,
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: _purple.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                         child: Text(
-                          'Carpool: ${_carpoolSize} rider(s) '
+                          'Carpool: $_carpoolSize rider(s) '
                           '• Discount: ${(100 * _fare!.carpoolDiscountPct).toStringAsFixed(0)}% '
                           '• Platform fee: ₱${_fare!.platformFee.toStringAsFixed(2)}',
                           style: const TextStyle(
@@ -478,9 +597,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                       ),
                     ],
 
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 14),
 
-                    // Seats stepper + capacity chip
+                    // Seats stepper + capacity bar
                     Row(
                       children: [
                         const Text('Passengers'),
@@ -498,75 +617,76 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                                   },
                         ),
                         const Spacer(),
-                        Chip(label: Text('Seats: $capAvail / $capTotal')),
                       ],
                     ),
-                    if (notEnough)
-                      const Align(
-                        alignment: Alignment.centerLeft,
-                        child: Padding(
-                          padding: EdgeInsets.only(top: 6),
-                          child: Text(
-                            'Not enough seats available',
-                            style: TextStyle(color: Colors.red),
+                    const SizedBox(height: 6),
+
+                    // Capacity bar
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        LinearProgressIndicator(
+                          value: capTotal > 0 ? capAvail / capTotal : 0,
+                          color: _purple,
+                          backgroundColor: Colors.grey.shade200,
+                          minHeight: 8,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '$capAvail of $capTotal seats left',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
                           ),
                         ),
-                      ),
+                        if (notEnough)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 4),
+                            child: Text(
+                              'Not enough seats available',
+                              style: TextStyle(color: Colors.red, fontSize: 12),
+                            ),
+                          ),
+                      ],
+                    ),
 
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 16),
 
-                    // Big purple CTA (gradient)
+                    // Big purple CTA
                     SizedBox(
                       height: 52,
                       width: double.infinity,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(14),
-                          gradient: const LinearGradient(
-                            colors: [_purple, _purpleDark],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
+                      child: ElevatedButton(
+                        onPressed:
+                            (_loading || notEnough || _fare == null)
+                                ? null
+                                : _confirmRide,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _purple,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
                           ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _purple.withOpacity(0.25),
-                              blurRadius: 16,
-                              offset: const Offset(0, 10),
-                            ),
-                          ],
                         ),
-                        child: ElevatedButton(
-                          onPressed:
-                              (_loading || notEnough || _fare == null)
-                                  ? null
-                                  : _confirmRide,
-                          style: ElevatedButton.styleFrom(
-                            elevation: 0,
-                            backgroundColor: Colors.transparent,
-                            shadowColor: Colors.transparent,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                          child:
-                              _loading
-                                  ? const SizedBox(
-                                    width: 22,
-                                    height: 22,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                  : Text(
-                                    'Confirm & Hold ₱${amount.toStringAsFixed(0)} (GCash)',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 16,
-                                    ),
+                        child:
+                            _loading
+                                ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
                                   ),
-                        ),
+                                )
+                                : Text(
+                                  'Confirm Ride ₱${amount.toStringAsFixed(0)}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 16,
+                                  ),
+                                ),
                       ),
                     ),
                   ],

@@ -49,9 +49,15 @@ class PaymentStatusChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16),
+          Icon(icon, color: Colors.white, size: 16),
           const SizedBox(width: 6),
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+          Text(
+            label,
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
           if (amount != null) ...[
             const SizedBox(width: 6),
             Text(

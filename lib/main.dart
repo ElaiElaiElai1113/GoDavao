@@ -16,6 +16,7 @@ import 'features/routes/presentation/pages/driver_route_page.dart';
 
 import 'features/chat/data/chat_subscription_service.dart';
 import 'features/chat/data/chat_messages_service.dart';
+import 'package:flutter/services.dart'; // <-- add this import
 
 // Global local notifications plugin
 final FlutterLocalNotificationsPlugin localNotify =
@@ -42,6 +43,13 @@ Future<void> main() async {
   const iosInit = DarwinInitializationSettings();
   await localNotify.initialize(
     const InitializationSettings(android: androidInit, iOS: iosInit),
+  );
+  // Set transparent status bar globally
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent, // fully transparent
+      statusBarIconBrightness: Brightness.light, // white icons
+    ),
   );
 
   // instantiate chat services
