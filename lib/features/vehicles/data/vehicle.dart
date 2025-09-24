@@ -13,6 +13,12 @@ class Vehicle extends Equatable {
   final String verificationStatus; // 'pending' | 'verified' | 'rejected'
   final String? verificationReason;
 
+  // NEW
+  final String? orNumber;
+  final String? crNumber;
+  final String? orKey;
+  final String? crKey;
+
   const Vehicle({
     required this.id,
     required this.driverId,
@@ -25,6 +31,10 @@ class Vehicle extends Equatable {
     required this.isPrimary,
     required this.verificationStatus,
     this.verificationReason,
+    this.orNumber,
+    this.crNumber,
+    this.orKey,
+    this.crKey,
   });
 
   factory Vehicle.fromMap(Map<String, dynamic> m) => Vehicle(
@@ -39,6 +49,10 @@ class Vehicle extends Equatable {
     isPrimary: (m['is_primary'] as bool? ?? false),
     verificationStatus: (m['verification_status'] as String?) ?? 'pending',
     verificationReason: m['verification_reason'] as String?,
+    orNumber: m['or_number'] as String?,
+    crNumber: m['cr_number'] as String?,
+    orKey: m['or_key'] as String?,
+    crKey: m['cr_key'] as String?,
   );
 
   Map<String, dynamic> toInsert() => {
@@ -48,6 +62,8 @@ class Vehicle extends Equatable {
     if (color != null) 'color': color,
     if (year != null) 'year': year,
     if (seats != null) 'seats': seats,
+    if (orNumber != null) 'or_number': orNumber,
+    if (crNumber != null) 'cr_number': crNumber,
   };
 
   Map<String, dynamic> toUpdate() => {
@@ -57,6 +73,8 @@ class Vehicle extends Equatable {
     'color': color,
     'year': year,
     'seats': seats,
+    'or_number': orNumber,
+    'cr_number': crNumber,
   };
 
   @override
@@ -72,5 +90,9 @@ class Vehicle extends Equatable {
     isPrimary,
     verificationStatus,
     verificationReason,
+    orNumber,
+    crNumber,
+    orKey,
+    crKey,
   ];
 }

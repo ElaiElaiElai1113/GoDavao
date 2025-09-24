@@ -176,6 +176,8 @@ class _VehicleTileState extends State<_VehicleTile> {
 
     final subtitle = [
       if ((v['plate'] ?? '').toString().isNotEmpty) 'Plate: ${v['plate']}',
+      if ((v['or_number'] ?? '').toString().isNotEmpty) 'OR: ${v['or_number']}',
+      if ((v['cr_number'] ?? '').toString().isNotEmpty) 'CR: ${v['cr_number']}',
       if ((v['color'] ?? '').toString().isNotEmpty) 'Color: ${v['color']}',
       'Seats: ${v['seats'] ?? '—'}',
       'Status: ${(v['verification_status'] ?? 'pending')}'.toString(),
@@ -533,6 +535,13 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
   final _color = TextEditingController();
   final _year = TextEditingController();
   final _seats = TextEditingController(text: '4');
+  final _orNumber = TextEditingController();
+  final _crNumber = TextEditingController();
+
+  final _picker = ImagePicker();
+  File? _orFile;
+  File? _crFile;
+
   bool _isDefault = false;
   bool _saving = false;
 
@@ -544,7 +553,24 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
     _color.dispose();
     _year.dispose();
     _seats.dispose();
+    _orNumber.dispose();
+    _crNumber.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickFile(bool isOR) async {
+    final x = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (x == null) return;
+    setState(() {
+      if (isOR) {
+        _orFile = File(x.path);
+      } else {
+        _crFile = File(x.path);
+      }
+    });
   }
 
   Future<void> _save() async {
@@ -552,6 +578,7 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
     setState(() => _saving = true);
     try {
       final svc = VehiclesService(Supabase.instance.client);
+
       await svc.createVehicle(
         make: _make.text.trim(),
         model: _model.text.trim(),
@@ -561,7 +588,13 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
             _year.text.trim().isEmpty ? null : int.tryParse(_year.text.trim()),
         seats: int.parse(_seats.text.trim()),
         isDefault: _isDefault,
+        orNumber: _orNumber.text.trim().isEmpty ? null : _orNumber.text.trim(),
+        crNumber: _crNumber.text.trim().isEmpty ? null : _crNumber.text.trim(),
       );
+
+      // ⚠️ Optionally: upload OR/CR files here if provided
+      // e.g., svc.uploadOR(vehicleId: newVehicleId, file: _orFile!);
+
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
@@ -591,6 +624,8 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 12),
+
+              // Base info
               TextFormField(
                 controller: _make,
                 decoration: const InputDecoration(labelText: 'Make *'),
@@ -627,6 +662,44 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
                   return null;
                 },
               ),
+
+              const Divider(height: 24),
+
+              // OR/CR manual numbers
+              TextFormField(
+                controller: _orNumber,
+                decoration: const InputDecoration(labelText: 'OR Number'),
+              ),
+              TextFormField(
+                controller: _crNumber,
+                decoration: const InputDecoration(labelText: 'CR Number'),
+              ),
+
+              const SizedBox(height: 12),
+
+              // OR/CR uploads
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.upload_file),
+                      label: Text(_orFile == null ? 'Upload OR' : 'Replace OR'),
+                      onPressed: () => _pickFile(true),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.upload_file),
+                      label: Text(_crFile == null ? 'Upload CR' : 'Replace CR'),
+                      onPressed: () => _pickFile(false),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+
               SwitchListTile(
                 value: _isDefault,
                 onChanged: (v) => setState(() => _isDefault = v),
@@ -634,6 +707,7 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
                 contentPadding: EdgeInsets.zero,
               ),
               const SizedBox(height: 8),
+
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(

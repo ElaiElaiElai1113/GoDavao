@@ -9,12 +9,12 @@ class VehiclesService {
   // Change if your storage bucket name differs
   static const String _bucket = 'verifications';
 
-  // Columns we routinely select (includes new or_key/cr_key + legacy orcr_key)
+  // Columns we routinely select (added or_number/cr_number)
   static const String _vehicleCols =
       'id, driver_id, make, model, plate, color, year, seats, '
       'is_default, verification_status, created_at, '
       'submitted_at, reviewed_by, reviewed_at, review_notes, '
-      'or_key, cr_key, orcr_key';
+      'or_key, cr_key, orcr_key, or_number, cr_number';
 
   // ---------------- Utilities ----------------
 
@@ -114,6 +114,8 @@ class VehiclesService {
     int? year,
     required int seats,
     bool isDefault = false,
+    String? orNumber, // NEW
+    String? crNumber, // NEW
   }) async {
     final uid = _requireUid();
 
@@ -127,6 +129,8 @@ class VehiclesService {
         'year': year,
         'seats': seats,
         'is_default': isDefault,
+        if (_nullIfBlank(orNumber) != null) 'or_number': _nullIfBlank(orNumber),
+        if (_nullIfBlank(crNumber) != null) 'cr_number': _nullIfBlank(crNumber),
       });
     } on PostgrestException catch (e) {
       throw _friendlyVehicleError(e);
@@ -157,6 +161,20 @@ class VehiclesService {
       put('is_default', patch['is_default']);
     }
 
+    // NEW: allow updating OR/CR numbers
+    if (patch.containsKey('or_number') || patch.containsKey('orNumber')) {
+      put(
+        'or_number',
+        _nullIfBlank((patch['or_number'] ?? patch['orNumber']) as String?),
+      );
+    }
+    if (patch.containsKey('cr_number') || patch.containsKey('crNumber')) {
+      put(
+        'cr_number',
+        _nullIfBlank((patch['cr_number'] ?? patch['crNumber']) as String?),
+      );
+    }
+
     if (allowed.isEmpty) return;
 
     try {
@@ -180,6 +198,8 @@ class VehiclesService {
     int? year,
     required int seats,
     bool? isDefault,
+    String? orNumber, // NEW
+    String? crNumber, // NEW
   }) {
     return updateVehicle(vehicleId, {
       'make': make,
@@ -189,6 +209,8 @@ class VehiclesService {
       'year': year,
       'seats': seats,
       if (isDefault != null) 'is_default': isDefault,
+      if (orNumber != null) 'or_number': orNumber,
+      if (crNumber != null) 'cr_number': crNumber,
     });
   }
 
@@ -294,8 +316,6 @@ class VehiclesService {
   // ---------------- Submit / Resubmit ----------------
 
   /// Submit for verification. Requires BOTH OR and CR present.
-  /// (Backwards compatible: if `or_key`/`cr_key` missing but legacy `orcr_key`
-  /// exists, you may relax this check — current implementation requires both).
   Future<void> submitForVerificationBoth(String vehicleId) async {
     final uid = _requireUid();
 
@@ -311,12 +331,9 @@ class VehiclesService {
     final crKey = (v?['cr_key'] as String?) ?? '';
     final legacy = (v?['orcr_key'] as String?) ?? '';
 
-    // Require both new fields; if you want to allow legacy, relax this.
     if (orKey.isEmpty || crKey.isEmpty) {
-      // If you want to accept legacy ORCR instead, uncomment next 3 lines:
-      // if (legacy.isNotEmpty) {
-      //   // allow submit with legacy single-file upload
-      // } else
+      // If you want to accept legacy ORCR instead, relax this.
+      // if (legacy.isNotEmpty) { ... }
       throw Exception(
         'Please upload both OR and CR documents before submitting.',
       );
