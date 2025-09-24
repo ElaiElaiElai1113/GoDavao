@@ -361,15 +361,19 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         flexibleSpace: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [
-                _purple.withOpacity(0.8), // top fade
-                const Color.fromARGB(0, 0, 0, 0),
-              ],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
+              colors: [
+                _purple.withOpacity(0.9), // strongest at very top
+                _purple.withOpacity(0.6), // still visible mid-top
+                _purple.withOpacity(0.4), // softer fade
+                const Color.fromARGB(11, 0, 0, 0), // fully gone bottom
+              ],
+              stops: const [0.0, 0.15, 0.35, 1.0], // control fade smoothness
             ),
           ),
         ),
+
         backgroundColor: const Color.fromARGB(5, 0, 0, 0),
         elevation: 0,
         scrolledUnderElevation: 0, // <-- prevent dark overlay in Material 3
@@ -464,237 +468,245 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
           ),
 
           // Bottom summary card
-          // Bottom summary card
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: SafeArea(
-              top: false,
-              child: Container(
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(24),
+          BottomCard(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      _error!,
+                      style: TextStyle(color: Colors.orange.shade700),
+                    ),
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 20,
-                      offset: const Offset(0, -6),
+
+                // Distance + time
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.directions_car,
+                          size: 18,
+                          color: _purple,
+                        ),
+                        const SizedBox(width: 6),
+                        Text('${_distanceKm.toStringAsFixed(2)} km'),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        const Icon(Icons.access_time, size: 18, color: _purple),
+                        const SizedBox(width: 6),
+                        Text('${_durationMin.toStringAsFixed(0)} min'),
+                      ],
                     ),
                   ],
                 ),
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                const SizedBox(height: 8),
+
+                // Fare line
+                Row(
                   children: [
-                    // Grab handle
-                    Container(
-                      width: 36,
-                      height: 4,
-                      margin: const EdgeInsets.only(bottom: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(2),
+                    const Text(
+                      'Estimated Fare: ',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 250),
+                      child: Text(
+                        '₱${amount.toStringAsFixed(0)}',
+                        key: ValueKey(amount),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: _purple,
+                          fontSize: 18,
+                        ),
                       ),
                     ),
-
-                    if (_error != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Text(
-                          _error!,
-                          style: TextStyle(color: Colors.orange.shade700),
-                        ),
-                      ),
-
-                    // Distance + Time
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.directions_car,
-                              size: 18,
-                              color: _purple,
-                            ),
-                            const SizedBox(width: 6),
-                            Text('${_distanceKm.toStringAsFixed(2)} km'),
-                          ],
-                        ),
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.access_time,
-                              size: 18,
-                              color: _purple,
-                            ),
-                            const SizedBox(width: 6),
-                            Text('${_durationMin.toStringAsFixed(0)} min'),
-                          ],
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-
-                    // Fare line + payment chip
-                    Row(
-                      children: [
-                        const Text(
-                          'Estimated Fare: ',
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 250),
-                          child: Text(
-                            '₱${amount.toStringAsFixed(0)}',
-                            key: ValueKey(amount),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: _purple,
-                              fontSize: 18,
-                            ),
+                    const Spacer(),
+                    Chip(
+                      label: Row(
+                        children: const [
+                          Icon(
+                            Icons.account_balance_wallet,
+                            size: 16,
+                            color: Colors.white,
                           ),
+                          SizedBox(width: 4),
+                          Text("GCash"),
+                        ],
+                      ),
+                      backgroundColor: _purple,
+                      labelStyle: const TextStyle(color: Colors.white),
+                    ),
+                  ],
+                ),
+
+                if (_fare != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: _purple.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Carpool: $_carpoolSize rider(s) '
+                      '• Discount: ${(100 * _fare!.carpoolDiscountPct).toStringAsFixed(0)}% '
+                      '• Platform fee: ₱${_fare!.platformFee.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.black54,
+                      ),
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 14),
+
+                // Seats stepper
+                Row(
+                  children: [
+                    const Text('Passengers'),
+                    const SizedBox(width: 12),
+                    _Stepper(
+                      value: _seatsRequested,
+                      min: 1,
+                      max: _maxSelectableSeats,
+                      onChanged:
+                          _loading
+                              ? null
+                              : (v) async {
+                                setState(() => _seatsRequested = v);
+                                await _refreshCarpoolAndFare();
+                              },
+                    ),
+                    const Spacer(),
+                  ],
+                ),
+                const SizedBox(height: 6),
+
+                // Capacity bar
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    LinearProgressIndicator(
+                      value: capTotal > 0 ? capAvail / capTotal : 0,
+                      color: _purple,
+                      backgroundColor: Colors.grey.shade200,
+                      minHeight: 8,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$capAvail of $capTotal seats left',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    if (notEnough)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 4),
+                        child: Text(
+                          'Not enough seats available',
+                          style: TextStyle(color: Colors.red, fontSize: 12),
                         ),
-                        const Spacer(),
-                        Chip(
-                          label: Row(
-                            children: const [
-                              Icon(
-                                Icons.account_balance_wallet,
-                                size: 16,
+                      ),
+                  ],
+                ),
+
+                const SizedBox(height: 16),
+
+                // CTA button
+                SizedBox(
+                  height: 52,
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed:
+                        (_loading || notEnough || _fare == null)
+                            ? null
+                            : _confirmRide,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _purple,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child:
+                        _loading
+                            ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
                                 color: Colors.white,
                               ),
-                              SizedBox(width: 4),
-                              Text("GCash"),
-                            ],
-                          ),
-                          backgroundColor: _purple,
-                          labelStyle: const TextStyle(color: Colors.white),
-                        ),
-                      ],
-                    ),
-
-                    // Carpool note
-                    if (_fare != null) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: _purple.withOpacity(0.05),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          'Carpool: $_carpoolSize rider(s) '
-                          '• Discount: ${(100 * _fare!.carpoolDiscountPct).toStringAsFixed(0)}% '
-                          '• Platform fee: ₱${_fare!.platformFee.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.black54,
-                          ),
-                        ),
-                      ),
-                    ],
-
-                    const SizedBox(height: 14),
-
-                    // Seats stepper + capacity bar
-                    Row(
-                      children: [
-                        const Text('Passengers'),
-                        const SizedBox(width: 12),
-                        _Stepper(
-                          value: _seatsRequested,
-                          min: 1,
-                          max: _maxSelectableSeats,
-                          onChanged:
-                              _loading
-                                  ? null
-                                  : (v) async {
-                                    setState(() => _seatsRequested = v);
-                                    await _refreshCarpoolAndFare();
-                                  },
-                        ),
-                        const Spacer(),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-
-                    // Capacity bar
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        LinearProgressIndicator(
-                          value: capTotal > 0 ? capAvail / capTotal : 0,
-                          color: _purple,
-                          backgroundColor: Colors.grey.shade200,
-                          minHeight: 8,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '$capAvail of $capTotal seats left',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                        if (notEnough)
-                          const Padding(
-                            padding: EdgeInsets.only(top: 4),
-                            child: Text(
-                              'Not enough seats available',
-                              style: TextStyle(color: Colors.red, fontSize: 12),
+                            )
+                            : Text(
+                              'Confirm Ride ₱${amount.toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 16,
+                              ),
                             ),
-                          ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Big purple CTA
-                    SizedBox(
-                      height: 52,
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed:
-                            (_loading || notEnough || _fare == null)
-                                ? null
-                                : _confirmRide,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _purple,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                        child:
-                            _loading
-                                ? const SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                                : Text(
-                                  'Confirm Ride ₱${amount.toStringAsFixed(0)}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class BottomCard extends StatelessWidget {
+  final Widget child;
+  const BottomCard({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: SafeArea(
+        top: false,
+        child: Container(
+          margin: const EdgeInsets.all(8),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 12,
+                offset: const Offset(0, -4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 🔹 Grab handle
+              Container(
+                width: 32,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 10),
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              child, // 👈 custom content per screen
+            ],
+          ),
+        ),
       ),
     );
   }

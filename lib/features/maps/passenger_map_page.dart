@@ -738,145 +738,105 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
               ),
             ),
 
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: SafeArea(
-              top: false,
-              child: Container(
-                margin: const EdgeInsets.all(
-                  8,
-                ), // 👈 less space than big padding
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 8,
-                      offset: const Offset(0, -2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min, // 👈 only take needed height
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // 🔹 Drag handle
-                    Center(
-                      child: Container(
-                        width: 32,
-                        height: 4,
-                        margin: const EdgeInsets.only(bottom: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.black26,
-                          borderRadius: BorderRadius.circular(2),
+          BottomCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_selectedRoute != null) ...[
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _Pill(
+                        icon: Icons.flag,
+                        label:
+                            _searchedDestination == null
+                                ? 'Destination'
+                                : 'Destination ✓',
+                      ),
+                      GestureDetector(
+                        onTap: () => setState(() => _editTarget = 'pickup'),
+                        child: _Pill(
+                          icon: Icons.location_pin,
+                          label: _pickup == null ? 'Pickup' : 'Pickup ✓',
+                          borderEmphasis: _editTarget == 'pickup',
                         ),
                       ),
-                    ),
-
-                    if (_selectedRoute != null) ...[
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          _Pill(
-                            icon: Icons.flag,
-                            label:
-                                _searchedDestination == null
-                                    ? 'Destination'
-                                    : 'Destination ✓',
-                          ),
-                          GestureDetector(
-                            onTap: () => setState(() => _editTarget = 'pickup'),
-                            child: _Pill(
-                              icon: Icons.location_pin,
-                              label: _pickup == null ? 'Pickup' : 'Pickup ✓',
-                              borderEmphasis: _editTarget == 'pickup',
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap:
-                                () => setState(() => _editTarget = 'dropoff'),
-                            child: _Pill(
-                              icon: Icons.outbound,
-                              label: _dropoff == null ? 'Dropoff' : 'Dropoff ✓',
-                              borderEmphasis: _editTarget == 'dropoff',
-                            ),
-                          ),
-                          FloatingActionButton.small(
-                            heroTag: 'center_me_fab',
-                            onPressed: _centerOnMe,
-                            backgroundColor: _purple,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            elevation: 2,
-                            child: const Icon(Icons.my_location, size: 20),
-                          ),
-                          if (_pickup != null || _dropoff != null)
-                            IconButton(
-                              onPressed: () {
-                                setState(() {
-                                  _pickup = null;
-                                  _dropoff = null;
-                                  _osrmSegment = null;
-                                  _editTarget = 'auto';
-                                });
-                              },
-                              style: IconButton.styleFrom(
-                                backgroundColor: Colors.grey.shade200,
-                                shape: const CircleBorder(),
-                              ),
-                              icon: const Icon(
-                                Icons.refresh,
-                                size: 18,
-                                color: Colors.black54,
-                              ),
-                            ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 12), // 👈 smaller gap than 16
-                      // 🔹 CTA button
-                      SizedBox(
-                        height: 44,
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor:
-                                (_pickup != null && _dropoff != null)
-                                    ? _purple
-                                    : Colors.grey.shade300,
-                            disabledBackgroundColor: Colors.grey.shade300,
-                            shadowColor: Colors.transparent,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          onPressed:
-                              (_pickup != null && _dropoff != null)
-                                  ? _openConfirm
-                                  : null,
-                          child: const Text(
-                            'Review Fare',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 15,
-                            ),
-                          ),
+                      GestureDetector(
+                        onTap: () => setState(() => _editTarget = 'dropoff'),
+                        child: _Pill(
+                          icon: Icons.outbound,
+                          label: _dropoff == null ? 'Dropoff' : 'Dropoff ✓',
+                          borderEmphasis: _editTarget == 'dropoff',
                         ),
                       ),
+                      FloatingActionButton.small(
+                        heroTag: 'center_me_fab',
+                        onPressed: _centerOnMe,
+                        backgroundColor: _purple,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 2,
+                        child: const Icon(Icons.my_location, size: 20),
+                      ),
+                      if (_pickup != null || _dropoff != null)
+                        IconButton(
+                          onPressed: () {
+                            setState(() {
+                              _pickup = null;
+                              _dropoff = null;
+                              _osrmSegment = null;
+                              _editTarget = 'auto';
+                            });
+                          },
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.grey.shade200,
+                            shape: const CircleBorder(),
+                          ),
+                          icon: const Icon(
+                            Icons.refresh,
+                            size: 18,
+                            color: Colors.black54,
+                          ),
+                        ),
                     ],
-                  ],
-                ),
-              ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 44,
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            (_pickup != null && _dropoff != null)
+                                ? _purple
+                                : Colors.grey.shade300,
+                        disabledBackgroundColor: Colors.grey.shade300,
+                        shadowColor: Colors.transparent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed:
+                          (_pickup != null && _dropoff != null)
+                              ? _openConfirm
+                              : null,
+                      child: const Text(
+                        'Review Fare',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
@@ -1121,6 +1081,52 @@ class _LoadingBar extends StatelessWidget {
         Expanded(child: LinearProgressIndicator(minHeight: 6)),
         SizedBox(width: 12),
       ],
+    );
+  }
+}
+
+class BottomCard extends StatelessWidget {
+  final Widget child;
+  const BottomCard({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: SafeArea(
+        top: false,
+        child: Container(
+          margin: const EdgeInsets.all(8),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 12,
+                offset: const Offset(0, -4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 🔹 Grab handle
+              Container(
+                width: 32,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 10),
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              child, // 👈 custom content per screen
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

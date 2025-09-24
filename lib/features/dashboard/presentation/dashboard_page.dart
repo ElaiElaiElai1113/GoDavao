@@ -1,6 +1,8 @@
 // lib/features/dashboard/presentation/dashboard_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:godavao/features/profile/presentation/profile_page.dart';
+import 'package:godavao/features/ride_status/presentation/passenger_rides_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/features/routes/presentation/pages/driver_routes_list_tab.dart';
 import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
@@ -411,9 +413,13 @@ class _DashboardPageState extends State<DashboardPage> {
                                     subtitle: 'Upcoming & history',
                                     icon: Icons.receipt_long,
                                     onTap:
-                                        () => Navigator.pushNamed(
+                                        () => Navigator.push(
                                           context,
-                                          '/passenger_rides',
+                                          MaterialPageRoute(
+                                            builder:
+                                                (_) =>
+                                                    const PassengerRidesPage(),
+                                          ),
                                         ),
                                   ),
                                   _ActionItem(
@@ -421,9 +427,11 @@ class _DashboardPageState extends State<DashboardPage> {
                                     subtitle: 'Manage your preferences',
                                     icon: Icons.settings,
                                     onTap:
-                                        () => Navigator.pushNamed(
+                                        () => Navigator.push(
                                           context,
-                                          '/profile',
+                                          MaterialPageRoute(
+                                            builder: (_) => const ProfilePage(),
+                                          ),
                                         ),
                                   ),
                                 ],
@@ -645,6 +653,52 @@ class _ActionItem {
     required this.icon,
     required this.onTap,
   });
+}
+
+class BottomCard extends StatelessWidget {
+  final Widget child;
+  const BottomCard({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: SafeArea(
+        top: false,
+        child: Container(
+          margin: const EdgeInsets.all(8),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 12,
+                offset: const Offset(0, -4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 🔹 Grab handle
+              Container(
+                width: 32,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 10),
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              child, // 👈 custom content per screen
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _ActionGrid extends StatelessWidget {
