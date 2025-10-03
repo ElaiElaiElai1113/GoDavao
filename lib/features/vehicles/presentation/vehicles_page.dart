@@ -56,8 +56,15 @@ class _VehiclesPageState extends State<VehiclesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.grey.shade100,
       appBar: AppBar(
-        title: const Text('My Vehicles'),
+        title: const Text(
+          'My Vehicles',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        elevation: 0,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
         actions: [
           IconButton(
             tooltip: 'Refresh',
@@ -78,7 +85,7 @@ class _VehiclesPageState extends State<VehiclesPage> {
                 : ListView.separated(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
                   itemCount: _items.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
                   itemBuilder:
                       (_, i) => _VehicleCard(
                         v: _items[i],
@@ -90,9 +97,11 @@ class _VehiclesPageState extends State<VehiclesPage> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _addVehicle,
         icon: const Icon(Icons.add),
-        label: const Text('Add vehicle'),
+        label: const Text('Add Vehicle'),
         backgroundColor: _purple,
         foregroundColor: Colors.white,
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     );
   }
@@ -374,15 +383,15 @@ class _VehicleCardState extends State<_VehicleCard> {
                     const Icon(Icons.folder_open, size: 18),
                     const SizedBox(width: 8),
                     const Text(
-                      'Documents & verification',
+                      'Documents',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 14,
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 5),
                     _DocChip(label: 'OR', hasIt: hasOR),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 5),
                     _DocChip(label: 'CR', hasIt: hasCR),
                   ],
                 ),
