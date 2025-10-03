@@ -30,14 +30,12 @@ class ConfirmRidePage extends StatefulWidget {
 }
 
 class _ConfirmRidePageState extends State<ConfirmRidePage> {
-  // Brand colors
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
 
-  // Fare engine + defaults (centralized)
   final _fareService = FareService(
     rules: const FareRules(
-      defaultPlatformFeeRate: 0.15, // 15%
+      defaultPlatformFeeRate: 0.15,
       carpoolDiscountByPax: {2: 0.06, 3: 0.12, 4: 0.20, 5: 0.25},
     ),
   );
@@ -56,13 +54,12 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   int? _capacityTotal;
   int? _capacityAvailable;
 
-  // Pakyaw (whole vehicle)
+  // Pakyaw
   bool _pakyaw = false;
 
   // Carpool size (unique riders on this route incl. current user)
   int _carpoolSize = 1;
 
-  // Fare result
   FareBreakdown? _fare;
 
   @override
@@ -71,8 +68,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     _init();
   }
 
-  /* ===================== Init Flow ===================== */
-
   Future<void> _init() async {
     setState(() {
       _loading = true;
@@ -80,10 +75,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     });
 
     try {
-      // Load map metrics + route capacity in parallel
       await Future.wait([_loadRouteGeometryAndMetrics(), _loadCapacity()]);
-
-      // After both are known, compute carpool size + fare
       await _refreshCarpoolAndFare();
     } catch (e) {
       _error ??= 'Something went wrong.';
@@ -92,7 +84,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     }
   }
 
-  /* ===================== OSRM + Metrics ===================== */
+  /* ---------- OSRM + Metrics ---------- */
 
   Future<void> _loadRouteGeometryAndMetrics() async {
     try {
@@ -115,7 +107,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         _durationMin = double.parse(mins.toStringAsFixed(0));
       });
     } catch (_) {
-      // Fallback if OSRM is down – straight line estimate
+      // fallback line
       final km = _haversineKm(widget.pickup, widget.destination);
       const avgKmh = 22.0;
       final mins = max((km / avgKmh) * 60.0, 1.0);
@@ -148,7 +140,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     return r * c;
   }
 
-  /* ===================== Capacity ===================== */
+  /* ---------- Capacity ---------- */
 
   Future<void> _loadCapacity() async {
     try {
@@ -165,41 +157,32 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       setState(() {
         _capacityTotal = total;
         _capacityAvailable = avail;
-        // Clamp seats to available immediately
         final a = _capacityAvailable ?? 1;
         if (_seatsRequested > a) {
           _seatsRequested = a.clamp(1, 6);
         }
       });
-    } on PostgrestException catch (e) {
-      _snack(e.message);
-    } catch (_) {
+    } catch (e) {
       _snack('Failed to load seats capacity.');
     }
   }
 
-  /* ===================== Pakyaw helpers ===================== */
+  /* ---------- Helpers for pakyaw ---------- */
 
-  /// Seats we actually reserve:
-  /// - Pakyaw = reserve all available seats (capped at 6 for UI parity)
-  /// - Normal = requested seats
   int get _effectiveSeats {
-    if (_pakyaw) {
-      return (_capacityAvailable ?? 1).clamp(1, 6);
-    }
+    if (_pakyaw) return (_capacityAvailable ?? 1).clamp(1, 6);
     return _seatsRequested;
   }
 
-  /* ===================== Carpool + Fare ===================== */
+  /* ---------- Carpool + Fare ---------- */
 
   Future<void> _refreshCarpoolAndFare() async {
     final user = _sb.auth.currentUser;
     if (user == null) return;
 
-    // Pakyaw forces single party (no carpool discounts)
     final pax =
         _pakyaw
-            ? 1
+            ? 1 // whole vehicle = one party, no carpool discount
             : await _fetchCarpoolSize(
               sb: _sb,
               driverRouteId: widget.routeId,
@@ -211,7 +194,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       durationMin: _durationMin,
       seats: _effectiveSeats,
       carpoolPassengers: pax,
-      // Optional overrides: platformFeeRate / surgeMultiplier
     );
 
     if (!mounted) return;
@@ -237,11 +219,11 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       final pid = r['passenger_id'] as String?;
       if (pid != null && pid.isNotEmpty) set.add(pid);
     }
-    set.add(currentPassengerId); // include the requester
+    set.add(currentPassengerId);
     return set.length;
   }
 
-  /* ===================== Confirm Ride ===================== */
+  /* ---------- Confirm Ride ---------- */
 
   Future<void> _confirmRide() async {
     setState(() => _loading = true);
@@ -265,7 +247,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     final amount = _fare?.total ?? 0;
 
     try {
-      // 1) Upsert ride request (idempotent via client_token)
+      // 1) ride_requests
       final req =
           await _sb
               .from('ride_requests')
@@ -281,17 +263,15 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 'status': 'pending',
                 'requested_seats': seatsToReserve,
                 'payment_method': 'gcash',
-                'is_pakyaw': _pakyaw,
+                'is_pakyaw': _pakyaw, // <- requires is_pakyaw column
               }, onConflict: 'client_token')
               .select('id')
               .single();
 
       final rideReqId = (req['id'] as String?) ?? '';
-      if (rideReqId.isEmpty) {
-        throw 'Failed to create ride request';
-      }
+      if (rideReqId.isEmpty) throw 'Failed to create ride request';
 
-      // 2) Allocate seats atomically (server-side prevents overbooking)
+      // 2) allocate seats atomically
       await _sb.rpc(
         'allocate_seats',
         params: {
@@ -301,7 +281,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         },
       );
 
-      // 3) Create/Upsert a payment hold
+      // 3) payment hold
       final payments = PaymentsService(_sb);
       await payments.upsertOnHoldSafe(
         rideId: rideReqId,
@@ -311,13 +291,16 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         payeeUserId: widget.driverId,
       );
 
-      // 4) Mark payment method (best-effort)
+      // 4) mark payment method (best-effort)
       try {
         await _sb
             .from('ride_requests')
             .update({'payment_method': 'gcash'})
             .eq('id', rideReqId);
       } catch (_) {}
+
+      // 5) ensure a ride_match row exists
+      await _ensureRideMatch(rideReqId);
 
       await _showNotification(
         'Ride Requested',
@@ -338,7 +321,48 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     }
   }
 
-  /* ===================== Utilities ===================== */
+  Future<void> _ensureRideMatch(String rideReqId) async {
+    final payload = {
+      'ride_request_id': rideReqId,
+      'driver_route_id': widget.routeId,
+      'driver_id': widget.driverId,
+      'status': 'pending',
+      'seats_allocated': _effectiveSeats,
+    };
+
+    try {
+      await _sb.from('ride_matches').insert(payload);
+      return;
+    } on PostgrestException catch (e) {
+      if (e.code == '23505') {
+        final existing =
+            await _sb
+                .from('ride_matches')
+                .select('id')
+                .eq('ride_request_id', rideReqId)
+                .inFilter('status', ['pending', 'accepted', 'en_route'])
+                .limit(1)
+                .maybeSingle();
+        final id = (existing as Map?)?['id']?.toString();
+        if (id != null) {
+          await _sb
+              .from('ride_matches')
+              .update({
+                'driver_route_id': widget.routeId,
+                'driver_id': widget.driverId,
+                'seats_allocated': _effectiveSeats,
+              })
+              .eq('id', id);
+        } else {
+          await _sb.from('ride_matches').insert(payload);
+        }
+        return;
+      }
+      rethrow;
+    }
+  }
+
+  /* ---------- Utils ---------- */
 
   Future<void> _showNotification(String title, String body) async {
     const android = AndroidNotificationDetails(
@@ -367,10 +391,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     return max(1, min(6, avail));
   }
 
-  // Quick carpool price preview for 1..N passengers (hidden in Pakyaw mode)
   List<_FarePreview> _buildCarpoolPreview() {
     final cap = _capacityTotal ?? 4;
-    final maxPax = cap.clamp(1, 5); // show up to 5 rows to keep UI compact
+    final maxPax = cap.clamp(1, 5);
     final list = <_FarePreview>[];
     for (int pax = 1; pax <= maxPax; pax++) {
       final fb = _fareService.estimateForDistance(
@@ -392,14 +415,14 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     await _refreshCarpoolAndFare();
   }
 
-  /* ===================== UI ===================== */
+  /* ---------- UI ---------- */
 
   @override
   Widget build(BuildContext context) {
     final mapHeight = 240.0;
     final fareTotal = _fare?.total ?? 0.0;
-    final seatsDenominator = _effectiveSeats > 0 ? _effectiveSeats : 1;
-    final perSeat = fareTotal / seatsDenominator;
+    final seatsDenom = _effectiveSeats > 0 ? _effectiveSeats : 1;
+    final perSeat = fareTotal / seatsDenom;
 
     return Scaffold(
       appBar: AppBar(
@@ -409,7 +432,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       ),
       body: Column(
         children: [
-          // Map
           SizedBox(height: mapHeight, child: _buildMap()),
 
           if (_error != null)
@@ -440,11 +462,11 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                   ),
                   const SizedBox(height: 8),
 
-                  // Pakyaw toggle
+                  // Pakyaw toggle card
                   _pakyawCard(),
                   const SizedBox(height: 8),
 
-                  // Seats card (hidden when pakyaw)
+                  // Seats card: hide selector when pakyaw (show summary instead)
                   if (!_pakyaw) _seatsCard(),
                   if (_pakyaw) _pakyawSeatsSummaryCard(),
                   const SizedBox(height: 8),
@@ -452,7 +474,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                   _fareCard(fareTotal, perSeat),
                   const SizedBox(height: 8),
 
-                  // Carpool preview only when not pakyaw
                   if (!_pakyaw) _carpoolCard(),
                 ],
               ),
@@ -530,30 +551,28 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     );
   }
 
-  Marker _marker(LatLng p, IconData icon, Color color) {
-    return Marker(
-      point: p,
-      width: 36,
-      height: 36,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.12),
-              blurRadius: 6,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        alignment: Alignment.center,
-        child: Icon(icon, color: color, size: 20),
+  Marker _marker(LatLng p, IconData icon, Color color) => Marker(
+    point: p,
+    width: 36,
+    height: 36,
+    child: Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.12),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
-    );
-  }
+      alignment: Alignment.center,
+      child: Icon(icon, color: color, size: 20),
+    ),
+  );
 
-  /* ===================== Cards ===================== */
+  /* ---------- Cards ---------- */
 
   Widget _pakyawCard() {
     final capAvail = _capacityAvailable ?? 0;
@@ -811,7 +830,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   );
 }
 
-/* ===================== Small UI helpers ===================== */
+/* ===== Small UI helpers ===== */
 
 class _Card extends StatelessWidget {
   final Widget child;
@@ -828,7 +847,7 @@ class _Card extends StatelessWidget {
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
             blurRadius: 12,
-            offset: const Offset(0, 6),
+            offset: Offset(0, 6),
           ),
         ],
         border: Border.all(color: Colors.grey.shade200),
@@ -847,7 +866,7 @@ class _CardTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, color: const Color(0xFF6A27F7)),
+        Icon(icon, color: Color(0xFF6A27F7)),
         const SizedBox(width: 8),
         Text(
           text,

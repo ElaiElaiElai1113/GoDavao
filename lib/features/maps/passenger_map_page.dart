@@ -10,14 +10,13 @@ import 'package:geolocator/geolocator.dart';
 import 'package:godavao/core/osrm_service.dart';
 import 'package:godavao/features/rides/presentation/confirm_ride_page.dart';
 
-/// Lightweight model for a driver route we’ll list on the passenger map.
 class DriverRoute {
   final String id;
   final String driverId;
   final String? routeMode; // 'osrm' | 'manual' | null
-  final String? name; // nice label in UI
-  final String? routePolyline; // encoded OSRM polyline
-  final String? manualPolyline; // encoded manual polyline
+  final String? name;
+  final String? routePolyline;
+  final String? manualPolyline;
 
   DriverRoute.fromMap(Map<String, dynamic> m)
     : id = m['id'] as String,
@@ -46,25 +45,28 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
 
-  // Map readiness (avoid setState-move before ready)
+  // Map readiness
   bool _mapReady = false;
   LatLng? _pendingCenter;
   double? _pendingZoom;
 
-  // Search box controller
+  // Search controllers
+  final _pickupCtrl = TextEditingController();
   final _destCtrl = TextEditingController();
 
   // Data
   bool _loading = false;
   String? _error;
 
+  LatLng? _searchedPickup;
   LatLng? _searchedDestination;
+
   List<DriverRoute> _allRoutes = [];
   List<DriverRoute> _candidateRoutes = [];
   DriverRoute? _selectedRoute;
   List<LatLng> _selectedRoutePoints = [];
 
-  // Passenger-chosen points (snapped to route)
+  // Passenger-chosen points (snapped to selected route)
   LatLng? _pickup;
   LatLng? _dropoff;
 
@@ -83,6 +85,9 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
   double? _meAccuracy; // meters
   final bool _followMe = false;
 
+  // Filtering
+  bool _showAllRoutes = false;
+
   @override
   void initState() {
     super.initState();
@@ -93,6 +98,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
   @override
   void dispose() {
     _posSub?.cancel();
+    _pickupCtrl.dispose();
     _destCtrl.dispose();
     super.dispose();
   }
@@ -101,7 +107,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
 
   Future<void> _loadRoutes() async {
     try {
-      // Only show routes that are active, not locked, and with available seats.
       final data = await _sb
           .from('driver_routes')
           .select(
@@ -116,9 +121,10 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
               .map((m) => DriverRoute.fromMap(m as Map<String, dynamic>))
               .toList();
 
+      // Initial candidate set
+      await _refreshCandidates();
       if (mounted) setState(() {});
     } catch (e) {
-      // non-fatal; we’ll surface errors during search
       if (mounted) {
         setState(() => _error = 'Failed to load routes: $e');
       }
@@ -290,7 +296,35 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     }
   }
 
-  /* ===================== Search Flow ===================== */
+  /* ===================== Search & Filtering ===================== */
+
+  Future<void> _searchPickupAddress(String text) async {
+    if (text.trim().isEmpty) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final results = await locationFromAddress(text);
+      if (results.isEmpty) {
+        setState(() {
+          _loading = false;
+          _error = 'Pickup not found. Try a more specific address.';
+        });
+        return;
+      }
+      final pick = LatLng(results.first.latitude, results.first.longitude);
+      _searchedPickup = pick;
+      _safeMove(pick, 14);
+      await _refreshCandidates();
+      setState(() => _loading = false);
+    } catch (e) {
+      setState(() {
+        _loading = false;
+        _error = 'Pickup search failed: $e';
+      });
+    }
+  }
 
   Future<void> _searchByAddress(String text) async {
     if (text.trim().isEmpty) return;
@@ -299,7 +333,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
       _loading = true;
       _error = null;
       _searchedDestination = null;
-      _candidateRoutes = [];
       _selectedRoute = null;
       _selectedRoutePoints = [];
       _pickup = null;
@@ -322,23 +355,8 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
       _searchedDestination = dest;
       _safeMove(dest, 14);
 
-      // Find routes that pass “near” the searched destination
-      final matches = <DriverRoute>[];
-      for (final r in _allRoutes) {
-        final pts = _decodeEffectivePolyline(r);
-        if (pts.isEmpty) continue;
-        if (_isPointNearPolyline(dest, pts, _matchRadiusMeters)) {
-          matches.add(r);
-        }
-      }
-
-      setState(() {
-        _candidateRoutes = matches;
-        _loading = false;
-        if (matches.isEmpty) {
-          _error = 'No active routes pass near that destination.';
-        }
-      });
+      await _refreshCandidates();
+      setState(() => _loading = false);
     } catch (e) {
       setState(() {
         _loading = false;
@@ -347,12 +365,63 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     }
   }
 
+  Future<void> _refreshCandidates() async {
+    // When “Show all routes” is on, we bypass filtering.
+    if (_showAllRoutes) {
+      _candidateRoutes = List.of(_allRoutes);
+      if (mounted) setState(() {});
+      return;
+    }
+
+    // Otherwise filter by proximity to pickup and/or destination.
+    final matches = <DriverRoute>[];
+    for (final r in _allRoutes) {
+      final pts = _decodeEffectivePolyline(r);
+      if (pts.isEmpty) continue;
+
+      bool okPickup = true;
+      bool okDest = true;
+
+      if (_searchedPickup != null) {
+        okPickup = _isPointNearPolyline(
+          _searchedPickup!,
+          pts,
+          _matchRadiusMeters,
+        );
+      }
+      if (_searchedDestination != null) {
+        okDest = _isPointNearPolyline(
+          _searchedDestination!,
+          pts,
+          _matchRadiusMeters,
+        );
+      }
+
+      // Rules:
+      // - If both set: route must be near BOTH.
+      // - If only one set: route must be near that one.
+      // - If none set: show all.
+      final noneSet = _searchedPickup == null && _searchedDestination == null;
+      if (noneSet || (okPickup && okDest)) {
+        matches.add(r);
+      }
+    }
+
+    _candidateRoutes = matches;
+    if (mounted) setState(() {});
+  }
+
   /* ===================== Interactions ===================== */
 
   void _selectRoute(DriverRoute r) {
     final pts = _decodeEffectivePolyline(r);
 
-    // If a destination was searched, default the drop-off near that
+    // Use searched pickup/destination to suggest initial snapped points
+    final snappedPickup =
+        (_searchedPickup != null && pts.length >= 2)
+            ? _snapToPolyline(_searchedPickup!, pts)
+            : null;
+
     final snappedDrop =
         (_searchedDestination != null && pts.length >= 2)
             ? _snapToPolyline(_searchedDestination!, pts)
@@ -362,9 +431,10 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
       _selectedRoute = r;
       _selectedRoutePoints = pts;
       _pickup =
-          (_pickup != null && pts.length >= 2)
+          snappedPickup ??
+          ((_pickup != null && pts.length >= 2)
               ? _snapToPolyline(_pickup!, pts)
-              : null;
+              : null);
       _dropoff = snappedDrop;
       _osrmSegment = null;
       _editTarget = 'auto';
@@ -393,7 +463,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
         _dropoff = snapped;
         _editTarget = 'pickup';
       } else {
-        // restart cycle
         _pickup = snapped;
         _dropoff = null;
         _editTarget = 'dropoff';
@@ -438,7 +507,8 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
 
   @override
   Widget build(BuildContext context) {
-    final hasDest = _searchedDestination != null;
+    final hasAnySearch =
+        _searchedPickup != null || _searchedDestination != null;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -478,28 +548,72 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
           ),
         ),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(50),
+          preferredSize: const Size.fromHeight(108),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: SizedBox(
-              height: 44,
-              child: _SearchBar(
-                controller: _destCtrl,
-                onSubmit: _searchByAddress,
-                onClear: () {
-                  setState(() {
-                    _searchedDestination = null;
-                    _candidateRoutes = [];
-                    _selectedRoute = null;
-                    _selectedRoutePoints = [];
-                    _pickup = null;
-                    _dropoff = null;
-                    _osrmSegment = null;
-                    _error = null;
-                    _editTarget = 'auto';
-                  });
-                },
-              ),
+            child: Column(
+              children: [
+                SizedBox(
+                  height: 44,
+                  child: _SearchBar(
+                    hintText: 'Enter pickup (optional)',
+                    controller: _pickupCtrl,
+                    onSubmit: _searchPickupAddress,
+                    onClear: () {
+                      setState(() {
+                        _pickupCtrl.clear();
+                        _searchedPickup = null;
+                      });
+                      _refreshCandidates();
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 44,
+                  child: _SearchBar(
+                    hintText: 'Enter destination',
+                    controller: _destCtrl,
+                    onSubmit: _searchByAddress,
+                    onClear: () {
+                      setState(() {
+                        _destCtrl.clear();
+                        _searchedDestination = null;
+                        _selectedRoute = null;
+                        _selectedRoutePoints = [];
+                        _pickup = null;
+                        _dropoff = null;
+                        _osrmSegment = null;
+                        _editTarget = 'auto';
+                        _error = null;
+                      });
+                      _refreshCandidates();
+                    },
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Switch.adaptive(
+                      value: _showAllRoutes,
+                      onChanged: (v) async {
+                        setState(() => _showAllRoutes = v);
+                        await _refreshCandidates();
+                      },
+                      activeColor: _purple,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _showAllRoutes
+                            ? 'Showing all active routes'
+                            : 'Filter routes by proximity to pickup/destination',
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ),
@@ -605,7 +719,22 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     ],
                   ),
 
-                // Searched destination hint
+                // Searched pickup/destination hints
+                if (_searchedPickup != null)
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: _searchedPickup!,
+                        width: 30,
+                        height: 30,
+                        child: const Icon(
+                          Icons.person_pin_circle,
+                          color: Colors.green,
+                          size: 28,
+                        ),
+                      ),
+                    ],
+                  ),
                 if (_searchedDestination != null)
                   MarkerLayer(
                     markers: [
@@ -622,7 +751,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     ],
                   ),
 
-                // Pickup
+                // Pickup (snapped to selected route)
                 if (_pickup != null)
                   MarkerLayer(
                     markers: [
@@ -639,7 +768,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     ],
                   ),
 
-                // Dropoff
+                // Dropoff (snapped)
                 if (_dropoff != null)
                   MarkerLayer(
                     markers: [
@@ -659,8 +788,8 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
             ),
           ),
 
-          // Route carousel when a destination is set
-          if (hasDest)
+          // Route carousel when any search is set
+          if (hasAnySearch)
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.only(top: 8),
@@ -672,12 +801,25 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                           : _error != null
                           ? _EmptyRoutesBar(
                             message: _error!,
-                            onRetry: () => _searchByAddress(_destCtrl.text),
+                            onRetry: () async {
+                              if (_destCtrl.text.isNotEmpty) {
+                                await _searchByAddress(_destCtrl.text);
+                              } else if (_pickupCtrl.text.isNotEmpty) {
+                                await _searchPickupAddress(_pickupCtrl.text);
+                              } else {
+                                await _refreshCandidates();
+                              }
+                            },
                           )
                           : _candidateRoutes.isEmpty
                           ? _EmptyRoutesBar(
-                            message: 'No routes match your destination.',
-                            onRetry: () => _searchByAddress(_destCtrl.text),
+                            message:
+                                _showAllRoutes
+                                    ? 'No active routes found.'
+                                    : 'No routes near your pickup/destination.',
+                            onRetry: () async {
+                              await _refreshCandidates();
+                            },
                           )
                           : ListView.separated(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -715,6 +857,13 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     runSpacing: 6,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      _Pill(
+                        icon: Icons.person_pin_circle,
+                        label:
+                            _searchedPickup == null
+                                ? 'Pickup filter'
+                                : 'Pickup filter ✓',
+                      ),
                       _Pill(
                         icon: Icons.flag,
                         label:
@@ -817,11 +966,13 @@ class _SearchBar extends StatefulWidget {
     required this.controller,
     required this.onSubmit,
     required this.onClear,
+    this.hintText = 'Search',
   });
 
   final TextEditingController controller;
   final void Function(String) onSubmit;
   final VoidCallback onClear;
+  final String hintText;
 
   @override
   State<_SearchBar> createState() => _SearchBarState();
@@ -868,9 +1019,9 @@ class _SearchBarState extends State<_SearchBar> {
               textAlignVertical: TextAlignVertical.top,
               controller: widget.controller,
               textInputAction: TextInputAction.search,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 border: InputBorder.none,
-                hintText: 'Enter your destination',
+                hintText: widget.hintText,
               ),
               onSubmitted: widget.onSubmit,
             ),

@@ -25,21 +25,39 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     with SingleTickerProviderStateMixin {
   final _supabase = Supabase.instance.client;
 
+  // Toggle to print extra debug to terminal
+  static const bool _DBG = true;
+  void _d(Object? msg) {
+    if (_DBG) {
+      // ignore: avoid_print
+      print('[DriverRides] $msg');
+    }
+  }
+
   late final TabController _tabController;
   final _listScroll = ScrollController();
 
+  // Buckets
   List<Map<String, dynamic>> _upcoming = [];
   List<Map<String, dynamic>> _declined = [];
   List<Map<String, dynamic>> _completed = [];
+
+  // “Owned” route IDs
+  final Set<String> _myRouteIds = {};
+
+  // “NEW” tracking + tab badges
   final Set<String> _newMatchIds = {};
+  int _badgeUpcoming = 0;
+  int _badgeDeclined = 0;
+  int _badgeCompleted = 0;
 
   Map<String, Map<String, dynamic>> _paymentByRide = {};
+
   bool _loading = true;
 
   RealtimeChannel? _matchChannel;
   RealtimeChannel? _feeChannel;
 
-  // default 15% until settings load
   double _platformFeeRate = 0.15;
 
   static const _purple = Color(0xFF6A27F7);
@@ -50,20 +68,30 @@ class _DriverRidesPageState extends State<DriverRidesPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(_onTabChanged);
+
+    final uid = _supabase.auth.currentUser?.id;
+    _d('initState: uid=$uid');
+
     _initFee();
-    _loadMatches();
+
+    _refreshMyRouteIds().then((_) async {
+      await _loadMatches();
+      _subscribeToRideMatches();
+    });
   }
 
   @override
   void dispose() {
     if (_matchChannel != null) _supabase.removeChannel(_matchChannel!);
     if (_feeChannel != null) _supabase.removeChannel(_feeChannel!);
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     _listScroll.dispose();
     super.dispose();
   }
 
-  // ===================== fee =====================
+  /* ================= Platform fee ================= */
 
   Future<void> _initFee() async {
     await _loadFeeFromDb();
@@ -78,18 +106,19 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               .select('key, value, value_num')
               .eq('key', 'platform_fee_rate')
               .maybeSingle();
-
+      _d('fee settings row=$row');
       final rate = _parseFeeRate(row as Map?);
       if (rate != null && rate >= 0 && rate <= 1) {
         setState(() => _platformFeeRate = rate);
       }
-    } catch (_) {
-      // keep default
+    } catch (e) {
+      _d('fee load error: $e');
     }
   }
 
   void _subscribeFee() {
     if (_feeChannel != null) return;
+    _d('subscribing fee channel');
     _feeChannel =
         _supabase.channel('app_settings:platform_fee_rate')
           ..onPostgresChanges(
@@ -97,6 +126,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             table: 'app_settings',
             event: PostgresChangeEvent.insert,
             callback: (payload) {
+              _d('fee insert payload=${payload.newRecord}');
               final rec = payload.newRecord as Map?;
               if (rec == null) return;
               if (rec['key']?.toString() != 'platform_fee_rate') return;
@@ -111,6 +141,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             table: 'app_settings',
             event: PostgresChangeEvent.update,
             callback: (payload) {
+              _d('fee update payload=${payload.newRecord}');
               final rec = payload.newRecord as Map?;
               if (rec == null) return;
               if (rec['key']?.toString() != 'platform_fee_rate') return;
@@ -132,43 +163,36 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     return double.tryParse(s);
   }
 
-  // ===================== actions =====================
+  /* ================= My routes ================= */
 
-  Future<void> _acceptViaRpc(String matchId, String rideRequestId) async {
-    if (!mounted) return;
-    setState(() => _loading = true);
+  Future<void> _refreshMyRouteIds() async {
+    final uid = _supabase.auth.currentUser?.id;
+    if (uid == null) {
+      _d('refreshMyRouteIds: NO user');
+      return;
+    }
     try {
-      await _supabase.rpc('accept_match', params: {'p_match_id': matchId});
-      await _loadPaymentIntents([rideRequestId]);
-
-      if (!mounted) return;
-      setState(() {
-        final item = _findAndRemove(matchId);
-        if (item != null) {
-          item['status'] = 'accepted';
-          _upcoming.insert(0, item);
-        }
-        _loading = false;
-      });
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Ride accepted')));
+      final rows = await _supabase
+          .from('driver_routes')
+          .select('id')
+          .eq('driver_id', uid);
+      final ids =
+          (rows as List)
+              .map((r) => (r as Map)['id']?.toString())
+              .whereType<String>()
+              .toList();
+      _myRouteIds
+        ..clear()
+        ..addAll(ids);
+      _d('refreshMyRouteIds: count=${_myRouteIds.length}, ids=$_myRouteIds');
     } on PostgrestException catch (e) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
+      _d('refreshMyRouteIds PostgrestException: ${e.code} ${e.message}');
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Accept failed: $e')));
+      _d('refreshMyRouteIds error: $e');
     }
   }
+
+  /* ================= Notifications ================= */
 
   Future<void> _showNotification(String title, String body) async {
     const android = AndroidNotificationDetails(
@@ -187,50 +211,73 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     );
   }
 
+  /* ================= Matches: load & subscribe ================= */
+
   Future<void> _loadMatches() async {
     final user = _supabase.auth.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      _d('_loadMatches: NO user');
+      return;
+    }
 
     if (mounted) setState(() => _loading = true);
 
-    _subscribeToNewMatchesByDriver(user.id);
-
     try {
-      // Keep this selection minimal + schema-safe
+      final sel = '''
+        id, ride_request_id, status, created_at, driver_id, driver_route_id,
+        ride_requests (
+          id, pickup_lat, pickup_lng, destination_lat, destination_lng,
+          passenger_id, fare, seats, users ( id, name )
+        )
+      ''';
+
+      final uid = user.id;
+      final hasRoutes = _myRouteIds.isNotEmpty;
+
+      // Quote UUIDs in the in.(...) list to be safe with PostgREST parser.
+      String? orExpr;
+      if (hasRoutes) {
+        final idsQuoted = _myRouteIds.map((e) => '"$e"').join(',');
+        orExpr = 'driver_id.eq.$uid,driver_route_id.in.($idsQuoted)';
+      } else {
+        orExpr = 'driver_id.eq.$uid';
+      }
+      _d('_loadMatches OR-expr="$orExpr"');
+
       final raw = await _supabase
           .from('ride_matches')
-          .select('''
-          id,
-          ride_request_id,
-          status,
-          created_at,
-          driver_id,
-          driver_route_id,
-          ride_requests (
-            id,
-            pickup_lat, pickup_lng,
-            destination_lat, destination_lng,
-            passenger_id,
-            fare,
-            seats,
-            users (
-              id, name
-            )
-          )
-        ''')
-          .eq('driver_id', user.id)
+          .select(sel)
+          .or(orExpr)
           .order('created_at', ascending: false);
+
+      _d('_loadMatches fetched=${raw.length}');
+      if ((raw as List).isEmpty) {
+        _d(
+          'HINT: If you expect rows, check RLS on ride_matches. '
+          'Driver can read: driver_id=auth.uid() OR driver_route_id owned.',
+        );
+      }
+
+      // merge by id (protect from duplicates if any)
+      final Map<String, Map<String, dynamic>> merged = {};
+      for (final row in raw) {
+        final m = (row as Map).cast<String, dynamic>();
+        merged[m['id'] as String] = m;
+      }
 
       final all = <Map<String, dynamic>>[];
       final rideIds = <String>[];
 
-      for (final row in (raw as List)) {
-        final m = (row as Map).cast<String, dynamic>();
-
-        // child can be null if RLS blocks it
+      for (final m in merged.values) {
         final req = (m['ride_requests'] as Map?)?.cast<String, dynamic>();
+        if (req == null) {
+          _d(
+            'NOTE: ride_requests nested row is null for match ${m['id']} '
+            '— FK or RLS may hide child; parent will still render.',
+          );
+        }
 
-        // passenger info (best effort)
+        // passenger
         String passengerName = 'Passenger';
         String? passengerId;
         final usersRel = req?['users'];
@@ -246,13 +293,13 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         }
         passengerId ??= req?['passenger_id']?.toString();
 
-        // pax (fallbacks)
+        // pax
         final pax =
             (req?['seats'] as num?)?.toInt() ??
             (req?['passenger_count'] as num?)?.toInt() ??
             1;
 
-        // reverse geocode only if coords exist (no exceptions)
+        // reverse geocode (best-effort)
         String pickupAddr = 'Pickup';
         String destAddr = 'Destination';
         try {
@@ -283,8 +330,8 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             ].whereType<String>().where((s) => s.isNotEmpty).join(', ');
             if (s.isNotEmpty) destAddr = s;
           }
-        } catch (_) {
-          // non-fatal
+        } catch (e) {
+          _d('reverse geocode failed (non-fatal): $e');
         }
 
         final fare = (req?['fare'] as num?)?.toDouble();
@@ -293,7 +340,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           'match_id': m['id'],
           'ride_request_id': m['ride_request_id'],
           'driver_route_id': m['driver_route_id'],
-          'status': m['status'],
+          'status': (m['status'] as String?) ?? 'pending',
           'created_at': m['created_at'],
           'passenger': passengerName,
           'passenger_id': passengerId,
@@ -321,15 +368,24 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         _declined = all.where((e) => e['status'] == 'declined').toList();
         _completed = all.where((e) => e['status'] == 'completed').toList();
         _loading = false;
+
+        _d(
+          'bucket sizes: upcoming=${_upcoming.length} '
+          'declined=${_declined.length} completed=${_completed.length}',
+        );
       });
     } on PostgrestException catch (e) {
       if (!mounted) return;
+      _d(
+        '_loadMatches PostgrestException: code=${e.code} message=${e.message}',
+      );
       setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Load matches failed: ${e.message}')),
       );
     } catch (e) {
       if (!mounted) return;
+      _d('_loadMatches error: $e');
       setState(() => _loading = false);
       ScaffoldMessenger.of(
         context,
@@ -337,37 +393,41 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     }
   }
 
-  Future<void> _loadPaymentIntents(List<String> rideIds) async {
-    _paymentByRide = {};
-    if (rideIds.isEmpty) return;
-
-    final res = await _supabase
-        .from('payment_intents')
-        .select('ride_id, status, amount')
-        .inFilter('ride_id', rideIds.toSet().toList());
-
-    for (final row in (res as List)) {
-      final r = (row as Map).cast<String, dynamic>();
-      _paymentByRide[r['ride_id'] as String] = {
-        'status': r['status'] as String?,
-        'amount': (r['amount'] as num?)?.toDouble(),
-      };
-    }
-  }
-
-  void _subscribeToNewMatchesByDriver(String driverId) {
+  void _subscribeToRideMatches() {
     if (_matchChannel != null) return;
+
+    _d('subscribing ride_matches realtime channel');
     _matchChannel =
-        _supabase.channel('ride_matches_driver_$driverId')
+        _supabase.channel('ride_matches_any_for_me')
           ..onPostgresChanges(
             schema: 'public',
             table: 'ride_matches',
             event: PostgresChangeEvent.insert,
             callback: (payload) {
+              _d('realtime INSERT payload=${payload.newRecord}');
               final rec = (payload.newRecord as Map?)?.cast<String, dynamic>();
               if (rec == null) return;
-              if (rec['driver_id']?.toString() != driverId) return;
-              setState(() => _newMatchIds.add(rec['id']?.toString() ?? ''));
+
+              final uid = _supabase.auth.currentUser?.id;
+              final drvId = rec['driver_id']?.toString();
+              final routeId = rec['driver_route_id']?.toString();
+
+              final isMine =
+                  (uid != null && drvId == uid) ||
+                  (routeId != null && _myRouteIds.contains(routeId));
+              _d(
+                'realtime insert isMine=$isMine (uid=$uid drvId=$drvId routeId=$routeId)',
+              );
+              if (!isMine) return;
+
+              final id = rec['id']?.toString();
+              if (id != null) {
+                setState(() {
+                  _newMatchIds.add(id);
+                  _badgeUpcoming += 1;
+                });
+              }
+
               _showNotification(
                 'New Request',
                 'A passenger requested a pickup.',
@@ -380,9 +440,22 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             table: 'ride_matches',
             event: PostgresChangeEvent.update,
             callback: (payload) {
+              _d('realtime UPDATE payload=${payload.newRecord}');
               final rec = (payload.newRecord as Map?)?.cast<String, dynamic>();
               if (rec == null) return;
-              if (rec['driver_id']?.toString() != driverId) return;
+
+              final uid = _supabase.auth.currentUser?.id;
+              final drvId = rec['driver_id']?.toString();
+              final routeId = rec['driver_route_id']?.toString();
+
+              final isMine =
+                  (uid != null && drvId == uid) ||
+                  (routeId != null && _myRouteIds.contains(routeId));
+              _d(
+                'realtime update isMine=$isMine (uid=$uid drvId=$drvId routeId=$routeId)',
+              );
+              if (!isMine) return;
+
               _loadMatches();
             },
           )
@@ -391,13 +464,85 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             table: 'ride_matches',
             event: PostgresChangeEvent.delete,
             callback: (payload) {
+              _d('realtime DELETE payload=${payload.oldRecord}');
               final rec = (payload.oldRecord as Map?)?.cast<String, dynamic>();
               if (rec == null) return;
-              if (rec['driver_id']?.toString() != driverId) return;
+
+              final uid = _supabase.auth.currentUser?.id;
+              final drvId = rec['driver_id']?.toString();
+              final routeId = rec['driver_route_id']?.toString();
+
+              final isMine =
+                  (uid != null && drvId == uid) ||
+                  (routeId != null && _myRouteIds.contains(routeId));
+              _d(
+                'realtime delete isMine=$isMine (uid=$uid drvId=$drvId routeId=$routeId)',
+              );
+              if (!isMine) return;
+
               _loadMatches();
             },
           )
           ..subscribe();
+  }
+
+  /* ================= Actions ================= */
+
+  Future<void> _acceptViaRpc(String matchId, String rideRequestId) async {
+    if (!mounted) return;
+    setState(() => _loading = true);
+    try {
+      _d('acceptViaRpc: calling accept_match($matchId)');
+      await _supabase.rpc('accept_match', params: {'p_match_id': matchId});
+      await _loadPaymentIntents([rideRequestId]);
+
+      if (!mounted) return;
+      setState(() {
+        final item = _findAndRemove(matchId);
+        if (item != null) {
+          item['status'] = 'accepted';
+          _upcoming.insert(0, item);
+        }
+        _loading = false;
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Ride accepted')));
+    } on PostgrestException catch (e) {
+      _d('acceptViaRpc PostgrestException: ${e.code} ${e.message}');
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      _d('acceptViaRpc error: $e');
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Accept failed: $e')));
+    }
+  }
+
+  Future<void> _loadPaymentIntents(List<String> rideIds) async {
+    _paymentByRide = {};
+    if (rideIds.isEmpty) return;
+    _d('_loadPaymentIntents for ${rideIds.length} rideIds');
+    final res = await _supabase
+        .from('payment_intents')
+        .select('ride_id, status, amount')
+        .inFilter('ride_id', rideIds.toSet().toList());
+    _d('_loadPaymentIntents fetched=${res.length}');
+    for (final row in (res as List)) {
+      final r = (row as Map).cast<String, dynamic>();
+      _paymentByRide[r['ride_id'] as String] = {
+        'status': r['status'] as String?,
+        'amount': (r['amount'] as num?)?.toDouble(),
+      };
+    }
   }
 
   Map<String, dynamic>? _findAndRemove(String matchId) {
@@ -426,8 +571,8 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             .update({'status': 'canceled'})
             .eq('ride_id', rideRequestId);
       }
-    } catch (_) {
-      // non-fatal
+    } catch (e) {
+      _d('_syncPaymentForRide error: $e');
     } finally {
       await _loadPaymentIntents([rideRequestId]);
       if (mounted) setState(() {});
@@ -443,6 +588,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     setState(() => _loading = true);
 
     try {
+      _d('_updateMatchStatus: $matchId -> $newStatus');
       await _supabase
           .from('ride_matches')
           .update({'status': newStatus})
@@ -460,6 +606,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                 .limit(1)
                 .maybeSingle();
         final rid = (rd as Map?)?['id'] as String?;
+        _d('_updateMatchStatus: attaching routeId=$rid');
         if (rid != null) upd['driver_route_id'] = rid;
       }
       await _supabase.from('ride_requests').update(upd).eq('id', rideRequestId);
@@ -489,6 +636,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         context,
       ).showSnackBar(SnackBar(content: Text('Ride $newStatus')));
     } catch (e) {
+      _d('_updateMatchStatus error: $e');
       if (!mounted) return;
       setState(() => _loading = false);
       ScaffoldMessenger.of(
@@ -531,7 +679,16 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     );
   }
 
-  // ===================== UI helpers =====================
+  /* ================= UI helpers ================= */
+
+  void _onTabChanged() {
+    if (!_tabController.indexIsChanging) return;
+    setState(() {
+      if (_tabController.index == 0) _badgeUpcoming = 0;
+      if (_tabController.index == 1) _badgeDeclined = 0;
+      if (_tabController.index == 2) _badgeCompleted = 0;
+    });
+  }
 
   Color _statusColor(String s) {
     switch (s) {
@@ -631,6 +788,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     ).format(DateTime.parse(m['created_at']));
     final passengerId = m['passenger_id'] as String?;
     final rideRequestId = m['ride_request_id'] as String;
+
     final isNew = _newMatchIds.remove(id);
 
     final canOpenMap =
@@ -648,7 +806,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // route line + NEW
             Row(
               children: [
                 Expanded(
@@ -682,8 +839,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               ],
             ),
             const SizedBox(height: 8),
-
-            // meta
             Wrap(
               spacing: 8,
               runSpacing: 6,
@@ -721,8 +876,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               ],
             ),
             const SizedBox(height: 8),
-
-            // time + fare/payments
             Wrap(
               spacing: 8,
               runSpacing: 6,
@@ -741,10 +894,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                   ),
               ],
             ),
-
             const Divider(height: 18),
-
-            // status + actions
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -854,7 +1004,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     );
   }
 
-  // ===================== scaffold =====================
+  /* ================= Scaffold ================= */
 
   @override
   Widget build(BuildContext context) {
@@ -896,10 +1046,10 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                 labelColor: Colors.white,
                 unselectedLabelColor: Colors.black87,
                 dividerColor: Colors.transparent,
-                tabs: const [
-                  Tab(text: 'Upcoming'),
-                  Tab(text: 'Declined'),
-                  Tab(text: 'Completed'),
+                tabs: [
+                  _TabWithBadge(text: 'Upcoming', count: _badgeUpcoming),
+                  _TabWithBadge(text: 'Declined', count: _badgeDeclined),
+                  _TabWithBadge(text: 'Completed', count: _badgeCompleted),
                 ],
               ),
             ),
@@ -941,9 +1091,7 @@ class _AdminMenuButton extends StatelessWidget {
     return PopupMenuButton<String>(
       tooltip: 'Admin',
       icon: const Icon(Icons.admin_panel_settings),
-      onSelected: (value) {
-        // Navigate to admin screens as needed
-      },
+      onSelected: (value) {},
       itemBuilder:
           (ctx) => const [
             PopupMenuItem(
@@ -955,6 +1103,43 @@ class _AdminMenuButton extends StatelessWidget {
               child: Text('Vehicle Verification'),
             ),
           ],
+    );
+  }
+}
+
+class _TabWithBadge extends StatelessWidget {
+  const _TabWithBadge({required this.text, required this.count});
+  final String text;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final has = count > 0;
+    return Tab(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(text),
+          if (has) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.red.shade500,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '$count',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
