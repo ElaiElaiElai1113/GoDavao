@@ -18,6 +18,9 @@ class _VehiclesPageState extends State<VehiclesPage> {
   String? _error;
   List<Map<String, dynamic>> _items = [];
 
+  // Brand
+  static const _purple = Color(0xFF6A27F7);
+
   @override
   void initState() {
     super.initState();
@@ -39,10 +42,12 @@ class _VehiclesPageState extends State<VehiclesPage> {
     }
   }
 
-  void _addVehicle() async {
+  Future<void> _addVehicle() async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
       builder: (_) => const _AddVehicleSheet(),
     );
     if (mounted) _load();
@@ -51,22 +56,31 @@ class _VehiclesPageState extends State<VehiclesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('My Vehicles')),
+      appBar: AppBar(
+        title: const Text('My Vehicles'),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: _loading ? null : _load,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: _load,
         child:
             _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const _ListSkeleton()
                 : _error != null
                 ? _ErrorBox(message: _error!, onRetry: _load)
                 : _items.isEmpty
                 ? _Empty(onAdd: _addVehicle)
                 : ListView.separated(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
                   itemCount: _items.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
                   itemBuilder:
-                      (_, i) => _VehicleTile(
+                      (_, i) => _VehicleCard(
                         v: _items[i],
                         svc: _svc,
                         onChanged: _load,
@@ -77,59 +91,66 @@ class _VehiclesPageState extends State<VehiclesPage> {
         onPressed: _addVehicle,
         icon: const Icon(Icons.add),
         label: const Text('Add vehicle'),
+        backgroundColor: _purple,
+        foregroundColor: Colors.white,
       ),
     );
   }
 }
 
-/* ---------------- Vehicle Tile ---------------- */
+/* ---------------- Vehicle Card ---------------- */
 
-class _VehicleTile extends StatefulWidget {
+class _VehicleCard extends StatefulWidget {
   final Map<String, dynamic> v;
   final VehiclesService svc;
   final VoidCallback onChanged;
 
-  const _VehicleTile({
+  const _VehicleCard({
     required this.v,
     required this.svc,
     required this.onChanged,
   });
 
   @override
-  State<_VehicleTile> createState() => _VehicleTileState();
+  State<_VehicleCard> createState() => _VehicleCardState();
 }
 
-class _VehicleTileState extends State<_VehicleTile> {
+class _VehicleCardState extends State<_VehicleCard> {
   bool _working = false;
 
-  Future<void> _uploadOR() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (picked == null) return;
-    setState(() => _working = true);
-    try {
-      await widget.svc.uploadOR(
-        vehicleId: widget.v['id'] as String,
-        file: File(picked.path),
-      );
-      _toast('OR uploaded');
-      widget.onChanged();
-    } catch (e) {
-      _toast('Upload failed: $e');
-    } finally {
-      if (mounted) setState(() => _working = false);
-    }
-  }
+  static const _purple = Color(0xFF6A27F7);
 
-  Future<void> _uploadCR() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+  Future<void> _upload(bool isOR) async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
     if (picked == null) return;
     setState(() => _working = true);
     try {
-      await widget.svc.uploadCR(
-        vehicleId: widget.v['id'] as String,
-        file: File(picked.path),
-      );
-      _toast('CR uploaded');
+      final id = widget.v['id'] as String;
+      if (isOR) {
+        await widget.svc.uploadOR(vehicleId: id, file: File(picked.path));
+        _toast('OR uploaded');
+      } else {
+        await widget.svc.uploadCR(vehicleId: id, file: File(picked.path));
+        _toast('CR uploaded');
+      }
+
+      // 🔁 Re-do the verification flow automatically after a replacement
+      try {
+        await widget.svc.resubmitBoth(id);
+        _toast('Documents updated — resubmitted for verification');
+      } catch (_) {
+        // If it wasn’t submitted before, fall back to first-time submit
+        try {
+          await widget.svc.submitForVerificationBoth(id);
+          _toast('Documents updated — submitted for verification');
+        } catch (e2) {
+          _toast('Updated, but could not submit: $e2');
+        }
+      }
+
       widget.onChanged();
     } catch (e) {
       _toast('Upload failed: $e');
@@ -164,9 +185,60 @@ class _VehicleTileState extends State<_VehicleTile> {
     }
   }
 
+  Future<void> _makeDefault() async {
+    setState(() => _working = true);
+    try {
+      await widget.svc.setDefault(widget.v['id'] as String);
+      widget.onChanged();
+    } catch (e) {
+      _toast('Failed: $e');
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  Future<void> _deleteVehicle() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder:
+          (_) => AlertDialog(
+            title: const Text('Delete vehicle?'),
+            content: const Text(
+              'This will remove the vehicle and its documents. This action cannot be undone.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+    );
+    if (confirm != true) return;
+
+    setState(() => _working = true);
+    try {
+      await widget.svc.deleteVehicle(widget.v['id'] as String);
+      widget.onChanged();
+    } catch (e) {
+      _toast('Failed: $e');
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final v = widget.v;
+    final isDefault = (v['is_default'] as bool?) ?? false;
+    final status = (v['verification_status'] ?? 'pending') as String;
+    final notes = v['review_notes'] as String?;
+    final orKey = v['or_key'] as String?;
+    final crKey = v['cr_key'] as String?;
 
     final title = [
       v['year']?.toString(),
@@ -174,86 +246,192 @@ class _VehicleTileState extends State<_VehicleTile> {
       v['model'],
     ].where((e) => (e ?? '').toString().trim().isNotEmpty).join(' ');
 
-    final subtitle = [
+    final subBits = <String>[
       if ((v['plate'] ?? '').toString().isNotEmpty) 'Plate: ${v['plate']}',
-      if ((v['or_number'] ?? '').toString().isNotEmpty) 'OR: ${v['or_number']}',
-      if ((v['cr_number'] ?? '').toString().isNotEmpty) 'CR: ${v['cr_number']}',
       if ((v['color'] ?? '').toString().isNotEmpty) 'Color: ${v['color']}',
       'Seats: ${v['seats'] ?? '—'}',
-      'Status: ${(v['verification_status'] ?? 'pending')}'.toString(),
-    ].join(' • ');
+    ];
+    final subtitle = subBits.join(' • ');
 
-    final isDefault = (v['is_default'] as bool?) ?? false;
-    final status = (v['verification_status'] ?? 'pending') as String;
-    final notes = v['review_notes'] as String?;
+    final statusChip = _StatusChip(status: status);
 
-    // separate keys (expect these columns exist in DB)
-    final orKey = v['or_key'] as String?;
-    final crKey = v['cr_key'] as String?;
+    final hasOR = orKey != null && orKey.isNotEmpty;
+    final hasCR = crKey != null && crKey.isNotEmpty;
 
-    return Card(
-      child: ExpansionTile(
-        leading: CircleAvatar(
-          child: Icon(isDefault ? Icons.star : Icons.directions_car),
-        ),
-        title: Text(title.isEmpty ? 'Vehicle' : title),
-        subtitle: Text(subtitle),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-        children: [
-          // Default/Delete
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              ElevatedButton.icon(
-                icon: const Icon(Icons.star),
-                label: const Text('Make Default'),
-                onPressed:
-                    _working
-                        ? null
-                        : () async {
-                          try {
-                            await widget.svc.setDefault(v['id'] as String);
-                            widget.onChanged();
-                          } catch (e) {
-                            _toast('Failed: $e');
-                          }
-                        },
-              ),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.delete),
-                label: const Text('Delete'),
-                onPressed:
-                    _working
-                        ? null
-                        : () async {
-                          try {
-                            await widget.svc.deleteVehicle(v['id'] as String);
-                            widget.onChanged();
-                          } catch (e) {
-                            _toast('Failed: $e');
-                          }
-                        },
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          // Verification block
-          _VerificationBlock(
-            svc: widget.svc,
-            vehicleId: v['id'] as String,
-            status: status,
-            notes: notes,
-            working: _working,
-            orKey: orKey,
-            crKey: crKey,
-            onUploadOR: _uploadOR,
-            onUploadCR: _uploadCR,
-            onSubmit: _submit,
-            onResubmit: _resubmit,
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
           ),
         ],
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header row
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                CircleAvatar(
+                  radius: 22,
+                  backgroundColor: _purple.withOpacity(.08),
+                  child: Icon(
+                    isDefault ? Icons.star : Icons.directions_car,
+                    color: _purple,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title.isEmpty ? 'Vehicle' : title,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (subtitle.isNotEmpty)
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            color: Colors.grey.shade700,
+                            fontSize: 13,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                statusChip,
+              ],
+            ),
+
+            if (isDefault) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: const [
+                  Icon(Icons.check_circle, size: 16, color: Colors.green),
+                  SizedBox(width: 6),
+                  Text(
+                    'Default vehicle',
+                    style: TextStyle(color: Colors.green),
+                  ),
+                ],
+              ),
+            ],
+
+            if ((notes?.trim().isNotEmpty ?? false) &&
+                status == 'rejected') ...[
+              const SizedBox(height: 10),
+              _NoteBanner(text: 'Review notes: $notes'),
+            ],
+
+            const SizedBox(height: 12),
+
+            // Primary actions
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isDefault ? Colors.grey.shade300 : _purple,
+                    foregroundColor: isDefault ? Colors.black54 : Colors.white,
+                  ),
+                  icon: const Icon(Icons.star),
+                  label: Text(isDefault ? 'Default' : 'Make Default'),
+                  onPressed: _working || isDefault ? null : _makeDefault,
+                ),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.delete),
+                  label: const Text('Delete'),
+                  onPressed: _working ? null : _deleteVehicle,
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 8),
+
+            // ▼ Documents & verification — dropdown
+            Theme(
+              data: Theme.of(
+                context,
+              ).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
+                title: Row(
+                  children: [
+                    const Icon(Icons.folder_open, size: 18),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Documents & verification',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _DocChip(label: 'OR', hasIt: hasOR),
+                    const SizedBox(width: 6),
+                    _DocChip(label: 'CR', hasIt: hasCR),
+                  ],
+                ),
+                subtitle: const Text(
+                  'Replacing a document restarts the review.',
+                  style: TextStyle(fontSize: 12),
+                ),
+                expandedAlignment: Alignment.centerLeft,
+                children: [
+                  // Upload row
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.upload_file),
+                          label: Text(hasOR ? 'Replace OR' : 'Upload OR'),
+                          onPressed: _working ? null : () => _upload(true),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.upload_file),
+                          label: Text(hasCR ? 'Replace CR' : 'Upload CR'),
+                          onPressed: _working ? null : () => _upload(false),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Previews (kept compact with grid)
+                  _DocPreviews(svc: widget.svc, orKey: orKey, crKey: crKey),
+                  const SizedBox(height: 10),
+
+                  // Submit block (submit/resubmit/pending/approved)
+                  _SubmitBlock(
+                    status: status,
+                    hasOR: hasOR,
+                    hasCR: hasCR,
+                    working: _working,
+                    onSubmit: _submit,
+                    onResubmit: _resubmit,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -263,39 +441,257 @@ class _VehicleTileState extends State<_VehicleTile> {
   }
 }
 
-/* ---------------- Verification Block ---------------- */
+/* ---------------- Chips for OR/CR presence ---------------- */
 
-class _VerificationBlock extends StatelessWidget {
-  const _VerificationBlock({
-    required this.svc,
-    required this.vehicleId,
-    required this.status,
-    required this.notes,
-    required this.working,
-    required this.orKey,
-    required this.crKey,
-    required this.onUploadOR,
-    required this.onUploadCR,
-    required this.onSubmit,
-    required this.onResubmit,
-  });
+class _DocChip extends StatelessWidget {
+  final String label;
+  final bool hasIt;
+  const _DocChip({required this.label, required this.hasIt});
+  @override
+  Widget build(BuildContext context) {
+    final bg = hasIt ? Colors.green.withOpacity(.12) : Colors.grey.shade200;
+    final fg = hasIt ? Colors.green.shade700 : Colors.grey.shade700;
+    final icon = hasIt ? Icons.check_circle : Icons.error_outline;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: fg),
+          const SizedBox(width: 4),
+          Text(label, style: TextStyle(color: fg, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+}
 
-  final VehiclesService svc;
-  final String vehicleId;
+/* ---------------- Status Chip ---------------- */
+
+class _StatusChip extends StatelessWidget {
   final String status;
-  final String? notes;
-  final bool working;
+  const _StatusChip({required this.status});
 
+  @override
+  Widget build(BuildContext context) {
+    late final (Color bg, Color fg, IconData icon, String label) v;
+    switch (status) {
+      case 'approved':
+        v = (
+          Colors.green.withOpacity(.12),
+          Colors.green.shade700,
+          Icons.verified,
+          'Approved',
+        );
+        break;
+      case 'rejected':
+        v = (
+          Colors.red.withOpacity(.12),
+          Colors.red.shade700,
+          Icons.error_outline,
+          'Rejected',
+        );
+        break;
+      case 'pending':
+      default:
+        v = (
+          Colors.orange.withOpacity(.12),
+          Colors.orange.shade700,
+          Icons.hourglass_top,
+          'Pending',
+        );
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: v.$1,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(v.$3, size: 16, color: v.$2),
+          const SizedBox(width: 6),
+          Text(
+            v.$4,
+            style: TextStyle(color: v.$2, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/* ---------------- Note Banner ---------------- */
+
+class _NoteBanner extends StatelessWidget {
+  final String text;
+  const _NoteBanner({required this.text});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.red.withOpacity(.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.red.withOpacity(.2)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.error_outline, color: Colors.red),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(text, style: const TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/* ---------------- Doc Previews (OR/CR) ---------------- */
+
+class _DocPreviews extends StatelessWidget {
+  final VehiclesService svc;
   final String? orKey;
   final String? crKey;
+  const _DocPreviews({
+    required this.svc,
+    required this.orKey,
+    required this.crKey,
+  });
 
-  final VoidCallback onUploadOR;
-  final VoidCallback onUploadCR;
+  @override
+  Widget build(BuildContext context) {
+    final tiles = <Widget>[
+      _DocTile(
+        title: 'OR',
+        futureUrl: svc.signedUrl(orKey),
+        empty: orKey == null || orKey!.isEmpty,
+      ),
+      _DocTile(
+        title: 'CR',
+        futureUrl: svc.signedUrl(crKey),
+        empty: crKey == null || crKey!.isEmpty,
+      ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Preview', style: TextStyle(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 8),
+        LayoutBuilder(
+          builder: (context, c) {
+            final isWide = c.maxWidth >= 520;
+            return GridView.count(
+              physics: const NeverScrollableScrollPhysics(),
+              shrinkWrap: true,
+              crossAxisCount: isWide ? 2 : 1,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+              childAspectRatio: isWide ? 16 / 9 : 3 / 2,
+              children: tiles,
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _DocTile extends StatelessWidget {
+  final String title;
+  final Future<String?> futureUrl;
+  final bool empty;
+
+  const _DocTile({
+    required this.title,
+    required this.futureUrl,
+    required this.empty,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (empty) {
+      return _DocBox(
+        child: Center(
+          child: Text(
+            'No $title uploaded',
+            style: TextStyle(color: Colors.grey.shade600),
+          ),
+        ),
+      );
+    }
+    return FutureBuilder<String?>(
+      future: futureUrl,
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const _DocBox(
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          );
+        }
+        final url = snap.data;
+        if (url == null || url.isEmpty) {
+          return _DocBox(
+            child: Center(
+              child: Text(
+                'No $title uploaded',
+                style: TextStyle(color: Colors.grey.shade600),
+              ),
+            ),
+          );
+        }
+        return _DocBox(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.network(url, fit: BoxFit.cover),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _DocBox extends StatelessWidget {
+  final Widget child;
+  const _DocBox({required this.child});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        border: Border.all(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: child,
+    );
+  }
+}
+
+/* ---------------- Submit Block ---------------- */
+
+class _SubmitBlock extends StatelessWidget {
+  final String status;
+  final bool hasOR;
+  final bool hasCR;
+  final bool working;
   final VoidCallback onSubmit;
   final VoidCallback onResubmit;
 
-  bool get hasOR => (orKey != null && orKey!.isNotEmpty);
-  bool get hasCR => (crKey != null && crKey!.isNotEmpty);
+  const _SubmitBlock({
+    required this.status,
+    required this.hasOR,
+    required this.hasCR,
+    required this.working,
+    required this.onSubmit,
+    required this.onResubmit,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -303,154 +699,38 @@ class _VerificationBlock extends StatelessWidget {
     final approved = status == 'approved';
     final pending = status == 'pending';
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (rejected && (notes?.trim().isNotEmpty ?? false)) ...[
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.red.withOpacity(.06),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.red.withOpacity(.2)),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(Icons.error_outline, color: Colors.red),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Review notes: $notes',
-                    style: const TextStyle(color: Colors.red),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
+    if (approved) {
+      return Row(
+        children: const [
+          Icon(Icons.verified, size: 16, color: Colors.green),
+          SizedBox(width: 6),
+          Text('Approved', style: TextStyle(color: Colors.green)),
         ],
+      );
+    }
 
-        // Upload buttons
-        Row(
-          children: [
-            OutlinedButton.icon(
-              icon: const Icon(Icons.upload_file),
-              label: Text(hasOR ? 'Replace OR' : 'Upload OR'),
-              onPressed: working ? null : onUploadOR,
-            ),
-            const SizedBox(width: 8),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.upload_file),
-              label: Text(hasCR ? 'Replace CR' : 'Upload CR'),
-              onPressed: working ? null : onUploadCR,
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-
-        // Preview OR
-        FutureBuilder<String?>(
-          future: svc.signedUrl(orKey),
-          builder: (context, snap) {
-            if (orKey == null || orKey!.isEmpty) {
-              return const Text('No OR uploaded yet.');
-            }
-            if (!snap.hasData) {
-              return const SizedBox(
-                height: 32,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text('Loading OR preview…'),
-                ),
-              );
-            }
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Uploaded OR:'),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    snap.data!,
-                    height: 160,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 12),
-
-        // Preview CR
-        FutureBuilder<String?>(
-          future: svc.signedUrl(crKey),
-          builder: (context, snap) {
-            if (crKey == null || crKey!.isEmpty) {
-              return const Text('No CR uploaded yet.');
-            }
-            if (!snap.hasData) {
-              return const SizedBox(
-                height: 32,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text('Loading CR preview…'),
-                ),
-              );
-            }
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Uploaded CR:'),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    snap.data!,
-                    height: 160,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 12),
-
-        if (!approved && hasOR && hasCR)
-          FilledButton.icon(
-            icon: Icon(rejected ? Icons.refresh : Icons.check_circle),
-            label: Text(rejected ? 'Fix & Resubmit' : 'Submit'),
-            onPressed: working ? null : (rejected ? onResubmit : onSubmit),
-          ),
-
-        if (pending) ...[
-          const SizedBox(height: 8),
-          Row(
-            children: const [
-              Icon(Icons.hourglass_top, size: 16, color: Colors.orange),
-              SizedBox(width: 6),
-              Text(
-                'Submitted — waiting for review',
-                style: TextStyle(color: Colors.orange),
-              ),
-            ],
+    if (pending) {
+      return Row(
+        children: const [
+          Icon(Icons.hourglass_top, size: 16, color: Colors.orange),
+          SizedBox(width: 6),
+          Text(
+            'Submitted — waiting for review',
+            style: TextStyle(color: Colors.orange),
           ),
         ],
-        if (approved) ...[
-          const SizedBox(height: 8),
-          Row(
-            children: const [
-              Icon(Icons.verified, size: 16, color: Colors.green),
-              SizedBox(width: 6),
-              Text('Approved', style: TextStyle(color: Colors.green)),
-            ],
-          ),
-        ],
-      ],
+      );
+    }
+
+    // Rejected or never submitted
+    final canSubmit = hasOR && hasCR && !working;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: FilledButton.icon(
+        onPressed: canSubmit ? (rejected ? onResubmit : onSubmit) : null,
+        icon: Icon(rejected ? Icons.refresh : Icons.check_circle),
+        label: Text(rejected ? 'Fix & Resubmit' : 'Submit for verification'),
+      ),
     );
   }
 }
@@ -465,15 +745,21 @@ class _Empty extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(24),
       children: [
-        const SizedBox(height: 60),
-        const Icon(
+        const SizedBox(height: 40),
+        Icon(
           Icons.directions_car_filled,
           size: 64,
-          color: Colors.black38,
+          color: Colors.black.withOpacity(.3),
         ),
         const SizedBox(height: 12),
-        const Center(child: Text('No vehicles yet')),
+        const Center(
+          child: Text(
+            'No vehicles yet',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+        ),
         const SizedBox(height: 8),
         Center(
           child: OutlinedButton.icon(
@@ -500,7 +786,7 @@ class _ErrorBox extends StatelessWidget {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(24),
       children: [
-        const SizedBox(height: 60),
+        const SizedBox(height: 40),
         const Icon(Icons.error_outline, color: Colors.red, size: 48),
         const SizedBox(height: 12),
         SelectableText(
@@ -514,6 +800,29 @@ class _ErrorBox extends StatelessWidget {
           label: const Text('Retry'),
         ),
       ],
+    );
+  }
+}
+
+/* ---------------- Skeleton Loader ---------------- */
+
+class _ListSkeleton extends StatelessWidget {
+  const _ListSkeleton();
+  @override
+  Widget build(BuildContext context) {
+    Widget box() => Container(
+      height: 128,
+      decoration: BoxDecoration(
+        color: Colors.grey.shade200,
+        borderRadius: BorderRadius.circular(14),
+      ),
+    );
+    return ListView.separated(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      itemBuilder: (_, __) => box(),
+      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      itemCount: 4,
     );
   }
 }
@@ -545,6 +854,8 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
   bool _isDefault = false;
   bool _saving = false;
 
+  static const _purple = Color(0xFF6A27F7);
+
   @override
   void dispose() {
     _make.dispose();
@@ -564,13 +875,7 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
       imageQuality: 85,
     );
     if (x == null) return;
-    setState(() {
-      if (isOR) {
-        _orFile = File(x.path);
-      } else {
-        _crFile = File(x.path);
-      }
-    });
+    setState(() => isOR ? _orFile = File(x.path) : _crFile = File(x.path));
   }
 
   Future<void> _save() async {
@@ -592,9 +897,6 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
         crNumber: _crNumber.text.trim().isEmpty ? null : _crNumber.text.trim(),
       );
 
-      // ⚠️ Optionally: upload OR/CR files here if provided
-      // e.g., svc.uploadOR(vehicleId: newVehicleId, file: _orFile!);
-
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
@@ -610,15 +912,32 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
   @override
   Widget build(BuildContext context) {
     final insets = MediaQuery.of(context).viewInsets;
-    return Padding(
-      padding: EdgeInsets.only(bottom: insets.bottom),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 12,
+          bottom: insets.bottom + 12,
+        ),
         child: Form(
           key: _form,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+              const SizedBox(height: 12),
               const Text(
                 'Add Vehicle',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
@@ -626,91 +945,127 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
               const SizedBox(height: 12),
 
               // Base info
-              TextFormField(
-                controller: _make,
-                decoration: const InputDecoration(labelText: 'Make *'),
-                validator:
-                    (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
-              ),
-              TextFormField(
-                controller: _model,
-                decoration: const InputDecoration(labelText: 'Model *'),
-                validator:
-                    (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
-              ),
-              TextFormField(
-                controller: _plate,
-                decoration: const InputDecoration(labelText: 'Plate'),
-              ),
-              TextFormField(
-                controller: _color,
-                decoration: const InputDecoration(labelText: 'Color'),
-              ),
-              TextFormField(
-                controller: _year,
-                decoration: const InputDecoration(labelText: 'Year'),
-                keyboardType: TextInputType.number,
-              ),
-              TextFormField(
-                controller: _seats,
-                decoration: const InputDecoration(labelText: 'Seats *'),
-                keyboardType: TextInputType.number,
-                validator: (v) {
-                  final n = int.tryParse((v ?? '').trim());
-                  if (n == null) return 'Enter a number';
-                  if (n < 1 || n > 10) return 'Seats must be 1–10';
-                  return null;
-                },
-              ),
-
-              const Divider(height: 24),
-
-              // OR/CR manual numbers
-              TextFormField(
-                controller: _orNumber,
-                decoration: const InputDecoration(labelText: 'OR Number'),
-              ),
-              TextFormField(
-                controller: _crNumber,
-                decoration: const InputDecoration(labelText: 'CR Number'),
-              ),
-
-              const SizedBox(height: 12),
-
-              // OR/CR uploads
-              Row(
+              _Section(
+                title: 'Details',
                 children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.upload_file),
-                      label: Text(_orFile == null ? 'Upload OR' : 'Replace OR'),
-                      onPressed: () => _pickFile(true),
+                  TextFormField(
+                    controller: _make,
+                    decoration: const InputDecoration(
+                      labelText: 'Make *',
+                      hintText: 'e.g., Toyota',
                     ),
+                    textInputAction: TextInputAction.next,
+                    validator:
+                        (v) =>
+                            (v == null || v.trim().isEmpty) ? 'Required' : null,
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.upload_file),
-                      label: Text(_crFile == null ? 'Upload CR' : 'Replace CR'),
-                      onPressed: () => _pickFile(false),
+                  TextFormField(
+                    controller: _model,
+                    decoration: const InputDecoration(
+                      labelText: 'Model *',
+                      hintText: 'e.g., Vios',
                     ),
+                    textInputAction: TextInputAction.next,
+                    validator:
+                        (v) =>
+                            (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _year,
+                          decoration: const InputDecoration(labelText: 'Year'),
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _seats,
+                          decoration: const InputDecoration(
+                            labelText: 'Seats *',
+                          ),
+                          keyboardType: TextInputType.number,
+                          validator: (v) {
+                            final n = int.tryParse((v ?? '').trim());
+                            if (n == null) return 'Enter a number';
+                            if (n < 1 || n > 10) return 'Seats must be 1–10';
+                            return null;
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  TextFormField(
+                    controller: _plate,
+                    decoration: const InputDecoration(labelText: 'Plate'),
+                  ),
+                  TextFormField(
+                    controller: _color,
+                    decoration: const InputDecoration(labelText: 'Color'),
                   ),
                 ],
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
+
+              _Section(
+                title: 'OR / CR (optional for now)',
+                children: [
+                  TextFormField(
+                    controller: _orNumber,
+                    decoration: const InputDecoration(labelText: 'OR Number'),
+                  ),
+                  TextFormField(
+                    controller: _crNumber,
+                    decoration: const InputDecoration(labelText: 'CR Number'),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.upload_file),
+                          label: Text(
+                            _orFile == null ? 'Upload OR' : 'Replace OR',
+                          ),
+                          onPressed: () => _pickFile(true),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.upload_file),
+                          label: Text(
+                            _crFile == null ? 'Upload CR' : 'Replace CR',
+                          ),
+                          onPressed: () => _pickFile(false),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 8),
 
               SwitchListTile(
                 value: _isDefault,
                 onChanged: (v) => setState(() => _isDefault = v),
                 title: const Text('Set as default'),
                 contentPadding: EdgeInsets.zero,
+                activeColor: _purple,
               ),
               const SizedBox(height: 8),
 
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _purple,
+                    foregroundColor: Colors.white,
+                  ),
                   onPressed: _saving ? null : _save,
                   icon: const Icon(Icons.save),
                   label: Text(_saving ? 'Saving…' : 'Save'),
@@ -722,4 +1077,41 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
       ),
     );
   }
+}
+
+class _Section extends StatelessWidget {
+  final String title;
+  final List<Widget> children;
+  const _Section({required this.title, required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        border: Border.all(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          ..._withSpacing(children, 8),
+        ],
+      ),
+    );
+  }
+}
+
+/* ---------------- helpers ---------------- */
+
+List<Widget> _withSpacing(List<Widget> list, double spacing) {
+  final out = <Widget>[];
+  for (var i = 0; i < list.length; i++) {
+    out.add(list[i]);
+    if (i != list.length - 1) out.add(SizedBox(height: spacing));
+  }
+  return out;
 }

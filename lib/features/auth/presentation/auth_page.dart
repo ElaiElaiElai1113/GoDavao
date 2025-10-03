@@ -230,7 +230,7 @@ class _AuthPageState extends State<AuthPage> {
         if (_role == 'driver') {
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (_) => const VehicleForm()),
+            MaterialPageRoute(builder: (_) => const DashboardPage()),
           );
         } else {
           Navigator.pushReplacement(

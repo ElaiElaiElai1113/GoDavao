@@ -5,19 +5,19 @@ import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:geolocator/geolocator.dart'; // <-- NEW
+import 'package:geolocator/geolocator.dart';
 
 import 'package:godavao/core/osrm_service.dart';
 import 'package:godavao/features/rides/presentation/confirm_ride_page.dart';
 
-/// Data model for driver route listing. We support both OSRM and manual routes.
+/// Lightweight model for a driver route we’ll list on the passenger map.
 class DriverRoute {
   final String id;
   final String driverId;
   final String? routeMode; // 'osrm' | 'manual' | null
-  final String? name;
-  final String? routePolyline; // encoded OSRM line
-  final String? manualPolyline; // encoded manual line
+  final String? name; // nice label in UI
+  final String? routePolyline; // encoded OSRM polyline
+  final String? manualPolyline; // encoded manual polyline
 
   DriverRoute.fromMap(Map<String, dynamic> m)
     : id = m['id'] as String,
@@ -36,48 +36,48 @@ class PassengerMapPage extends StatefulWidget {
 }
 
 class _PassengerMapPageState extends State<PassengerMapPage> {
-  final supabase = Supabase.instance.client;
-  final _polyDecoder = PolylinePoints();
+  // Services & helpers
+  final SupabaseClient _sb = Supabase.instance.client;
   final MapController _map = MapController();
+  final PolylinePoints _polyDecoder = PolylinePoints();
   final Distance _distance = const Distance();
 
-  // destination search input
-  final _destCtrl = TextEditingController();
-
-  // Brand tokens
+  // UI palette
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
 
-  // Map readiness guard
+  // Map readiness (avoid setState-move before ready)
   bool _mapReady = false;
   LatLng? _pendingCenter;
   double? _pendingZoom;
+
+  // Search box controller
+  final _destCtrl = TextEditingController();
 
   // Data
   bool _loading = false;
   String? _error;
 
-  LatLng? _searchedDestination; // result of text search (for filtering)
-  List<DriverRoute> _allRoutes = []; // raw from DB
-  List<DriverRoute> _candidateRoutes = []; // after destination search
+  LatLng? _searchedDestination;
+  List<DriverRoute> _allRoutes = [];
+  List<DriverRoute> _candidateRoutes = [];
   DriverRoute? _selectedRoute;
-
   List<LatLng> _selectedRoutePoints = [];
 
-  // Passenger chosen points (snapped to route)
+  // Passenger-chosen points (snapped to route)
   LatLng? _pickup;
   LatLng? _dropoff;
 
-  // OSRM for chosen pickup→dropoff
+  // Computed OSRM segment from pickup → dropoff
   Polyline? _osrmSegment;
 
-  // which point the “Edit” button should change next
+  // Which point the next tap edits
   String _editTarget = 'auto'; // 'pickup' | 'dropoff' | 'auto'
 
   // Config
-  static const double _matchRadiusMeters = 600; // route near destination
+  static const double _matchRadiusMeters = 600;
 
-  // ---------- NEW: live user location ----------
+  // Live user location
   StreamSubscription<Position>? _posSub;
   LatLng? _me;
   double? _meAccuracy; // meters
@@ -86,50 +86,57 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
   @override
   void initState() {
     super.initState();
-    _primeRoutes();
-    _startLiveLocation(); // <-- NEW
+    _loadRoutes();
+    _startLiveLocation();
   }
 
   @override
   void dispose() {
-    _posSub?.cancel(); // <-- NEW
+    _posSub?.cancel();
     _destCtrl.dispose();
     super.dispose();
   }
 
-  /* ----------------------------- Data loading ----------------------------- */
+  /* ===================== Data Loading ===================== */
 
-  Future<void> _primeRoutes() async {
+  Future<void> _loadRoutes() async {
     try {
-      final data = await supabase
+      // Only show routes that are active, not locked, and with available seats.
+      final data = await _sb
           .from('driver_routes')
           .select(
-            'id, driver_id, route_mode, route_polyline, manual_polyline, name',
+            'id, driver_id, name, route_mode, route_polyline, manual_polyline, is_locked, capacity_available, is_active',
           )
-          .eq('is_active', true);
+          .eq('is_active', true)
+          .eq('is_locked', false)
+          .gt('capacity_available', 0);
+
       _allRoutes =
           (data as List)
               .map((m) => DriverRoute.fromMap(m as Map<String, dynamic>))
               .toList();
+
       if (mounted) setState(() {});
-    } catch (_) {
+    } catch (e) {
       // non-fatal; we’ll surface errors during search
+      if (mounted) {
+        setState(() => _error = 'Failed to load routes: $e');
+      }
     }
   }
 
-  /* ----------------------------- Map helpers ----------------------------- */
+  /* ===================== Map Helpers ===================== */
 
   void _safeMove(LatLng center, double zoom) {
-    if (!mounted) return;
-    if (_mapReady) {
-      _map.move(center, zoom);
-    } else {
+    if (!_mapReady) {
       _pendingCenter = center;
       _pendingZoom = zoom;
+      return;
     }
+    _map.move(center, zoom);
   }
 
-  // Decode whichever polyline is appropriate (manual > route if mode says so)
+  // Pick the effective encoded polyline: prefer the mode’s polyline, fallback to the other.
   List<LatLng> _decodeEffectivePolyline(DriverRoute r) {
     String? encoded;
     if (r.routeMode == 'manual') {
@@ -137,7 +144,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     } else if (r.routeMode == 'osrm') {
       encoded = r.routePolyline ?? r.manualPolyline;
     } else {
-      // missing mode: pick whichever is available
       encoded = r.routePolyline ?? r.manualPolyline;
     }
     if (encoded == null || encoded.isEmpty) return const [];
@@ -146,7 +152,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     return pts.map((p) => LatLng(p.latitude, p.longitude)).toList();
   }
 
-  // Meter distance using latlong2 Distance
   double _meters(LatLng a, LatLng b) => _distance.as(LengthUnit.Meter, a, b);
 
   bool _isPointNearPolyline(LatLng p, List<LatLng> polyline, double maxMeters) {
@@ -163,7 +168,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     return best <= maxMeters;
   }
 
-  // Approx perpendicular distance P→AB in meters
   double _distancePointToSegmentMeters(LatLng p, LatLng a, LatLng b) {
     final ax = a.longitude, ay = a.latitude;
     final bx = b.longitude, by = b.latitude;
@@ -218,21 +222,21 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     return best;
   }
 
-  /* ----------------------------- Live location ----------------------------- */
+  /* ===================== Live Location ===================== */
 
   Future<void> _startLiveLocation() async {
-    // Ask for permission
+    // Permission
     LocationPermission perm = await Geolocator.checkPermission();
     if (perm == LocationPermission.denied ||
         perm == LocationPermission.deniedForever) {
       perm = await Geolocator.requestPermission();
       if (perm == LocationPermission.denied ||
           perm == LocationPermission.deniedForever) {
-        return; // user declined; we just won't show the blue dot
+        return; // user declined; skip blue dot
       }
     }
 
-    // Quick seed from last known (fast)
+    // Seed from last known (fast)
     try {
       final last = await Geolocator.getLastKnownPosition();
       if (mounted && last != null) {
@@ -243,10 +247,10 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
       }
     } catch (_) {}
 
-    // Stream updates
+    // Subscribe
     const settings = LocationSettings(
       accuracy: LocationAccuracy.high,
-      distanceFilter: 5, // meters
+      distanceFilter: 5,
     );
 
     _posSub?.cancel();
@@ -272,10 +276,12 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
       );
       final here = LatLng(pos.latitude, pos.longitude);
       _safeMove(here, 15);
-      setState(() {
-        _me = here;
-        _meAccuracy = pos.accuracy;
-      });
+      if (mounted) {
+        setState(() {
+          _me = here;
+          _meAccuracy = pos.accuracy;
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -284,10 +290,11 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     }
   }
 
-  /* ----------------------------- Search flow ----------------------------- */
+  /* ===================== Search Flow ===================== */
 
   Future<void> _searchByAddress(String text) async {
     if (text.trim().isEmpty) return;
+
     setState(() {
       _loading = true;
       _error = null;
@@ -315,7 +322,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
       _searchedDestination = dest;
       _safeMove(dest, 14);
 
-      // Filter routes that pass near the searched destination
+      // Find routes that pass “near” the searched destination
       final matches = <DriverRoute>[];
       for (final r in _allRoutes) {
         final pts = _decodeEffectivePolyline(r);
@@ -325,18 +332,12 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
         }
       }
 
-      if (matches.isEmpty) {
-        setState(() {
-          _loading = false;
-          _candidateRoutes = [];
-          _error = 'No active routes pass near that destination.';
-        });
-        return;
-      }
-
       setState(() {
         _candidateRoutes = matches;
         _loading = false;
+        if (matches.isEmpty) {
+          _error = 'No active routes pass near that destination.';
+        }
       });
     } catch (e) {
       setState(() {
@@ -346,16 +347,16 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     }
   }
 
-  /* ----------------------------- Interactions ----------------------------- */
+  /* ===================== Interactions ===================== */
 
   void _selectRoute(DriverRoute r) {
     final pts = _decodeEffectivePolyline(r);
 
-    // If there was a searched destination, offer a default drop-off snapped to route
-    LatLng? newDrop =
-        _searchedDestination == null
-            ? null
-            : _snapToPolyline(_searchedDestination!, pts);
+    // If a destination was searched, default the drop-off near that
+    final snappedDrop =
+        (_searchedDestination != null && pts.length >= 2)
+            ? _snapToPolyline(_searchedDestination!, pts)
+            : null;
 
     setState(() {
       _selectedRoute = r;
@@ -364,68 +365,43 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
           (_pickup != null && pts.length >= 2)
               ? _snapToPolyline(_pickup!, pts)
               : null;
-      _dropoff = newDrop;
+      _dropoff = snappedDrop;
       _osrmSegment = null;
       _editTarget = 'auto';
     });
 
-    if (pts.isNotEmpty) {
-      _safeMove(pts.first, 13);
-    }
-
+    if (pts.isNotEmpty) _safeMove(pts.first, 13);
     _rebuildOsrmIfReady();
   }
 
-  void _onMapTap(TapPosition _, LatLng tap) async {
+  void _onMapTap(TapPosition _, LatLng tap) {
     if (_selectedRoutePoints.isEmpty) return;
 
     final snapped = _snapToPolyline(tap, _selectedRoutePoints);
 
-    if (_pickup == null) {
-      setState(() {
+    setState(() {
+      if (_pickup == null) {
         _pickup = snapped;
         _editTarget = 'dropoff';
-        _osrmSegment = null;
-      });
-      _rebuildOsrmIfReady();
-      return;
-    }
-
-    if (_dropoff == null) {
-      setState(() {
+      } else if (_dropoff == null) {
         _dropoff = snapped;
         _editTarget = 'auto';
-        _osrmSegment = null;
-      });
-      _rebuildOsrmIfReady();
-      return;
-    }
-
-    // both set
-    if (_editTarget == 'pickup') {
-      setState(() {
+      } else if (_editTarget == 'pickup') {
         _pickup = snapped;
         _editTarget = 'dropoff';
-        _osrmSegment = null;
-      });
-      _rebuildOsrmIfReady();
-    } else if (_editTarget == 'dropoff') {
-      setState(() {
+      } else if (_editTarget == 'dropoff') {
         _dropoff = snapped;
         _editTarget = 'pickup';
-        _osrmSegment = null;
-      });
-      _rebuildOsrmIfReady();
-    } else {
-      // auto: start a new selection
-      setState(() {
+      } else {
+        // restart cycle
         _pickup = snapped;
         _dropoff = null;
         _editTarget = 'dropoff';
-        _osrmSegment = null;
-      });
-      _rebuildOsrmIfReady();
-    }
+      }
+      _osrmSegment = null;
+    });
+
+    _rebuildOsrmIfReady();
   }
 
   Future<void> _rebuildOsrmIfReady() async {
@@ -458,29 +434,25 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     );
   }
 
-  /* ----------------------------- Build ----------------------------- */
+  /* ===================== Build ===================== */
 
   @override
   Widget build(BuildContext context) {
     final hasDest = _searchedDestination != null;
 
     return Scaffold(
-      extendBodyBehindAppBar: true, // 👈 important for translucency
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         flexibleSpace: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [
-                _purple.withOpacity(0.4), // top fade
-                Colors.transparent,
-              ],
+              colors: [_purple.withOpacity(0.4), Colors.transparent],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
           ),
         ),
         backgroundColor: const Color.fromARGB(3, 0, 0, 0),
-
         elevation: 0,
         centerTitle: true,
         leading: Padding(
@@ -497,7 +469,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
             ),
           ),
         ),
-
         title: const Text(
           'Find a Route',
           style: TextStyle(
@@ -506,14 +477,12 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
             fontSize: 18,
           ),
         ),
-
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(50),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: SizedBox(
               height: 44,
-              width: double.infinity,
               child: _SearchBar(
                 controller: _destCtrl,
                 onSubmit: _searchByAddress,
@@ -538,14 +507,12 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
 
       body: Stack(
         children: [
-          // Map
           Positioned.fill(
             child: FlutterMap(
               mapController: _map,
               options: MapOptions(
                 center: const LatLng(7.19, 125.45),
                 zoom: 12.5,
-                onTap: _onMapTap,
                 onMapReady: () {
                   if (!mounted) return;
                   setState(() => _mapReady = true);
@@ -558,6 +525,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     _pendingZoom = null;
                   }
                 },
+                onTap: _onMapTap,
               ),
               children: [
                 TileLayer(
@@ -565,7 +533,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                   userAgentPackageName: 'com.godavao.app',
                 ),
 
-                // Selected driver route polyline
+                // Driver route
                 if (_selectedRoutePoints.isNotEmpty)
                   PolylineLayer(
                     polylines: [
@@ -577,7 +545,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     ],
                   ),
 
-                // Passenger OSRM segment (pickup → dropoff)
+                // OSRM segment pickup → dropoff
                 if (_osrmSegment != null)
                   PolylineLayer(
                     polylines: [
@@ -589,7 +557,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     ],
                   ),
 
-                // Accuracy ring (NEW)
+                // Accuracy ring
                 if (_me != null && (_meAccuracy ?? 0) > 0)
                   CircleLayer(
                     circles: [
@@ -604,7 +572,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     ],
                   ),
 
-                // Live location blue dot (NEW)
+                // Blue dot
                 if (_me != null)
                   MarkerLayer(
                     markers: [
@@ -637,7 +605,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     ],
                   ),
 
-                // Optional: marker for the searched destination (as a hint)
+                // Searched destination hint
                 if (_searchedDestination != null)
                   MarkerLayer(
                     markers: [
@@ -654,7 +622,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     ],
                   ),
 
-                // Pickup marker
+                // Pickup
                 if (_pickup != null)
                   MarkerLayer(
                     markers: [
@@ -671,7 +639,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                     ],
                   ),
 
-                // Dropoff marker
+                // Dropoff
                 if (_dropoff != null)
                   MarkerLayer(
                     markers: [
@@ -691,7 +659,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
             ),
           ),
 
-          // Candidate routes carousel when destination is set
+          // Route carousel when a destination is set
           if (hasDest)
             SafeArea(
               child: Padding(
@@ -720,13 +688,10 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                             itemBuilder: (context, i) {
                               final r = _candidateRoutes[i];
                               final sel = r.id == _selectedRoute?.id;
-
-                              // ✅ use name if present, fallback to "Route N"
                               final label =
                                   (r.name != null && r.name!.trim().isNotEmpty)
                                       ? r.name!
                                       : 'Route ${i + 1}';
-
                               return _RouteChip(
                                 label: label,
                                 selected: sel,
@@ -738,6 +703,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
               ),
             ),
 
+          // Bottom controls
           BottomCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -808,7 +774,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                   const SizedBox(height: 12),
                   SizedBox(
                     height: 44,
-                    width: double.infinity,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor:
@@ -845,7 +810,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
   }
 }
 
-/* ---------------- Small UI widgets ---------------- */
+/* ===================== Small UI Widgets ===================== */
 
 class _SearchBar extends StatefulWidget {
   const _SearchBar({
@@ -919,17 +884,6 @@ class _SearchBarState extends State<_SearchBar> {
                 widget.onClear();
               },
             ),
-          // FilledButton(
-          //   onPressed: () => widget.onSubmit(widget.controller.text),
-          //   style: FilledButton.styleFrom(
-          //     backgroundColor: _purple,
-          //     padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
-          //     shape: RoundedRectangleBorder(
-          //       borderRadius: BorderRadius.circular(30),
-          //     ),
-          //   ),
-          //   child: const Text('Search'),
-          // ),
         ],
       ),
     );
@@ -976,21 +930,6 @@ class _RouteChip extends StatelessWidget {
         ),
       ),
       checkmarkColor: Colors.white,
-      avatar:
-          selected
-              ? Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: _purple.withOpacity(0.6),
-                      blurRadius: 12,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-              )
-              : null,
       onSelected: (_) => onTap(),
     );
   }
@@ -1112,7 +1051,7 @@ class BottomCard extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 🔹 Grab handle
+              // Grab handle
               Container(
                 width: 32,
                 height: 4,
@@ -1122,7 +1061,7 @@ class BottomCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              child, // 👈 custom content per screen
+              child,
             ],
           ),
         ),

@@ -7,9 +7,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:godavao/core/osrm_service.dart';
-import 'package:godavao/core/fare_service.dart'; // 👈 use new FareService
+import 'package:godavao/core/fare_service.dart';
 import 'package:godavao/features/payments/data/payment_service.dart';
-import 'package:godavao/features/payments/presentation/payment_status_chip.dart';
 import 'package:godavao/main.dart' show localNotify;
 
 class ConfirmRidePage extends StatefulWidget {
@@ -35,11 +34,10 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
 
-  // Fare engine + constants
+  // Fare engine + defaults (centralized)
   final _fareService = FareService(
     rules: const FareRules(
-      // tweak defaults here if needed
-      defaultPlatformFeeRate: 0.15, // 15% platform fee by default
+      defaultPlatformFeeRate: 0.15, // 15%
       carpoolDiscountByPax: {2: 0.06, 3: 0.12, 4: 0.20, 5: 0.25},
     ),
   );
@@ -58,8 +56,11 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   int? _capacityTotal;
   int? _capacityAvailable;
 
-  // Carpool
-  int _carpoolSize = 1; // unique riders sharing (includes me)
+  // Pakyaw (whole vehicle)
+  bool _pakyaw = false;
+
+  // Carpool size (unique riders on this route incl. current user)
+  int _carpoolSize = 1;
 
   // Fare result
   FareBreakdown? _fare;
@@ -70,6 +71,8 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     _init();
   }
 
+  /* ===================== Init Flow ===================== */
+
   Future<void> _init() async {
     setState(() {
       _loading = true;
@@ -77,9 +80,10 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     });
 
     try {
+      // Load map metrics + route capacity in parallel
       await Future.wait([_loadRouteGeometryAndMetrics(), _loadCapacity()]);
 
-      // After we know route capacity & have metrics, fetch carpool size and price it
+      // After both are known, compute carpool size + fare
       await _refreshCarpoolAndFare();
     } catch (e) {
       _error ??= 'Something went wrong.';
@@ -88,7 +92,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     }
   }
 
-  /* ---------------- OSRM + metrics ---------------- */
+  /* ===================== OSRM + Metrics ===================== */
 
   Future<void> _loadRouteGeometryAndMetrics() async {
     try {
@@ -111,7 +115,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         _durationMin = double.parse(mins.toStringAsFixed(0));
       });
     } catch (_) {
-      // Fallback if OSRM is unavailable
+      // Fallback if OSRM is down – straight line estimate
       final km = _haversineKm(widget.pickup, widget.destination);
       const avgKmh = 22.0;
       final mins = max((km / avgKmh) * 60.0, 1.0);
@@ -144,7 +148,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     return r * c;
   }
 
-  /* ---------------- Capacity ---------------- */
+  /* ===================== Capacity ===================== */
 
   Future<void> _loadCapacity() async {
     try {
@@ -155,13 +159,16 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
               .eq('id', widget.routeId)
               .single();
 
+      final total = (route['capacity_total'] as num?)?.toInt();
+      final avail = (route['capacity_available'] as num?)?.toInt();
+
       setState(() {
-        _capacityTotal = (route['capacity_total'] as num?)?.toInt();
-        _capacityAvailable = (route['capacity_available'] as num?)?.toInt();
-        // clamp
-        final avail = _capacityAvailable ?? 1;
-        if (_seatsRequested > avail) {
-          _seatsRequested = avail.clamp(1, 6);
+        _capacityTotal = total;
+        _capacityAvailable = avail;
+        // Clamp seats to available immediately
+        final a = _capacityAvailable ?? 1;
+        if (_seatsRequested > a) {
+          _seatsRequested = a.clamp(1, 6);
         }
       });
     } on PostgrestException catch (e) {
@@ -171,27 +178,40 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     }
   }
 
-  /* ---------------- Carpool + Fare ---------------- */
+  /* ===================== Pakyaw helpers ===================== */
+
+  /// Seats we actually reserve:
+  /// - Pakyaw = reserve all available seats (capped at 6 for UI parity)
+  /// - Normal = requested seats
+  int get _effectiveSeats {
+    if (_pakyaw) {
+      return (_capacityAvailable ?? 1).clamp(1, 6);
+    }
+    return _seatsRequested;
+  }
+
+  /* ===================== Carpool + Fare ===================== */
 
   Future<void> _refreshCarpoolAndFare() async {
     final user = _sb.auth.currentUser;
     if (user == null) return;
 
-    // 1) Fetch unique passenger count on this route (pending/accepted/en_route)
-    final pax = await _fetchCarpoolSize(
-      sb: _sb,
-      driverRouteId: widget.routeId,
-      currentPassengerId: user.id,
-    );
+    // Pakyaw forces single party (no carpool discounts)
+    final pax =
+        _pakyaw
+            ? 1
+            : await _fetchCarpoolSize(
+              sb: _sb,
+              driverRouteId: widget.routeId,
+              currentPassengerId: user.id,
+            );
 
-    // 2) Compute fare using the new engine (carpool discount applies here)
     final fb = _fareService.estimateForDistance(
       distanceKm: _distanceKm,
       durationMin: _durationMin,
-      seats: _seatsRequested,
+      seats: _effectiveSeats,
       carpoolPassengers: pax,
-      // platform fee & surge use defaults; pass explicitly if needed:
-      // platformFeeRate: 0.15, surgeMultiplier: 1.0,
+      // Optional overrides: platformFeeRate / surgeMultiplier
     );
 
     if (!mounted) return;
@@ -217,11 +237,11 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       final pid = r['passenger_id'] as String?;
       if (pid != null && pid.isNotEmpty) set.add(pid);
     }
-    set.add(currentPassengerId); // include the current requester
+    set.add(currentPassengerId); // include the requester
     return set.length;
   }
 
-  /* ---------------- Confirm ride ---------------- */
+  /* ===================== Confirm Ride ===================== */
 
   Future<void> _confirmRide() async {
     setState(() => _loading = true);
@@ -234,8 +254,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       return;
     }
 
+    final seatsToReserve = _effectiveSeats;
     final available = _capacityAvailable ?? 0;
-    if (_seatsRequested > available) {
+    if (seatsToReserve > available) {
       _snack('Not enough seats available for your request.');
       setState(() => _loading = false);
       return;
@@ -244,7 +265,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     final amount = _fare?.total ?? 0;
 
     try {
-      // 1) Upsert ride_requests (idempotent via client_token)
+      // 1) Upsert ride request (idempotent via client_token)
       final req =
           await _sb
               .from('ride_requests')
@@ -258,27 +279,29 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 'fare': amount,
                 'driver_route_id': widget.routeId,
                 'status': 'pending',
-                'requested_seats': _seatsRequested,
+                'requested_seats': seatsToReserve,
+                'payment_method': 'gcash',
+                'is_pakyaw': _pakyaw,
               }, onConflict: 'client_token')
               .select('id')
               .single();
 
-      final rideReqId = req['id'] as String;
+      final rideReqId = (req['id'] as String?) ?? '';
       if (rideReqId.isEmpty) {
         throw 'Failed to create ride request';
       }
 
-      // 2) Atomic seat allocation via RPC
+      // 2) Allocate seats atomically (server-side prevents overbooking)
       await _sb.rpc(
         'allocate_seats',
         params: {
           'p_driver_route_id': widget.routeId,
           'p_ride_request_id': rideReqId,
-          'p_seats_requested': _seatsRequested,
+          'p_seats_requested': seatsToReserve,
         },
       );
 
-      // 3) Payment hold (GCash sim)
+      // 3) Create/Upsert a payment hold
       final payments = PaymentsService(_sb);
       await payments.upsertOnHoldSafe(
         rideId: rideReqId,
@@ -288,7 +311,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         payeeUserId: widget.driverId,
       );
 
-      // 4) Optional: mark payment_method
+      // 4) Mark payment method (best-effort)
       try {
         await _sb
             .from('ride_requests')
@@ -296,7 +319,12 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
             .eq('id', rideReqId);
       } catch (_) {}
 
-      await _showNotification('Ride Requested', 'Seats reserved & payment .');
+      await _showNotification(
+        'Ride Requested',
+        _pakyaw
+            ? 'Whole vehicle reserved & payment hold placed.'
+            : 'Seats reserved & payment hold placed.',
+      );
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/passenger_rides');
     } on PostgrestException catch (e) {
@@ -310,7 +338,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     }
   }
 
-  /* ---------------- Utilities ---------------- */
+  /* ===================== Utilities ===================== */
 
   Future<void> _showNotification(String title, String body) async {
     const android = AndroidNotificationDetails(
@@ -339,391 +367,575 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     return max(1, min(6, avail));
   }
 
-  /* ---------------- UI ---------------- */
+  // Quick carpool price preview for 1..N passengers (hidden in Pakyaw mode)
+  List<_FarePreview> _buildCarpoolPreview() {
+    final cap = _capacityTotal ?? 4;
+    final maxPax = cap.clamp(1, 5); // show up to 5 rows to keep UI compact
+    final list = <_FarePreview>[];
+    for (int pax = 1; pax <= maxPax; pax++) {
+      final fb = _fareService.estimateForDistance(
+        distanceKm: _distanceKm,
+        durationMin: _durationMin,
+        seats: _seatsRequested,
+        carpoolPassengers: pax,
+      );
+      final perSeat =
+          _seatsRequested > 0 ? (fb.total / _seatsRequested) : fb.total;
+      list.add(_FarePreview(pax: pax, total: fb.total, perSeat: perSeat));
+    }
+    return list;
+  }
+
+  Future<void> _onChangeSeats(int v) async {
+    if (v == _seatsRequested) return;
+    setState(() => _seatsRequested = v);
+    await _refreshCarpoolAndFare();
+  }
+
+  /* ===================== UI ===================== */
 
   @override
   Widget build(BuildContext context) {
+    final mapHeight = 240.0;
+    final fareTotal = _fare?.total ?? 0.0;
+    final seatsDenominator = _effectiveSeats > 0 ? _effectiveSeats : 1;
+    final perSeat = fareTotal / seatsDenominator;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Confirm Ride'),
+        backgroundColor: _purple,
+        foregroundColor: Colors.white,
+      ),
+      body: Column(
+        children: [
+          // Map
+          SizedBox(height: mapHeight, child: _buildMap()),
+
+          if (_error != null)
+            Container(
+              width: double.infinity,
+              color: Colors.amber.shade100,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Text(
+                _error!,
+                style: TextStyle(color: Colors.amber.shade900),
+              ),
+            ),
+
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () async {
+                await _loadRouteGeometryAndMetrics();
+                await _loadCapacity();
+                await _refreshCarpoolAndFare();
+              },
+              child: ListView(
+                padding: const EdgeInsets.all(12),
+                children: [
+                  _InfoRow(
+                    icon: Icons.route_outlined,
+                    title: '${_distanceKm.toStringAsFixed(2)} km',
+                    subtitle: '${_durationMin.toStringAsFixed(0)} min (est.)',
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Pakyaw toggle
+                  _pakyawCard(),
+                  const SizedBox(height: 8),
+
+                  // Seats card (hidden when pakyaw)
+                  if (!_pakyaw) _seatsCard(),
+                  if (_pakyaw) _pakyawSeatsSummaryCard(),
+                  const SizedBox(height: 8),
+
+                  _fareCard(fareTotal, perSeat),
+                  const SizedBox(height: 8),
+
+                  // Carpool preview only when not pakyaw
+                  if (!_pakyaw) _carpoolCard(),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+          child: SizedBox(
+            height: 52,
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.check_circle_outline),
+              label:
+                  _loading
+                      ? const Text('Processing...')
+                      : Text(
+                        _pakyaw
+                            ? 'Confirm Pakyaw • ₱${fareTotal.toStringAsFixed(2)}'
+                            : 'Confirm • ₱${fareTotal.toStringAsFixed(2)}',
+                      ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _purple,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                textStyle: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              onPressed:
+                  (_loading || _fare == null || (_capacityAvailable ?? 0) <= 0)
+                      ? null
+                      : _confirmRide,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMap() {
+    final bounds = LatLngBounds.fromPoints([widget.pickup, widget.destination]);
     final center = LatLng(
       (widget.pickup.latitude + widget.destination.latitude) / 2,
       (widget.pickup.longitude + widget.destination.longitude) / 2,
     );
 
-    final capAvail = _capacityAvailable ?? 0;
-    final capTotal = _capacityTotal ?? 0;
-    final notEnough = _seatsRequested > capAvail;
-
-    final amount = _fare?.total ?? 0.0;
-
-    return Scaffold(
-      extendBodyBehindAppBar: true, // allows content behind AppBar
-
-      appBar: AppBar(
-        flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                _purple.withOpacity(0.9), // strongest at very top
-                _purple.withOpacity(0.6), // still visible mid-top
-                _purple.withOpacity(0.4), // softer fade
-                const Color.fromARGB(11, 0, 0, 0), // fully gone bottom
-              ],
-              stops: const [0.0, 0.15, 0.35, 1.0], // control fade smoothness
-            ),
+    return AbsorbPointer(
+      absorbing: true,
+      child: FlutterMap(
+        options: MapOptions(
+          initialCenter: center,
+          initialZoom: 12,
+          bounds: bounds,
+          interactionOptions: const InteractionOptions(
+            flags: InteractiveFlag.none,
           ),
         ),
-
-        backgroundColor: const Color.fromARGB(5, 0, 0, 0),
-        elevation: 0,
-        scrolledUnderElevation: 0, // <-- prevent dark overlay in Material 3
-        centerTitle: true,
-        automaticallyImplyLeading: false, // we’re customizing buttons
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 12),
-          child: CircleAvatar(
-            backgroundColor: Colors.white.withOpacity(0.9),
-            child: IconButton(
-              icon: const Icon(
-                Icons.arrow_back_ios_new,
-                color: _purple,
-                size: 18,
-              ),
-              onPressed: () => Navigator.pop(context),
-            ),
+        children: [
+          TileLayer(
+            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: 'com.godavao.app',
           ),
-        ),
-        title: Column(
-          children: const [
-            Text(
-              'Confirm Your Ride',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-                fontSize: 18,
-              ),
-            ),
-            SizedBox(height: 2),
-            Text(
-              'Review details before booking',
-              style: TextStyle(fontSize: 12, color: Colors.white),
+          if (_routePolyline != null)
+            PolylineLayer(polylines: [_routePolyline!]),
+          MarkerLayer(
+            markers: [
+              _marker(widget.pickup, Icons.radio_button_checked, Colors.green),
+              _marker(widget.destination, Icons.place, Colors.red),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Marker _marker(LatLng p, IconData icon, Color color) {
+    return Marker(
+      point: p,
+      width: 36,
+      height: 36,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.12),
+              blurRadius: 6,
+              offset: const Offset(0, 3),
             ),
           ],
         ),
+        alignment: Alignment.center,
+        child: Icon(icon, color: color, size: 20),
+      ),
+    );
+  }
 
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: CircleAvatar(
-              backgroundColor: Colors.white.withOpacity(0.9),
-              child: IconButton(
-                icon: const Icon(Icons.info_outline, color: _purple),
-                onPressed: () {},
-              ),
-            ),
+  /* ===================== Cards ===================== */
+
+  Widget _pakyawCard() {
+    final capAvail = _capacityAvailable ?? 0;
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardTitle(
+            icon: Icons.local_taxi_outlined,
+            text: 'Pakyaw (Whole Vehicle)',
           ),
+          const SizedBox(height: 6),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Reserve all available seats'),
+            subtitle: Text(
+              capAvail > 0
+                  ? 'Will reserve $capAvail seat(s) on this route.'
+                  : 'No seats available.',
+            ),
+            value: _pakyaw,
+            onChanged:
+                (capAvail <= 0)
+                    ? null
+                    : (v) async {
+                      setState(() => _pakyaw = v);
+                      await _refreshCarpoolAndFare();
+                    },
+          ),
+          if (_pakyaw)
+            Text(
+              'No sharing. Carpool discounts disabled.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
         ],
       ),
+    );
+  }
 
-      body: Stack(
+  Widget _pakyawSeatsSummaryCard() {
+    final capAvail = _capacityAvailable ?? 0;
+    final capTotal = _capacityTotal ?? 0;
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Map background with route
-          Positioned.fill(
-            child: FlutterMap(
-              options: MapOptions(initialCenter: center, initialZoom: 15),
-              children: [
-                TileLayer(
-                  urlTemplate:
-                      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  subdomains: const ['a', 'b', 'c'],
+          const _CardTitle(icon: Icons.event_seat, text: 'Seats'),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Pakyaw: reserving all available seats',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+              Text(
+                'Available: $capAvail / $capTotal',
+                style: TextStyle(
+                  fontSize: 13,
+                  color:
+                      capAvail > 0
+                          ? Colors.green.shade700
+                          : Colors.red.shade700,
                 ),
-                if (_routePolyline != null)
-                  PolylineLayer(polylines: [_routePolyline!]),
-                MarkerLayer(
-                  markers: [
-                    Marker(
-                      point: widget.pickup,
-                      width: 40,
-                      height: 40,
-                      child: const Icon(
-                        Icons.location_pin,
-                        color: Colors.green,
-                        size: 30,
-                      ),
-                    ),
-                    Marker(
-                      point: widget.destination,
-                      width: 40,
-                      height: 40,
-                      child: const Icon(
-                        Icons.pin_drop,
-                        color: Colors.red,
-                        size: 30,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          // Bottom summary card
-          BottomCard(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_error != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(
-                      _error!,
-                      style: TextStyle(color: Colors.orange.shade700),
-                    ),
-                  ),
-
-                // Distance + time
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.directions_car,
-                          size: 18,
-                          color: _purple,
-                        ),
-                        const SizedBox(width: 6),
-                        Text('${_distanceKm.toStringAsFixed(2)} km'),
-                      ],
-                    ),
-                    Row(
-                      children: [
-                        const Icon(Icons.access_time, size: 18, color: _purple),
-                        const SizedBox(width: 6),
-                        Text('${_durationMin.toStringAsFixed(0)} min'),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-
-                // Fare line
-                Row(
-                  children: [
-                    const Text(
-                      'Estimated Fare: ',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 250),
-                      child: Text(
-                        '₱${amount.toStringAsFixed(0)}',
-                        key: ValueKey(amount),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: _purple,
-                          fontSize: 18,
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    Chip(
-                      label: Row(
-                        children: const [
-                          Icon(
-                            Icons.account_balance_wallet,
-                            size: 16,
-                            color: Colors.white,
-                          ),
-                          SizedBox(width: 4),
-                          Text("GCash"),
-                        ],
-                      ),
-                      backgroundColor: _purple,
-                      labelStyle: const TextStyle(color: Colors.white),
-                    ),
-                  ],
-                ),
-
-                if (_fare != null) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: _purple.withOpacity(0.05),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      'Carpool: $_carpoolSize rider(s) '
-                      '• Discount: ${(100 * _fare!.carpoolDiscountPct).toStringAsFixed(0)}% '
-                      '• Platform fee: ₱${_fare!.platformFee.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.black54,
-                      ),
-                    ),
-                  ),
-                ],
-
-                const SizedBox(height: 14),
-
-                // Seats stepper
-                Row(
-                  children: [
-                    const Text('Passengers'),
-                    const SizedBox(width: 12),
-                    _Stepper(
-                      value: _seatsRequested,
-                      min: 1,
-                      max: _maxSelectableSeats,
-                      onChanged:
-                          _loading
-                              ? null
-                              : (v) async {
-                                setState(() => _seatsRequested = v);
-                                await _refreshCarpoolAndFare();
-                              },
-                    ),
-                    const Spacer(),
-                  ],
-                ),
-                const SizedBox(height: 6),
-
-                // Capacity bar
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    LinearProgressIndicator(
-                      value: capTotal > 0 ? capAvail / capTotal : 0,
-                      color: _purple,
-                      backgroundColor: Colors.grey.shade200,
-                      minHeight: 8,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '$capAvail of $capTotal seats left',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                    if (notEnough)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 4),
-                        child: Text(
-                          'Not enough seats available',
-                          style: TextStyle(color: Colors.red, fontSize: 12),
-                        ),
-                      ),
-                  ],
-                ),
-
-                const SizedBox(height: 16),
-
-                // CTA button
-                SizedBox(
-                  height: 52,
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed:
-                        (_loading || notEnough || _fare == null)
-                            ? null
-                            : _confirmRide,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _purple,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    child:
-                        _loading
-                            ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                            : Text(
-                              'Confirm Ride ₱${amount.toStringAsFixed(0)}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 16,
-                              ),
-                            ),
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
+
+  Widget _seatsCard() {
+    final capAvail = _capacityAvailable ?? 0;
+    final capTotal = _capacityTotal ?? 0;
+
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardTitle(icon: Icons.event_seat, text: 'Seats'),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Requested: $_seatsRequested',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Text(
+                'Available: $capAvail / $capTotal',
+                style: TextStyle(
+                  fontSize: 13,
+                  color:
+                      capAvail > 0
+                          ? Colors.green.shade700
+                          : Colors.red.shade700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _SeatStepper(
+            value: _seatsRequested,
+            min: 1,
+            max: _maxSelectableSeats,
+            onChanged: (v) => _onChangeSeats(v),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Tip: carpooling makes it cheaper per seat.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _fareCard(double fareTotal, double perSeat) {
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardTitle(icon: Icons.receipt_long, text: 'Fare'),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Total (₱)', style: TextStyle(color: Colors.grey.shade700)),
+              Text(
+                '₱${fareTotal.toStringAsFixed(2)}',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (!_pakyaw)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Per seat (₱)',
+                  style: TextStyle(color: Colors.grey.shade700),
+                ),
+                Text(
+                  '₱${perSeat.toStringAsFixed(2)}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+          const SizedBox(height: 8),
+          Wrap(
+            runSpacing: 6,
+            spacing: 8,
+            children: [
+              if (_pakyaw)
+                const _ChipIcon(
+                  icon: Icons.local_taxi_outlined,
+                  label: 'Pakyaw',
+                ),
+              _ChipIcon(
+                icon: Icons.group_outlined,
+                label: 'Carpool size: $_carpoolSize',
+              ),
+              _ChipIcon(
+                icon: Icons.event_seat_outlined,
+                label: 'Seats: ${_pakyaw ? _effectiveSeats : _seatsRequested}',
+              ),
+              _ChipIcon(
+                icon: Icons.route_outlined,
+                label: '${_distanceKm.toStringAsFixed(2)} km',
+              ),
+              _ChipIcon(
+                icon: Icons.schedule_outlined,
+                label: '${_durationMin.toStringAsFixed(0)} min',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _carpoolCard() {
+    final rows = _buildCarpoolPreview();
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardTitle(
+            icon: Icons.ssid_chart_outlined,
+            text: 'Carpool savings preview',
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'See how price changes as more riders share the trip.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 10),
+          Table(
+            columnWidths: const {
+              0: FlexColumnWidth(1.2),
+              1: FlexColumnWidth(1.2),
+              2: FlexColumnWidth(1.2),
+            },
+            defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+            children: [
+              _tableHeader(['Riders', 'Total (₱)', 'Per seat (₱)']),
+              ...rows.map(
+                (r) => _tableRow([
+                  '${r.pax}',
+                  '₱${r.total.toStringAsFixed(2)}',
+                  '₱${r.perSeat.toStringAsFixed(2)}',
+                ]),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  TableRow _tableHeader(List<String> cols) => TableRow(
+    decoration: BoxDecoration(color: Colors.grey.shade100),
+    children:
+        cols
+            .map(
+              (c) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                child: Text(
+                  c,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            )
+            .toList(),
+  );
+
+  TableRow _tableRow(List<String> cols) => TableRow(
+    children:
+        cols
+            .map(
+              (c) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                child: Text(c, style: const TextStyle(fontSize: 13)),
+              ),
+            )
+            .toList(),
+  );
 }
 
-class BottomCard extends StatelessWidget {
+/* ===================== Small UI helpers ===================== */
+
+class _Card extends StatelessWidget {
   final Widget child;
-  const BottomCard({super.key, required this.child});
+  const _Card({required this.child});
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: SafeArea(
-        top: false,
-        child: Container(
-          margin: const EdgeInsets.all(8),
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 12,
-                offset: const Offset(0, -4),
-              ),
-            ],
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 🔹 Grab handle
-              Container(
-                width: 32,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 10),
-                decoration: BoxDecoration(
-                  color: Colors.black26,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              child, // 👈 custom content per screen
-            ],
-          ),
+        ],
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _CardTitle extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _CardTitle({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, color: const Color(0xFF6A27F7)),
+        const SizedBox(width: 8),
+        Text(
+          text,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
         ),
+      ],
+    );
+  }
+}
+
+class _ChipIcon extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _ChipIcon({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: Colors.grey.shade700),
+          const SizedBox(width: 6),
+          Text(label, style: const TextStyle(fontSize: 12)),
+        ],
       ),
     );
   }
 }
 
-/// Small reusable stepper control (— 1 2 3 +)
-class _Stepper extends StatelessWidget {
+class _InfoRow extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  const _InfoRow({required this.icon, required this.title, this.subtitle});
+
+  @override
+  Widget build(BuildContext context) {
+    return _Card(
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: const Color(0xFF6A27F7).withOpacity(0.1),
+            child: Icon(icon, color: const Color(0xFF6A27F7)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (subtitle != null)
+                  Text(
+                    subtitle!,
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SeatStepper extends StatelessWidget {
   final int value;
   final int min;
   final int max;
-  final ValueChanged<int>? onChanged;
-
-  const _Stepper({
+  final ValueChanged<int> onChanged;
+  const _SeatStepper({
     required this.value,
     required this.min,
     required this.max,
-    this.onChanged,
+    required this.onChanged,
   });
 
   @override
@@ -732,22 +944,61 @@ class _Stepper extends StatelessWidget {
     final canInc = value < max;
     return Row(
       children: [
-        IconButton(
-          icon: const Icon(Icons.remove_circle_outline),
-          onPressed:
-              (onChanged == null || !canDec)
-                  ? null
-                  : () => onChanged!(value - 1),
+        _RoundIconBtn(
+          icon: Icons.remove,
+          onTap: canDec ? () => onChanged(value - 1) : null,
         ),
-        Text('$value', style: const TextStyle(fontWeight: FontWeight.w700)),
-        IconButton(
-          icon: const Icon(Icons.add_circle_outline),
-          onPressed:
-              (onChanged == null || !canInc)
-                  ? null
-                  : () => onChanged!(value + 1),
+        const SizedBox(width: 12),
+        Text(
+          '$value',
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(width: 12),
+        _RoundIconBtn(
+          icon: Icons.add,
+          onTap: canInc ? () => onChanged(value + 1) : null,
+        ),
+        const Spacer(),
+        Text(
+          'Max: $max',
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
         ),
       ],
     );
   }
+}
+
+class _RoundIconBtn extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback? onTap;
+  const _RoundIconBtn({required this.icon, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkResponse(
+      onTap: onTap,
+      radius: 22,
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: onTap == null ? Colors.grey.shade200 : const Color(0xFF6A27F7),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          icon,
+          color: onTap == null ? Colors.grey.shade500 : Colors.white,
+          size: 20,
+        ),
+      ),
+    );
+  }
+}
+
+class _FarePreview {
+  final int pax;
+  final double total;
+  final double perSeat;
+  _FarePreview({required this.pax, required this.total, required this.perSeat});
 }
