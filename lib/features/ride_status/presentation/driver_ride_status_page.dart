@@ -269,7 +269,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
             event: PostgresChangeEvent.update,
             callback: (payload) async {
               final newRec = payload.newRecord;
-              if (newRec == null) return;
               if (newRec['id']?.toString() != widget.rideId) return;
 
               final updated = Map<String, dynamic>.from(newRec);
@@ -304,7 +303,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
             event: PostgresChangeEvent.insert,
             callback: (p) {
               final r = p.newRecord;
-              if (r == null) return;
               if (r['ride_id']?.toString() == widget.rideId &&
                   r['actor']?.toString() == actor) {
                 _onLiveRow(actor, r);
@@ -317,7 +315,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
             event: PostgresChangeEvent.update,
             callback: (p) {
               final r = p.newRecord;
-              if (r == null) return;
               if (r['ride_id']?.toString() == widget.rideId &&
                   r['actor']?.toString() == actor) {
                 _onLiveRow(actor, r);

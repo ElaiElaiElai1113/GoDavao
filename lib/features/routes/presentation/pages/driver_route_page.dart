@@ -194,8 +194,9 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
 
   void _toggleFollow() {
     setState(() => _followMe = !_followMe);
-    if (_followMe && _myPos != null)
+    if (_followMe && _myPos != null) {
       _map.move(_myPos!, math.max(_map.camera.zoom, 15));
+    }
   }
 
   void _centerOnMe() {

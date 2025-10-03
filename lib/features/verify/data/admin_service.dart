@@ -61,7 +61,7 @@ class AdminVerificationService {
             .select('*, users:users(id, role, verification_status)')
             .eq('id', requestId)
             .maybeSingle();
-    return row as Map<String, dynamic>?;
+    return row;
   }
 
   // -------------------- Actions (via RPC) --------------------

@@ -218,12 +218,10 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
           .inFilter('ride_id', ids.toList());
 
       final rated =
-          rows is List
-              ? rows
-                  .map((e) => (e as Map)['ride_id']?.toString())
-                  .whereType<String>()
-                  .toSet()
-              : <String>{};
+          rows
+              .map((e) => (e as Map)['ride_id']?.toString())
+              .whereType<String>()
+              .toSet();
 
       if (!mounted) return;
       setState(() {
@@ -558,7 +556,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                   label: const Text('Rate your driver'),
                   onPressed: () async {
                     final me = sb.auth.currentUser?.id;
-                    if (me == null || driverId == null) return;
+                    if (me == null) return;
                     await showModalBottomSheet(
                       context: context,
                       isScrollControlled: true,

@@ -146,8 +146,9 @@ class LivePublisher {
 
   bool _shouldSend(Position pos) {
     if (_lastSentAt != null &&
-        DateTime.now().difference(_lastSentAt!) < minPeriod)
+        DateTime.now().difference(_lastSentAt!) < minPeriod) {
       return false;
+    }
     if (_lastPos == null) return true;
 
     final moved = _haversine(

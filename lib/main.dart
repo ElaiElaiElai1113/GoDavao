@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:godavao/features/profile/presentation/profile_page.dart';
-import 'package:godavao/features/vehicles/data/vehicle.dart';
 import 'package:godavao/features/vehicles/presentation/vehicles_page.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
