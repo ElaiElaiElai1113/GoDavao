@@ -2,8 +2,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:godavao/features/payments/data/payment_service.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 class GcashProofSheet extends StatefulWidget {
   final String rideId;
@@ -51,8 +49,6 @@ class _GcashProofSheetState extends State<GcashProofSheet> {
     }
     setState(() => _loading = true);
     try {
-      final svc = PaymentsService(Supabase.instance.client);
-
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
