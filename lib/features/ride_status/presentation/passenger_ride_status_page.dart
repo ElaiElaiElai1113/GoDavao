@@ -17,6 +17,9 @@ import 'package:godavao/features/payments/presentation/payment_status_chip.dart'
 import 'package:godavao/features/live_tracking/data/live_publisher.dart';
 import 'package:godavao/features/live_tracking/data/live_subscriber.dart';
 
+// Fare calc
+import 'package:godavao/core/fare_service.dart';
+
 class PassengerRideStatusPage extends StatefulWidget {
   final String rideId;
   const PassengerRideStatusPage({super.key, required this.rideId});
@@ -26,7 +29,8 @@ class PassengerRideStatusPage extends StatefulWidget {
       _PassengerRideStatusPageState();
 }
 
-class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
+class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
+    with WidgetsBindingObserver {
   final _sb = Supabase.instance.client;
   final _map = MapController();
 
@@ -51,22 +55,49 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
   LatLng? _driverLive;
   LatLng? _myLive;
 
+  // camera / UX
+  bool _didFitOnce = false;
+
+  // fare
+  final FareService _fareService = FareService();
+  FareBreakdown? _fareBx;
+  bool _estimatingFare = false;
+  double _platformFeeRate = 0.0;
+  RealtimeChannel? _feeChannel;
+
   static const _bg = Color(0xFFF7F7FB);
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _bootstrap();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _rideReqSub?.cancel();
     _rideMatchSub?.cancel();
     _driverSub?.dispose();
     _selfSub?.dispose();
     _publisher?.stop();
+    if (_feeChannel != null) _sb.removeChannel(_feeChannel!);
     super.dispose();
+  }
+
+  /* ───────────────────────── Lifecycle ───────────────────────── */
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Only publish passenger location while the app is foregrounded & ride active
+    if (state == AppLifecycleState.resumed) {
+      _syncPassengerPublisherToStatus();
+    } else if (state == AppLifecycleState.paused) {
+      if (!(_status == 'accepted' || _status == 'en_route')) {
+        _publisher?.stop();
+      }
+    }
   }
 
   /* ───────────────────────── Bootstrap ───────────────────────── */
@@ -75,14 +106,22 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     setState(() {
       _loading = true;
       _error = null;
+      _didFitOnce = false;
     });
 
     try {
-      await Future.wait([_loadRideComposite(), _loadPayment(), _loadMatchId()]);
+      await Future.wait([
+        _loadRideComposite(),
+        _loadPayment(),
+        _loadMatchId(),
+        _loadPlatformFeeRate(),
+      ]);
+      _subscribePlatformFee();
       _watchParents();
       _syncPassengerPublisherToStatus();
       _startDriverSubscriber();
       _startSelfSubscriber();
+      await _estimateFare();
       await _maybePromptRatingIfCompleted();
     } catch (e) {
       if (!mounted) return;
@@ -135,8 +174,9 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
           await _loadPayment();
           await _loadMatchId();
           _syncPassengerPublisherToStatus();
+          await _estimateFare();
           await _maybePromptRatingIfCompleted();
-          setState(() {});
+          if (mounted) setState(() {});
         });
 
     _rideMatchSub?.cancel();
@@ -149,9 +189,106 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
           await _loadPayment();
           await _loadMatchId();
           _syncPassengerPublisherToStatus();
+          await _estimateFare();
           await _maybePromptRatingIfCompleted();
-          setState(() {});
+          if (mounted) setState(() {});
         });
+  }
+
+  /* ───────────────────── Platform fee + Fare ─────────────────── */
+
+  Future<void> _loadPlatformFeeRate() async {
+    try {
+      final row =
+          await _sb
+              .from('app_settings')
+              .select('key, value, value_num')
+              .eq('key', 'platform_fee_rate')
+              .maybeSingle();
+
+      final num? n = (row?['value_num'] as num?) ?? (row?['value'] as num?);
+      final parsed =
+          n?.toDouble() ?? double.tryParse(row?['value']?.toString() ?? '');
+      if (parsed != null && parsed >= 0 && parsed <= 1) {
+        if (!mounted) return;
+        setState(() => _platformFeeRate = parsed);
+      }
+    } catch (_) {
+      // keep default
+    }
+  }
+
+  void _subscribePlatformFee() {
+    if (_feeChannel != null) return;
+    _feeChannel =
+        _sb.channel('app_settings:platform_fee_rate:view')
+          ..onPostgresChanges(
+            schema: 'public',
+            table: 'app_settings',
+            event: PostgresChangeEvent.insert,
+            callback: (p) {
+              final rec = p.newRecord as Map?;
+              if (rec?['key']?.toString() != 'platform_fee_rate') return;
+              final num? n =
+                  (rec?['value_num'] as num?) ?? (rec?['value'] as num?);
+              final parsed =
+                  n?.toDouble() ??
+                  double.tryParse(rec?['value']?.toString() ?? '');
+              if (parsed != null && parsed >= 0 && parsed <= 1) {
+                if (!mounted) return;
+                setState(() => _platformFeeRate = parsed);
+                _estimateFare();
+              }
+            },
+          )
+          ..onPostgresChanges(
+            schema: 'public',
+            table: 'app_settings',
+            event: PostgresChangeEvent.update,
+            callback: (p) {
+              final rec = p.newRecord as Map?;
+              if (rec?['key']?.toString() != 'platform_fee_rate') return;
+              final num? n =
+                  (rec?['value_num'] as num?) ?? (rec?['value'] as num?);
+              final parsed =
+                  n?.toDouble() ??
+                  double.tryParse(rec?['value']?.toString() ?? '');
+              if (parsed != null && parsed >= 0 && parsed <= 1) {
+                if (!mounted) return;
+                setState(() => _platformFeeRate = parsed);
+                _estimateFare();
+              }
+            },
+          )
+          ..subscribe();
+  }
+
+  Future<void> _estimateFare() async {
+    final p = _pickup;
+    final d = _dropoff;
+    if (p == null || d == null) return;
+
+    final seats = (_ride?['requested_seats'] as int?) ?? 1;
+    final carpoolPassengers = (_ride?['passenger_count'] as int?) ?? seats;
+    final surge = (_ride?['surge_multiplier'] as num?)?.toDouble() ?? 1.0;
+
+    setState(() => _estimatingFare = true);
+    try {
+      final bx = await _fareService.estimate(
+        pickup: p,
+        destination: d,
+        seats: seats,
+        carpoolPassengers: carpoolPassengers,
+        platformFeeRate: _platformFeeRate,
+        surgeMultiplier: surge,
+      );
+      if (!mounted) return;
+      setState(() => _fareBx = bx);
+    } catch (_) {
+      // ignore; UI hides breakdown if it fails
+    } finally {
+      if (mounted) setState(() => _estimatingFare = false);
+    }
   }
 
   /* ───────────────────── Live tracking glue ──────────────────── */
@@ -185,7 +322,21 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
       actor: 'driver',
       onUpdate: (pos, heading) {
         if (!mounted) return;
+
+        // Avoid noisy rebuilds
+        final prev = _driverLive;
+        if (prev != null &&
+            prev.latitude == pos.latitude &&
+            prev.longitude == pos.longitude) {
+          return;
+        }
         setState(() => _driverLive = pos);
+
+        // Fit once when we first see the driver (or when both points exist)
+        if (!_didFitOnce) {
+          _didFitOnce = true;
+          _fitImportant();
+        }
       },
     )..listen();
   }
@@ -198,9 +349,35 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
       actor: 'passenger',
       onUpdate: (pos, heading) {
         if (!mounted) return;
+
+        final prev = _myLive;
+        if (prev != null &&
+            prev.latitude == pos.latitude &&
+            prev.longitude == pos.longitude) {
+          return;
+        }
         setState(() => _myLive = pos);
+
+        if (!_didFitOnce && _driverLive != null) {
+          _didFitOnce = true;
+          _fitImportant();
+        }
       },
     )..listen();
+  }
+
+  void _fitImportant() {
+    final pts = <LatLng>[
+      if (_pickup != null) _pickup!,
+      if (_dropoff != null) _dropoff!,
+      if (_driverLive != null) _driverLive!,
+      if (_myLive != null) _myLive!,
+    ];
+    if (pts.length < 2) return;
+    final bounds = LatLngBounds.fromPoints(pts);
+    _map.fitCamera(
+      CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(36)),
+    );
   }
 
   /* ───────────────────────── Helpers ───────────────────────── */
@@ -241,6 +418,9 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     if (lat == null || lng == null) return null;
     return LatLng(lat.toDouble(), lng.toDouble());
   }
+
+  String _peso(num? v) =>
+      v == null ? '₱0.00' : '₱${(v.toDouble()).toStringAsFixed(2)}';
 
   Future<void> _cancelRide() async {
     try {
@@ -301,6 +481,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     final passengerId = _ride?['passenger_id']?.toString();
     final driverId = _ride?['driver_id']?.toString();
     final driverName = (_ride?['driver_name'] as String?) ?? '—';
+    final seatsReq = (_ride?['requested_seats'] as int?) ?? 1;
+    final bookingType = (_ride?['booking_type'] as String?) ?? 'shared';
 
     final center =
         _driverLive ??
@@ -339,18 +521,21 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
               ? Center(child: Text('Error: $_error'))
               : RefreshIndicator(
                 onRefresh: () async {
+                  _didFitOnce = false;
                   await _loadRideComposite();
                   await _loadPayment();
                   await _loadMatchId();
+                  await _loadPlatformFeeRate();
                   _syncPassengerPublisherToStatus();
+                  await _estimateFare();
                   await _maybePromptRatingIfCompleted();
                 },
                 child: ListView(
-                  padding: const EdgeInsets.only(bottom: 100),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
                   children: [
-                    // Status & chips
-                    Padding(
-                      padding: const EdgeInsets.all(16),
+                    // Status & payment chips (prettier)
+                    _SectionCard(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                       child: Wrap(
                         spacing: 8,
                         runSpacing: 8,
@@ -358,138 +543,228 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                           _Chip(
                             icon: Icons.info_outline,
                             label: _status.toUpperCase(),
-                            color: _statusColor(_status).withOpacity(.12),
+                            color: _statusColor(_status).withOpacity(.10),
                             textColor: _statusColor(_status),
                           ),
                           if (fare != null)
                             _Chip(
                               icon: Icons.payments_outlined,
-                              label: '₱${fare.toStringAsFixed(2)}',
+                              label: _peso(fare),
                             ),
                           if (_payment != null)
                             PaymentStatusChip(
                               status: _payment!['status'] as String?,
                               amount: (_payment!['amount'] as num?)?.toDouble(),
                             ),
+                          _Chip(
+                            icon: Icons.event_seat_outlined,
+                            label: seatsReq > 1 ? '$seatsReq seats' : '1 seat',
+                          ),
+                          _Chip(
+                            icon: Icons.group_outlined,
+                            label: 'Booking: ${bookingType.toUpperCase()}',
+                          ),
                         ],
                       ),
                     ),
 
-                    // Map preview (with live markers)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: SizedBox(
-                          height: 240,
-                          child: FlutterMap(
-                            mapController: _map,
-                            options: MapOptions(center: center, zoom: 13),
-                            children: [
-                              TileLayer(
-                                urlTemplate:
-                                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                                userAgentPackageName: 'com.godavao.app',
-                              ),
-                              MarkerLayer(
-                                markers: [
-                                  if (_pickup != null)
-                                    Marker(
-                                      point: _pickup!,
-                                      width: 30,
-                                      height: 30,
-                                      child: const Icon(
-                                        Icons.place,
-                                        color: Colors.green,
-                                        size: 28,
-                                      ),
-                                    ),
-                                  if (_dropoff != null)
-                                    Marker(
-                                      point: _dropoff!,
-                                      width: 30,
-                                      height: 30,
-                                      child: const Icon(
-                                        Icons.flag,
-                                        color: Colors.red,
-                                        size: 26,
-                                      ),
-                                    ),
-                                  if (_driverLive != null)
-                                    Marker(
-                                      point: _driverLive!,
-                                      width: 34,
-                                      height: 34,
-                                      child: const Icon(
-                                        Icons.directions_car,
-                                        size: 30,
-                                        color: Colors.blue,
-                                      ),
-                                    ),
-                                  if (_myLive != null)
-                                    Marker(
-                                      point: _myLive!,
-                                      width: 30,
-                                      height: 30,
-                                      child: const Icon(
-                                        Icons.person_pin_circle,
-                                        size: 28,
-                                        color: Colors.purple,
-                                      ),
-                                    ),
+                    const SizedBox(height: 12),
+
+                    // Map card with live markers + small toolbar
+                    _SectionCard(
+                      child: Column(
+                        children: [
+                          SizedBox(
+                            height: 260,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(14),
+                              child: FlutterMap(
+                                mapController: _map,
+                                options: MapOptions(center: center, zoom: 13),
+                                children: [
+                                  TileLayer(
+                                    urlTemplate:
+                                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                    userAgentPackageName: 'com.godavao.app',
+                                  ),
+                                  MarkerLayer(
+                                    markers: [
+                                      if (_pickup != null)
+                                        Marker(
+                                          point: _pickup!,
+                                          width: 30,
+                                          height: 30,
+                                          child: const Icon(
+                                            Icons.place,
+                                            color: Colors.green,
+                                            size: 28,
+                                          ),
+                                        ),
+                                      if (_dropoff != null)
+                                        Marker(
+                                          point: _dropoff!,
+                                          width: 30,
+                                          height: 30,
+                                          child: const Icon(
+                                            Icons.flag,
+                                            color: Colors.red,
+                                            size: 26,
+                                          ),
+                                        ),
+                                      if (_driverLive != null)
+                                        Marker(
+                                          point: _driverLive!,
+                                          width: 36,
+                                          height: 36,
+                                          child: const Icon(
+                                            Icons.directions_car,
+                                            size: 30,
+                                            color: Colors.blue,
+                                          ),
+                                        ),
+                                      if (_myLive != null)
+                                        Marker(
+                                          point: _myLive!,
+                                          width: 32,
+                                          height: 32,
+                                          child: const Icon(
+                                            Icons.person_pin_circle,
+                                            size: 28,
+                                            color: Colors.deepPurple,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
                                 ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              _MiniAction(
+                                icon: Icons.center_focus_strong,
+                                label: 'Driver',
+                                onTap: () {
+                                  if (_driverLive != null) {
+                                    _map.move(_driverLive!, 16);
+                                  }
+                                },
+                              ),
+                              const SizedBox(width: 8),
+                              _MiniAction(
+                                icon: Icons.place_outlined,
+                                label: 'Pickup',
+                                onTap: () {
+                                  if (_pickup != null) {
+                                    _map.move(_pickup!, 16);
+                                  }
+                                },
+                              ),
+                              const SizedBox(width: 8),
+                              _MiniAction(
+                                icon: Icons.flag_outlined,
+                                label: 'Dropoff',
+                                onTap: () {
+                                  if (_dropoff != null) {
+                                    _map.move(_dropoff!, 16);
+                                  }
+                                },
+                              ),
+                              const Spacer(),
+                              TextButton.icon(
+                                onPressed: _fitImportant,
+                                icon: const Icon(Icons.fullscreen),
+                                label: const Text('Fit'),
                               ),
                             ],
                           ),
-                        ),
+                        ],
                       ),
                     ),
 
-                    // Driver info
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+                    const SizedBox(height: 12),
+
+                    // Driver info (prettier row)
+                    _SectionCard(
                       child: Row(
                         children: [
                           const Icon(
                             Icons.directions_car_outlined,
                             color: Colors.black54,
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 10),
                           Expanded(
-                            child: Text(
-                              driverId == null
-                                  ? 'Waiting for driver'
-                                  : 'Driver: $driverName',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                              ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  driverId == null
+                                      ? 'Waiting for driver'
+                                      : driverName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  driverId == null
+                                      ? 'We’ll notify you when a driver is matched'
+                                      : 'Your driver',
+                                  style: const TextStyle(
+                                    color: Colors.black54,
+                                    fontSize: 12.5,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                           if (driverId != null)
-                            UserRatingBadge(userId: driverId, iconSize: 16),
+                            UserRatingBadge(userId: driverId, iconSize: 18),
                         ],
                       ),
                     ),
 
-                    // Rating button
-                    if (_status == 'completed' && driverId != null)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.star),
-                          label: const Text('Rate your driver'),
-                          onPressed: _maybePromptRatingIfCompleted,
+                    const SizedBox(height: 12),
+
+                    // Fare breakdown (rich; falls back to simple total if missing)
+                    if (_fareBx != null)
+                      _SectionCard(
+                        child: _FareBreakdownPro(
+                          bx: _fareBx!,
+                          peso: _peso,
+                          estimating: _estimatingFare,
+                        ),
+                      )
+                    else if (fare != null)
+                      _SectionCard(
+                        child: _FareBreakdownSimple(
+                          total: fare,
+                          seats: seatsReq,
+                          bookingType: bookingType,
+                          peso: _peso,
                         ),
                       ),
+
+                    // Rating CTA
+                    if (_status == 'completed' && driverId != null) ...[
+                      const SizedBox(height: 16),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.star),
+                        label: const Text('Rate your driver'),
+                        onPressed: _maybePromptRatingIfCompleted,
+                      ),
+                    ],
                   ],
                 ),
               ),
       bottomNavigationBar: _buildBottomBar(
         passengerId ?? 'You',
         driverName,
-        fare,
+        (_ride?['fare'] as num?)?.toDouble(),
       ),
     );
   }
@@ -504,9 +779,9 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
           borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black26.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, -3),
+              color: Colors.black26.withOpacity(0.06),
+              blurRadius: 12,
+              offset: const Offset(0, -4),
             ),
           ],
         ),
@@ -580,8 +855,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
               const Divider(height: 20),
               _detailRow('Passenger', passengerName),
               _detailRow('Driver', driverName),
-              if (fare != null)
-                _detailRow('Fare', '₱${fare.toStringAsFixed(2)}'),
+              if (fare != null) _detailRow('Fare', _peso(fare)),
               const SizedBox(height: 12),
               if (_payment != null)
                 PaymentStatusChip(
@@ -599,7 +873,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     return Row(
       children: [
         SizedBox(
-          width: 110,
+          width: 120,
           child: Text(
             label,
             style: const TextStyle(color: Colors.black54, fontSize: 13),
@@ -647,7 +921,198 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
   }
 }
 
-/* -------------------- Small UI helpers -------------------- */
+/* -------------------- UI bits -------------------- */
+
+class _SectionCard extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry? padding;
+  const _SectionCard({required this.child, this.padding});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: padding ?? const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.black12.withOpacity(.06)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12.withOpacity(.06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
+class _MiniAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _MiniAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      style: OutlinedButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      ),
+      onPressed: onTap,
+      icon: Icon(icon, size: 16),
+      label: Text(label),
+    );
+  }
+}
+
+class _FareBreakdownSimple extends StatelessWidget {
+  final double total;
+  final int seats;
+  final String bookingType; // shared | pakyaw
+  final String Function(num?) peso;
+
+  const _FareBreakdownSimple({
+    required this.total,
+    required this.seats,
+    required this.bookingType,
+    required this.peso,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final perSeat = seats > 0 ? (total / seats) : total;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Fare Breakdown',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+        ),
+        const SizedBox(height: 10),
+        _row('Booking type', bookingType.toUpperCase()),
+        _row('Seats', '$seats'),
+        const SizedBox(height: 6),
+        _row('Per seat', peso(perSeat)),
+        const Divider(height: 18),
+        _row('Total', peso(total), bold: true),
+      ],
+    );
+  }
+
+  Widget _row(String label, String value, {bool bold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.black54, fontSize: 13),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: bold ? FontWeight.w800 : FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FareBreakdownPro extends StatelessWidget {
+  final FareBreakdown bx;
+  final String Function(num?) peso;
+  final bool estimating;
+  const _FareBreakdownPro({
+    required this.bx,
+    required this.peso,
+    this.estimating = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final perSeat = bx.seatsBilled > 0 ? (bx.total / bx.seatsBilled) : bx.total;
+
+    TextStyle label = const TextStyle(color: Colors.black54, fontSize: 13);
+    TextStyle val = const TextStyle(fontWeight: FontWeight.w700);
+    TextStyle valStrong = const TextStyle(fontWeight: FontWeight.w800);
+
+    Widget row(String l, String v, {bool strong = false}) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Expanded(child: Text(l, style: label)),
+          Text(v, style: strong ? valStrong : val),
+        ],
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Text(
+              'Fare Breakdown',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+            ),
+            if (estimating) ...[
+              const SizedBox(width: 8),
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        // Trip metrics
+        Row(
+          children: [
+            Expanded(
+              child: row('Distance', '${bx.distanceKm.toStringAsFixed(2)} km'),
+            ),
+            Expanded(
+              child: row('Time', '${bx.durationMin.toStringAsFixed(0)} min'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+
+        row('Seats billed', '${bx.seatsBilled}'),
+        row(
+          'Carpool discount',
+          '${(bx.carpoolDiscountPct * 100).toStringAsFixed(0)}%',
+        ),
+        row('Night surcharge', peso(bx.nightSurcharge)),
+        row('Surge used', '${bx.surgeMultiplier.toStringAsFixed(2)}×'),
+
+        const Divider(height: 18),
+
+        row('Subtotal', peso(bx.subtotal)),
+        row('Per seat (approx.)', peso(perSeat)),
+        row('Platform fee', '- ${peso(bx.platformFee)}'),
+        const Divider(height: 18),
+        row('Driver take (est.)', peso(bx.driverTake)),
+        row('Total', peso(bx.total), strong: true),
+      ],
+    );
+  }
+}
 
 class _Chip extends StatelessWidget {
   final IconData icon;

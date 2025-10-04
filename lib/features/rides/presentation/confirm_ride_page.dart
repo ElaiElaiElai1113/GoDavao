@@ -263,7 +263,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 'status': 'pending',
                 'requested_seats': seatsToReserve,
                 'payment_method': 'gcash',
-                'is_pakyaw': _pakyaw, // <- requires is_pakyaw column
+                'is_pakyaw': _pakyaw,
               }, onConflict: 'client_token')
               .select('id')
               .single();
@@ -471,6 +471,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                   if (_pakyaw) _pakyawSeatsSummaryCard(),
                   const SizedBox(height: 8),
 
+                  // Fare with detailed breakdown
                   _fareCard(fareTotal, perSeat),
                   const SizedBox(height: 8),
 
@@ -694,19 +695,26 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     );
   }
 
+  /// UPDATED: shows a rich fare breakdown using `FareBreakdown`
   Widget _fareCard(double fareTotal, double perSeat) {
+    final bx = _fare;
+
+    String peso(num? v) => v == null ? '₱0.00' : '₱${v.toStringAsFixed(2)}';
+
     return _Card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const _CardTitle(icon: Icons.receipt_long, text: 'Fare'),
           const SizedBox(height: 6),
+
+          // Totals (always shown)
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('Total (₱)', style: TextStyle(color: Colors.grey.shade700)),
               Text(
-                '₱${fareTotal.toStringAsFixed(2)}',
+                peso(fareTotal),
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
             ],
@@ -721,12 +729,15 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                   style: TextStyle(color: Colors.grey.shade700),
                 ),
                 Text(
-                  '₱${perSeat.toStringAsFixed(2)}',
+                  peso(perSeat),
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ],
             ),
-          const SizedBox(height: 8),
+
+          const SizedBox(height: 10),
+
+          // Quick chips
           Wrap(
             runSpacing: 6,
             spacing: 8,
@@ -754,6 +765,38 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
               ),
             ],
           ),
+
+          // Detailed breakdown (only if we have it)
+          if (bx != null) ...[
+            const SizedBox(height: 12),
+            Divider(height: 18, color: Colors.grey.shade200),
+
+            _fareRow('Distance', '${bx.distanceKm.toStringAsFixed(2)} km'),
+            _fareRow('Time', '${bx.durationMin.toStringAsFixed(0)} min'),
+            const SizedBox(height: 6),
+
+            _fareRow('Subtotal', peso(bx.subtotal)),
+            _fareRow('Night surcharge', peso(bx.nightSurcharge)),
+            _fareRow('Surge used', '${bx.surgeMultiplier.toStringAsFixed(2)}×'),
+            const SizedBox(height: 6),
+
+            _fareRow('Seats billed', '${bx.seatsBilled}'),
+            _fareRow(
+              'Carpool discount',
+              '${(bx.carpoolDiscountPct * 100).toStringAsFixed(0)}%',
+            ),
+            const SizedBox(height: 6),
+
+            _fareRow('Platform fee', '- ${peso(bx.platformFee)}'),
+            _fareRow('Driver take (est.)', peso(bx.driverTake)),
+
+            Divider(height: 20, color: Colors.grey.shade200),
+            _fareRow(
+              'Per seat (approx.)',
+              peso(bx.seatsBilled > 0 ? (bx.total / bx.seatsBilled) : bx.total),
+            ),
+            _fareRow('Total', peso(bx.total), strong: true),
+          ],
         ],
       ),
     );
@@ -828,6 +871,29 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
             )
             .toList(),
   );
+
+  /// Small row helper for the fare breakdown
+  Widget _fareRow(String label, String value, {bool strong = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.black54, fontSize: 13),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: strong ? FontWeight.w800 : FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /* ===== Small UI helpers ===== */
