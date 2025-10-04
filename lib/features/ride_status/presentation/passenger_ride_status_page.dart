@@ -1,15 +1,21 @@
+// lib/features/ride_status/presentation/passenger_ride_status_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+// Chat / Verify / Ratings / Payments
 import 'package:godavao/features/chat/presentation/chat_page.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
 import 'package:godavao/features/ratings/presentation/rate_user.dart';
 import 'package:godavao/features/ratings/data/ratings_service.dart';
 import 'package:godavao/features/payments/presentation/payment_status_chip.dart';
+
+// Live tracking
+import 'package:godavao/features/live_tracking/data/live_publisher.dart';
+import 'package:godavao/features/live_tracking/data/live_subscriber.dart';
 
 class PassengerRideStatusPage extends StatefulWidget {
   final String rideId;
@@ -24,15 +30,26 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
   final _sb = Supabase.instance.client;
   final _map = MapController();
 
-  Map<String, dynamic>? _ride; // merged from RPC view
+  Map<String, dynamic>? _ride; // merged from RPC
   Map<String, dynamic>? _payment;
 
   bool _loading = true;
   String? _error;
   bool _ratingPromptShown = false;
 
+  // parent watchers
   StreamSubscription<List<Map<String, dynamic>>>? _rideReqSub;
   StreamSubscription<List<Map<String, dynamic>>>? _rideMatchSub;
+
+  // chat
+  String? _matchId;
+
+  // live tracking
+  LivePublisher? _publisher; // publish passenger
+  LiveSubscriber? _driverSub; // follow driver
+  LiveSubscriber? _selfSub; // (optional) mirror passenger point
+  LatLng? _driverLive;
+  LatLng? _myLive;
 
   static const _bg = Color(0xFFF7F7FB);
 
@@ -46,8 +63,13 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
   void dispose() {
     _rideReqSub?.cancel();
     _rideMatchSub?.cancel();
+    _driverSub?.dispose();
+    _selfSub?.dispose();
+    _publisher?.stop();
     super.dispose();
   }
+
+  /* ───────────────────────── Bootstrap ───────────────────────── */
 
   Future<void> _bootstrap() async {
     setState(() {
@@ -56,8 +78,11 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     });
 
     try {
-      await Future.wait([_loadRideComposite(), _loadPayment()]);
+      await Future.wait([_loadRideComposite(), _loadPayment(), _loadMatchId()]);
       _watchParents();
+      _syncPassengerPublisherToStatus();
+      _startDriverSubscriber();
+      _startSelfSubscriber();
       await _maybePromptRatingIfCompleted();
     } catch (e) {
       if (!mounted) return;
@@ -88,6 +113,17 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     setState(() => _payment = (res as Map?)?.cast<String, dynamic>());
   }
 
+  Future<void> _loadMatchId() async {
+    final row =
+        await _sb
+            .from('ride_matches')
+            .select('id')
+            .eq('ride_request_id', widget.rideId)
+            .maybeSingle();
+    if (!mounted) return;
+    setState(() => _matchId = (row as Map?)?['id']?.toString());
+  }
+
   void _watchParents() {
     _rideReqSub?.cancel();
     _rideReqSub = _sb
@@ -97,7 +133,10 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
         .listen((_) async {
           await _loadRideComposite();
           await _loadPayment();
+          await _loadMatchId();
+          _syncPassengerPublisherToStatus();
           await _maybePromptRatingIfCompleted();
+          setState(() {});
         });
 
     _rideMatchSub?.cancel();
@@ -108,11 +147,64 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
         .listen((_) async {
           await _loadRideComposite();
           await _loadPayment();
+          await _loadMatchId();
+          _syncPassengerPublisherToStatus();
           await _maybePromptRatingIfCompleted();
+          setState(() {});
         });
   }
 
-  // ====== Helpers ======
+  /* ───────────────────── Live tracking glue ──────────────────── */
+
+  void _syncPassengerPublisherToStatus() {
+    final s = _status;
+    if (s == 'accepted' || s == 'en_route') {
+      _publisher ??= LivePublisher(
+        _sb,
+        userId: _sb.auth.currentUser!.id,
+        rideId: widget.rideId,
+        actor: 'passenger',
+        minMeters: 8,
+        minHeadingDelta: 10,
+        minPeriod: const Duration(seconds: 3),
+        distanceFilter: 3,
+      );
+      if (!(_publisher!.isRunning)) {
+        _publisher!.start();
+      }
+    } else {
+      _publisher?.stop();
+    }
+  }
+
+  void _startDriverSubscriber() {
+    _driverSub?.dispose();
+    _driverSub = LiveSubscriber(
+      _sb,
+      rideId: widget.rideId,
+      actor: 'driver',
+      onUpdate: (pos, heading) {
+        if (!mounted) return;
+        setState(() => _driverLive = pos);
+      },
+    )..listen();
+  }
+
+  void _startSelfSubscriber() {
+    _selfSub?.dispose();
+    _selfSub = LiveSubscriber(
+      _sb,
+      rideId: widget.rideId,
+      actor: 'passenger',
+      onUpdate: (pos, heading) {
+        if (!mounted) return;
+        setState(() => _myLive = pos);
+      },
+    )..listen();
+  }
+
+  /* ───────────────────────── Helpers ───────────────────────── */
+
   String get _status =>
       (_ride?['effective_status'] as String?)?.toLowerCase() ??
       (_ride?['status'] as String?)?.toLowerCase() ??
@@ -201,6 +293,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     );
   }
 
+  /* ───────────────────────── UI ───────────────────────── */
+
   @override
   Widget build(BuildContext context) {
     final fare = (_ride?['fare'] as num?)?.toDouble();
@@ -209,7 +303,10 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
     final driverName = (_ride?['driver_name'] as String?) ?? '—';
 
     final center =
-        _pickup ?? _dropoff ?? const LatLng(7.1907, 125.4553); // fallback
+        _driverLive ??
+        _pickup ??
+        _dropoff ??
+        const LatLng(7.1907, 125.4553); // fallback (Davao)
 
     return Scaffold(
       backgroundColor: _bg,
@@ -220,7 +317,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
         surfaceTintColor: Colors.white,
         actions: [
           if (driverId != null) VerifiedBadge(userId: driverId, size: 22),
-          if (driverId != null)
+          if (driverId != null && _matchId != null)
             IconButton(
               tooltip: 'Chat with driver',
               icon: const Icon(Icons.message_outlined),
@@ -228,7 +325,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const ChatPage(matchId: ''),
+                    builder: (_) => ChatPage(matchId: _matchId!),
                   ),
                 );
               },
@@ -244,6 +341,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                 onRefresh: () async {
                   await _loadRideComposite();
                   await _loadPayment();
+                  await _loadMatchId();
+                  _syncPassengerPublisherToStatus();
                   await _maybePromptRatingIfCompleted();
                 },
                 child: ListView(
@@ -276,13 +375,13 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                       ),
                     ),
 
-                    // Map preview
+                    // Map preview (with live markers)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(16),
                         child: SizedBox(
-                          height: 220,
+                          height: 240,
                           child: FlutterMap(
                             mapController: _map,
                             options: MapOptions(center: center, zoom: 13),
@@ -314,6 +413,28 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage> {
                                         Icons.flag,
                                         color: Colors.red,
                                         size: 26,
+                                      ),
+                                    ),
+                                  if (_driverLive != null)
+                                    Marker(
+                                      point: _driverLive!,
+                                      width: 34,
+                                      height: 34,
+                                      child: const Icon(
+                                        Icons.directions_car,
+                                        size: 30,
+                                        color: Colors.blue,
+                                      ),
+                                    ),
+                                  if (_myLive != null)
+                                    Marker(
+                                      point: _myLive!,
+                                      width: 30,
+                                      height: 30,
+                                      child: const Icon(
+                                        Icons.person_pin_circle,
+                                        size: 28,
+                                        color: Colors.purple,
                                       ),
                                     ),
                                 ],
