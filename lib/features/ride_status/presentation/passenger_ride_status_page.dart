@@ -214,7 +214,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
         setState(() => _platformFeeRate = parsed);
       }
     } catch (_) {
-      // keep default
+      /* keep default */
     }
   }
 
@@ -269,6 +269,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     if (p == null || d == null) return;
 
     final seats = (_ride?['requested_seats'] as int?) ?? 1;
+    // server-provided current rider count if available (includes unique riders)
     final carpoolPassengers = (_ride?['passenger_count'] as int?) ?? seats;
     final surge = (_ride?['surge_multiplier'] as num?)?.toDouble() ?? 1.0;
 
@@ -285,7 +286,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
       if (!mounted) return;
       setState(() => _fareBx = bx);
     } catch (_) {
-      // ignore; UI hides breakdown if it fails
+      /* ignore */
     } finally {
       if (mounted) setState(() => _estimatingFare = false);
     }
@@ -323,7 +324,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
       onUpdate: (pos, heading) {
         if (!mounted) return;
 
-        // Avoid noisy rebuilds
         final prev = _driverLive;
         if (prev != null &&
             prev.latitude == pos.latitude &&
@@ -332,7 +332,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
         }
         setState(() => _driverLive = pos);
 
-        // Fit once when we first see the driver (or when both points exist)
         if (!_didFitOnce) {
           _didFitOnce = true;
           _fitImportant();
@@ -483,6 +482,9 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     final driverName = (_ride?['driver_name'] as String?) ?? '—';
     final seatsReq = (_ride?['requested_seats'] as int?) ?? 1;
     final bookingType = (_ride?['booking_type'] as String?) ?? 'shared';
+    final currentCarpool =
+        (_ride?['passenger_count'] as int?) ??
+        1; // server-populated count of unique riders
 
     final center =
         _driverLive ??
@@ -533,7 +535,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
                   children: [
-                    // Status & payment chips (prettier)
+                    // Status & chips
                     _SectionCard(
                       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                       child: Wrap(
@@ -561,6 +563,10 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                             label: seatsReq > 1 ? '$seatsReq seats' : '1 seat',
                           ),
                           _Chip(
+                            icon: Icons.groups_2_outlined,
+                            label: 'Riders: $currentCarpool',
+                          ),
+                          _Chip(
                             icon: Icons.group_outlined,
                             label: 'Booking: ${bookingType.toUpperCase()}',
                           ),
@@ -570,7 +576,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
 
                     const SizedBox(height: 12),
 
-                    // Map card with live markers + small toolbar
+                    // Map card
                     _SectionCard(
                       child: Column(
                         children: [
@@ -685,7 +691,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
 
                     const SizedBox(height: 12),
 
-                    // Driver info (prettier row)
+                    // Driver info
                     _SectionCard(
                       child: Row(
                         children: [
@@ -730,7 +736,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
 
                     const SizedBox(height: 12),
 
-                    // Fare breakdown (rich; falls back to simple total if missing)
+                    // Fare breakdown
                     if (_fareBx != null)
                       _SectionCard(
                         child: _FareBreakdownPro(
@@ -748,6 +754,20 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                           peso: _peso,
                         ),
                       ),
+
+                    // NEW: Carpool breakdown preview (uses fare rules & current distance/time)
+                    if (_fareBx != null) ...[
+                      const SizedBox(height: 12),
+                      _SectionCard(
+                        child: _CarpoolBreakdownTable(
+                          currentCarpool: currentCarpool,
+                          seatsRequested: seatsReq,
+                          bx: _fareBx!,
+                          fareService: _fareService,
+                          peso: _peso,
+                        ),
+                      ),
+                    ],
 
                     // Rating CTA
                     if (_status == 'completed' && driverId != null) ...[
@@ -1114,6 +1134,131 @@ class _FareBreakdownPro extends StatelessWidget {
   }
 }
 
+/// NEW: Carpool breakdown table (1..N riders)
+class _CarpoolBreakdownTable extends StatelessWidget {
+  final int currentCarpool;
+  final int seatsRequested;
+  final FareBreakdown bx;
+  final FareService fareService;
+  final String Function(num?) peso;
+
+  const _CarpoolBreakdownTable({
+    required this.currentCarpool,
+    required this.seatsRequested,
+    required this.bx,
+    required this.fareService,
+    required this.peso,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Build rider counts from rules (keys) + ensure "1" is included
+    final keys =
+        <int>{1, ...fareService.rules.carpoolDiscountByPax.keys}.toList()
+          ..sort();
+
+    final rows = <TableRow>[];
+    for (final pax in keys) {
+      final fb = fareService.estimateForDistance(
+        distanceKm: bx.distanceKm,
+        durationMin: bx.durationMin,
+        seats: seatsRequested,
+        carpoolPassengers: pax,
+        platformFeeRate: fareService.rules.defaultPlatformFeeRate,
+        surgeMultiplier: bx.surgeMultiplier,
+      );
+      final perSeat =
+          fb.seatsBilled > 0 ? (fb.total / fb.seatsBilled) : fb.total;
+
+      final isCurrent = pax == currentCarpool;
+      rows.add(
+        TableRow(
+          decoration: BoxDecoration(
+            color: isCurrent ? Colors.indigo.withOpacity(.05) : null,
+          ),
+          children: [
+            _cell('$pax', bold: isCurrent),
+            _cell(
+              '${(fb.carpoolDiscountPct * 100).toStringAsFixed(0)}%',
+              mono: true,
+              bold: isCurrent,
+            ),
+            _cell(peso(fb.total), mono: true, bold: isCurrent),
+            _cell(peso(perSeat), mono: true, bold: isCurrent),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _CardTitle(
+          icon: Icons.groups_2_outlined,
+          text: 'Carpool Breakdown',
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'How your fare changes with the number of riders sharing this route. '
+          'Current riders highlighted.',
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+        ),
+        const SizedBox(height: 10),
+        Table(
+          columnWidths: const {
+            0: FlexColumnWidth(1.0),
+            1: FlexColumnWidth(1.2),
+            2: FlexColumnWidth(1.6),
+            3: FlexColumnWidth(1.6),
+          },
+          defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+          children: [
+            TableRow(
+              decoration: BoxDecoration(color: Colors.grey.shade100),
+              children: const [
+                _TH('Riders'),
+                _TH('Discount'),
+                _TH('Total (₱)'),
+                _TH('Per seat (₱)'),
+              ],
+            ),
+            ...rows,
+          ],
+        ),
+      ],
+    );
+  }
+
+  static Widget _cell(String t, {bool mono = false, bool bold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+      child: Text(
+        t,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
+          fontFamily: mono ? 'monospace' : null,
+        ),
+      ),
+    );
+  }
+}
+
+class _TH extends StatelessWidget {
+  final String t;
+  const _TH(this.t, {super.key});
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+      child: Text(
+        t,
+        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+      ),
+    );
+  }
+}
+
 class _Chip extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -1150,6 +1295,26 @@ class _Chip extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _CardTitle extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _CardTitle({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, color: const Color(0xFF6A27F7)),
+        const SizedBox(width: 8),
+        Text(
+          text,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+        ),
+      ],
     );
   }
 }
