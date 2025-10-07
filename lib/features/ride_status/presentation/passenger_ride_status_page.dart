@@ -66,6 +66,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   RealtimeChannel? _feeChannel;
 
   static const _bg = Color(0xFFF7F7FB);
+  static const _purple = Color(0xFF6A27F7);
+  static const _purpleDark = Color(0xFF4B18C9);
 
   @override
   void initState() {
@@ -495,10 +497,42 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
-        title: const Text('Ride Status'),
-        backgroundColor: Colors.white,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [_purple.withOpacity(0.4), Colors.transparent],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        ),
+        backgroundColor: const Color.fromARGB(3, 0, 0, 0),
         elevation: 0,
-        surfaceTintColor: Colors.white,
+        centerTitle: true,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: CircleAvatar(
+            backgroundColor: Colors.white.withOpacity(0.9),
+            child: IconButton(
+              icon: const Icon(
+                Icons.arrow_back_ios_new,
+                color: _purple,
+                size: 18,
+              ),
+              onPressed: () => Navigator.maybePop(context),
+            ),
+          ),
+        ),
+        title: const Text(
+          'Ride Status',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+        actionsIconTheme: const IconThemeData(color: Colors.white),
         actions: [
           if (driverId != null) VerifiedBadge(userId: driverId, size: 22),
           if (driverId != null && _matchId != null)
@@ -625,7 +659,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                                           child: const Icon(
                                             Icons.directions_car,
                                             size: 30,
-                                            color: Colors.blue,
+                                            color: _purpleDark,
                                           ),
                                         ),
                                       if (_myLive != null)
@@ -636,7 +670,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                                           child: const Icon(
                                             Icons.person_pin_circle,
                                             size: 28,
-                                            color: Colors.deepPurple,
+                                            color: _purple,
                                           ),
                                         ),
                                     ],
@@ -682,6 +716,9 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                                 onPressed: _fitImportant,
                                 icon: const Icon(Icons.fullscreen),
                                 label: const Text('Fit'),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: _purple,
+                                ),
                               ),
                             ],
                           ),
@@ -776,6 +813,9 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                         icon: const Icon(Icons.star),
                         label: const Text('Rate your driver'),
                         onPressed: _maybePromptRatingIfCompleted,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _purple,
+                        ),
                       ),
                     ],
                   ],
@@ -818,6 +858,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                       driverName: driverName,
                       fare: fare,
                     ),
+                style: OutlinedButton.styleFrom(foregroundColor: _purple),
               ),
             ),
             const SizedBox(width: 10),
@@ -844,6 +885,11 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                     Navigator.maybePop(context);
                   }
                 },
+                style: FilledButton.styleFrom(
+                  backgroundColor:
+                      _status == 'en_route' ? Colors.red.shade700 : _purple,
+                  foregroundColor: Colors.white,
+                ),
               ),
             ),
           ],
@@ -985,6 +1031,8 @@ class _MiniAction extends StatelessWidget {
       style: OutlinedButton.styleFrom(
         visualDensity: VisualDensity.compact,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        foregroundColor: _PassengerRideStatusPageState._purple,
+        side: const BorderSide(color: _PassengerRideStatusPageState._purple),
       ),
       onPressed: onTap,
       icon: Icon(icon, size: 16),

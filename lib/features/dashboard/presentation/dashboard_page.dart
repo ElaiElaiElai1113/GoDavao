@@ -2,7 +2,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:godavao/features/profile/presentation/profile_page.dart';
-import 'package:godavao/features/ride_status/presentation/passenger_rides_page.dart';
+import 'package:godavao/features/ride_status/presentation/passenger_myrides_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/features/routes/presentation/pages/driver_routes_list_tab.dart';
 import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
@@ -418,7 +418,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                           MaterialPageRoute(
                                             builder:
                                                 (_) =>
-                                                    const PassengerRidesPage(),
+                                                    const PassengerMyRidesPage(),
                                           ),
                                         ),
                                   ),
@@ -707,6 +707,8 @@ class _ActionGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const accent = Color(0xFF6A27F7);
+    const accentDark = Color(0xFF4B18C9);
     return GridView.builder(
       itemCount: items.length,
       shrinkWrap: true,
@@ -739,7 +741,26 @@ class _ActionGrid extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(it.icon, color: Colors.black87, size: 26),
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [accent, accentDark],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                          color: accent.withOpacity(0.25),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Icon(it.icon, color: Colors.white, size: 22),
+                  ),
                   const Spacer(),
                   Text(
                     it.title,
@@ -779,6 +800,8 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const accent = Color(0xFF6A27F7);
+    const accentDark = Color(0xFF4B18C9);
     return Container(
       height: 84,
       decoration: BoxDecoration(
@@ -799,10 +822,21 @@ class _StatCard extends StatelessWidget {
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-              color: const Color(0xFFEFF1FF),
               borderRadius: BorderRadius.circular(12),
+              gradient: const LinearGradient(
+                colors: [accent, accentDark],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withOpacity(0.25),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
-            child: const Icon(Icons.analytics, color: Color(0xFF3A3F73)),
+            child: Icon(icon, color: Colors.white),
           ),
           const SizedBox(width: 12),
           Expanded(
