@@ -3,13 +3,11 @@ import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class VehiclesService {
-  VehiclesService(this.sb);
   final SupabaseClient sb;
+  VehiclesService(this.sb);
 
-  // Change if your storage bucket name differs
   static const String _bucket = 'verifications';
 
-  // Columns we routinely select (added or_number/cr_number)
   static const String _vehicleCols =
       'id, driver_id, make, model, plate, color, year, seats, '
       'is_default, verification_status, created_at, '
@@ -50,21 +48,17 @@ class VehiclesService {
 
   // ---------------- Queries ----------------
 
-  /// Get all vehicles for the current driver (default first).
   Future<List<Map<String, dynamic>>> listMine() async {
     final uid = _requireUid();
-
     final res = await sb
         .from('vehicles')
         .select(_vehicleCols)
         .eq('driver_id', uid)
         .order('is_default', ascending: false)
         .order('created_at', ascending: false);
-
     return _castList(res);
   }
 
-  /// Realtime stream of current driver's vehicles.
   Stream<List<Map<String, dynamic>>> watchMine() {
     final uid = _requireUid();
     return sb
@@ -76,7 +70,6 @@ class VehiclesService {
         .map(_castList);
   }
 
-  /// Get a specific vehicle owned by the current driver.
   Future<Map<String, dynamic>?> getVehicle(String vehicleId) async {
     final uid = _requireUid();
     final res =
@@ -86,11 +79,9 @@ class VehiclesService {
             .eq('driver_id', uid)
             .eq('id', vehicleId)
             .maybeSingle();
-    if (res == null) return null;
-    return _castRow(res);
+    return res == null ? null : _castRow(res);
   }
 
-  /// Get the current driver's default vehicle, if any.
   Future<Map<String, dynamic>?> getDefaultVehicle() async {
     final uid = _requireUid();
     final res =
@@ -100,8 +91,7 @@ class VehiclesService {
             .eq('driver_id', uid)
             .eq('is_default', true)
             .maybeSingle();
-    if (res == null) return null;
-    return _castRow(res);
+    return res == null ? null : _castRow(res);
   }
 
   // ---------------- Create ----------------
@@ -114,8 +104,8 @@ class VehiclesService {
     int? year,
     required int seats,
     bool isDefault = false,
-    String? orNumber, // NEW
-    String? crNumber, // NEW
+    String? orNumber,
+    String? crNumber,
   }) async {
     final uid = _requireUid();
 
@@ -139,7 +129,6 @@ class VehiclesService {
 
   // ---------------- Update ----------------
 
-  /// Patch allowed fields on a vehicle owned by the current driver.
   Future<void> updateVehicle(
     String vehicleId,
     Map<String, dynamic> patch,
@@ -157,22 +146,12 @@ class VehiclesService {
     put('color', _nullIfBlank(patch['color'] as String?));
     put('year', patch['year']);
     put('seats', patch['seats']);
-    if (patch.containsKey('is_default')) {
-      put('is_default', patch['is_default']);
-    }
-
-    // NEW: allow updating OR/CR numbers
+    if (patch.containsKey('is_default')) put('is_default', patch['is_default']);
     if (patch.containsKey('or_number') || patch.containsKey('orNumber')) {
-      put(
-        'or_number',
-        _nullIfBlank((patch['or_number'] ?? patch['orNumber']) as String?),
-      );
+      put('or_number', _nullIfBlank(patch['or_number'] ?? patch['orNumber']));
     }
     if (patch.containsKey('cr_number') || patch.containsKey('crNumber')) {
-      put(
-        'cr_number',
-        _nullIfBlank((patch['cr_number'] ?? patch['crNumber']) as String?),
-      );
+      put('cr_number', _nullIfBlank(patch['cr_number'] ?? patch['crNumber']));
     }
 
     if (allowed.isEmpty) return;
@@ -188,7 +167,6 @@ class VehiclesService {
     }
   }
 
-  /// Convenience update when you have concrete values.
   Future<void> updateVehicleFromValues({
     required String vehicleId,
     required String make,
@@ -198,8 +176,8 @@ class VehiclesService {
     int? year,
     required int seats,
     bool? isDefault,
-    String? orNumber, // NEW
-    String? crNumber, // NEW
+    String? orNumber,
+    String? crNumber,
   }) {
     return updateVehicle(vehicleId, {
       'make': make,
@@ -216,7 +194,6 @@ class VehiclesService {
 
   // ---------------- Default toggle ----------------
 
-  /// Relies on DB trigger ensure_single_default_vehicle() to keep only one default.
   Future<void> setDefault(String vehicleId) async {
     final uid = _requireUid();
     await sb
@@ -233,17 +210,17 @@ class VehiclesService {
     await sb.from('vehicles').delete().eq('id', vehicleId).eq('driver_id', uid);
   }
 
-  // ---------------- Documents: OR & CR (separate) ----------------
+  // ---------------- Document Uploads ----------------
 
-  /// Upload OR image/PDF to storage and store `or_key` on the vehicle.
   Future<void> uploadOR({required String vehicleId, required File file}) async {
     final uid = _requireUid();
-
     final ext = file.path.split('.').last.toLowerCase();
     final key =
         'or/$uid/$vehicleId-${DateTime.now().millisecondsSinceEpoch}.$ext';
 
-    await sb.storage.from(_bucket).upload(key, file);
+    await sb.storage
+        .from(_bucket)
+        .upload(key, file, fileOptions: const FileOptions(upsert: true));
     await sb
         .from('vehicles')
         .update({'or_key': key})
@@ -251,15 +228,15 @@ class VehiclesService {
         .eq('driver_id', uid);
   }
 
-  /// Upload CR image/PDF to storage and store `cr_key` on the vehicle.
   Future<void> uploadCR({required String vehicleId, required File file}) async {
     final uid = _requireUid();
-
     final ext = file.path.split('.').last.toLowerCase();
     final key =
         'cr/$uid/$vehicleId-${DateTime.now().millisecondsSinceEpoch}.$ext';
 
-    await sb.storage.from(_bucket).upload(key, file);
+    await sb.storage
+        .from(_bucket)
+        .upload(key, file, fileOptions: const FileOptions(upsert: true));
     await sb
         .from('vehicles')
         .update({'cr_key': key})
@@ -267,17 +244,12 @@ class VehiclesService {
         .eq('driver_id', uid);
   }
 
-  /// Remove OR file and clear `or_key`.
   Future<void> removeOR(String vehicleId) async {
     final uid = _requireUid();
     final v = await getVehicle(vehicleId);
-    final key = (v?['or_key'] as String?) ?? '';
-    if (key.isNotEmpty) {
-      try {
-        await sb.storage.from(_bucket).remove([key]);
-      } catch (_) {
-        // non-fatal
-      }
+    final key = v?['or_key'] as String?;
+    if (key != null && key.isNotEmpty) {
+      await sb.storage.from(_bucket).remove([key]);
     }
     await sb
         .from('vehicles')
@@ -286,17 +258,12 @@ class VehiclesService {
         .eq('driver_id', uid);
   }
 
-  /// Remove CR file and clear `cr_key`.
   Future<void> removeCR(String vehicleId) async {
     final uid = _requireUid();
     final v = await getVehicle(vehicleId);
-    final key = (v?['cr_key'] as String?) ?? '';
-    if (key.isNotEmpty) {
-      try {
-        await sb.storage.from(_bucket).remove([key]);
-      } catch (_) {
-        // non-fatal
-      }
+    final key = v?['cr_key'] as String?;
+    if (key != null && key.isNotEmpty) {
+      await sb.storage.from(_bucket).remove([key]);
     }
     await sb
         .from('vehicles')
@@ -305,20 +272,18 @@ class VehiclesService {
         .eq('driver_id', uid);
   }
 
-  /// Get a short-lived signed URL to preview a document (OR or CR).
   Future<String?> signedUrl(String? storageKey, {int expiresIn = 300}) async {
     if (storageKey == null || storageKey.isEmpty) return null;
-    return await sb.storage
+    final res = await sb.storage
         .from(_bucket)
         .createSignedUrl(storageKey, expiresIn);
+    return res;
   }
 
-  // ---------------- Submit / Resubmit ----------------
+  // ---------------- Verification ----------------
 
-  /// Submit for verification. Requires BOTH OR and CR present.
   Future<void> submitForVerificationBoth(String vehicleId) async {
     final uid = _requireUid();
-
     final v =
         await sb
             .from('vehicles')
@@ -327,16 +292,16 @@ class VehiclesService {
             .eq('driver_id', uid)
             .maybeSingle();
 
-    final orKey = (v?['or_key'] as String?) ?? '';
-    final crKey = (v?['cr_key'] as String?) ?? '';
-    final legacy = (v?['orcr_key'] as String?) ?? '';
+    final orKey = v?['or_key'] as String? ?? '';
+    final crKey = v?['cr_key'] as String? ?? '';
+    final legacy = v?['orcr_key'] as String? ?? '';
 
     if (orKey.isEmpty || crKey.isEmpty) {
-      // If you want to accept legacy ORCR instead, relax this.
-      // if (legacy.isNotEmpty) { ... }
-      throw Exception(
-        'Please upload both OR and CR documents before submitting.',
-      );
+      if (legacy.isEmpty) {
+        throw Exception(
+          'Please upload both OR and CR documents before submitting.',
+        );
+      }
     }
 
     await sb
@@ -352,7 +317,6 @@ class VehiclesService {
         .eq('driver_id', uid);
   }
 
-  /// Alias for resubmission after rejection (same flow).
   Future<void> resubmitBoth(String vehicleId) =>
       submitForVerificationBoth(vehicleId);
 }

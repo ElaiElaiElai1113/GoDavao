@@ -912,166 +912,174 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
   @override
   Widget build(BuildContext context) {
     final insets = MediaQuery.of(context).viewInsets;
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      child: Padding(
-        padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          top: 12,
-          bottom: insets.bottom + 12,
+    return SingleChildScrollView(
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
         ),
-        child: Form(
-          key: _form,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(99),
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 12,
+            bottom: insets.bottom + 12,
+          ),
+          child: Form(
+            key: _form,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'Add Vehicle',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 12),
-
-              // Base info
-              _Section(
-                title: 'Details',
-                children: [
-                  TextFormField(
-                    controller: _make,
-                    decoration: const InputDecoration(
-                      labelText: 'Make *',
-                      hintText: 'e.g., Toyota',
-                    ),
-                    textInputAction: TextInputAction.next,
-                    validator:
-                        (v) =>
-                            (v == null || v.trim().isEmpty) ? 'Required' : null,
-                  ),
-                  TextFormField(
-                    controller: _model,
-                    decoration: const InputDecoration(
-                      labelText: 'Model *',
-                      hintText: 'e.g., Vios',
-                    ),
-                    textInputAction: TextInputAction.next,
-                    validator:
-                        (v) =>
-                            (v == null || v.trim().isEmpty) ? 'Required' : null,
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _year,
-                          decoration: const InputDecoration(labelText: 'Year'),
-                          keyboardType: TextInputType.number,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _seats,
-                          decoration: const InputDecoration(
-                            labelText: 'Seats *',
-                          ),
-                          keyboardType: TextInputType.number,
-                          validator: (v) {
-                            final n = int.tryParse((v ?? '').trim());
-                            if (n == null) return 'Enter a number';
-                            if (n < 1 || n > 10) return 'Seats must be 1–10';
-                            return null;
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  TextFormField(
-                    controller: _plate,
-                    decoration: const InputDecoration(labelText: 'Plate'),
-                  ),
-                  TextFormField(
-                    controller: _color,
-                    decoration: const InputDecoration(labelText: 'Color'),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 8),
-
-              _Section(
-                title: 'OR / CR (optional for now)',
-                children: [
-                  TextFormField(
-                    controller: _orNumber,
-                    decoration: const InputDecoration(labelText: 'OR Number'),
-                  ),
-                  TextFormField(
-                    controller: _crNumber,
-                    decoration: const InputDecoration(labelText: 'CR Number'),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.upload_file),
-                          label: Text(
-                            _orFile == null ? 'Upload OR' : 'Replace OR',
-                          ),
-                          onPressed: () => _pickFile(true),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.upload_file),
-                          label: Text(
-                            _crFile == null ? 'Upload CR' : 'Replace CR',
-                          ),
-                          onPressed: () => _pickFile(false),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 8),
-
-              SwitchListTile(
-                value: _isDefault,
-                onChanged: (v) => setState(() => _isDefault = v),
-                title: const Text('Set as default'),
-                contentPadding: EdgeInsets.zero,
-                activeColor: _purple,
-              ),
-              const SizedBox(height: 8),
-
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _purple,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: _saving ? null : _save,
-                  icon: const Icon(Icons.save),
-                  label: Text(_saving ? 'Saving…' : 'Save'),
+                const SizedBox(height: 12),
+                const Text(
+                  'Add Vehicle',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                 ),
-              ),
-            ],
+                const SizedBox(height: 12),
+
+                // Base info
+                _Section(
+                  title: 'Details',
+                  children: [
+                    TextFormField(
+                      controller: _make,
+                      decoration: const InputDecoration(
+                        labelText: 'Make *',
+                        hintText: 'e.g., Toyota',
+                      ),
+                      textInputAction: TextInputAction.next,
+                      validator:
+                          (v) =>
+                              (v == null || v.trim().isEmpty)
+                                  ? 'Required'
+                                  : null,
+                    ),
+                    TextFormField(
+                      controller: _model,
+                      decoration: const InputDecoration(
+                        labelText: 'Model *',
+                        hintText: 'e.g., Vios',
+                      ),
+                      textInputAction: TextInputAction.next,
+                      validator:
+                          (v) =>
+                              (v == null || v.trim().isEmpty)
+                                  ? 'Required'
+                                  : null,
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _year,
+                            decoration: const InputDecoration(
+                              labelText: 'Year',
+                            ),
+                            keyboardType: TextInputType.number,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextFormField(
+                            controller: _seats,
+                            decoration: const InputDecoration(
+                              labelText: 'Seats *',
+                            ),
+                            keyboardType: TextInputType.number,
+                            validator: (v) {
+                              final n = int.tryParse((v ?? '').trim());
+                              if (n == null) return 'Enter a number';
+                              if (n < 1 || n > 10) return 'Seats must be 1–10';
+                              return null;
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    TextFormField(
+                      controller: _plate,
+                      decoration: const InputDecoration(labelText: 'Plate'),
+                    ),
+                    TextFormField(
+                      controller: _color,
+                      decoration: const InputDecoration(labelText: 'Color'),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 8),
+
+                _Section(
+                  title: 'OR / CR (optional for now)',
+                  children: [
+                    TextFormField(
+                      controller: _orNumber,
+                      decoration: const InputDecoration(labelText: 'OR Number'),
+                    ),
+                    TextFormField(
+                      controller: _crNumber,
+                      decoration: const InputDecoration(labelText: 'CR Number'),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.upload_file),
+                            label: Text(
+                              _orFile == null ? 'Upload OR' : 'Replace OR',
+                            ),
+                            onPressed: () => _pickFile(true),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.upload_file),
+                            label: Text(
+                              _crFile == null ? 'Upload CR' : 'Replace CR',
+                            ),
+                            onPressed: () => _pickFile(false),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 8),
+
+                SwitchListTile(
+                  value: _isDefault,
+                  onChanged: (v) => setState(() => _isDefault = v),
+                  title: const Text('Set as default'),
+                  contentPadding: EdgeInsets.zero,
+                  activeColor: _purple,
+                ),
+                const SizedBox(height: 8),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _purple,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: _saving ? null : _save,
+                    icon: const Icon(Icons.save),
+                    label: Text(_saving ? 'Saving…' : 'Save'),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
