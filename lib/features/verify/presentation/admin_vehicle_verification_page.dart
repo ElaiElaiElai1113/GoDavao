@@ -447,11 +447,7 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _VehiclePreviewSheet extends StatefulWidget {
-  const _VehiclePreviewSheet({
-    required this.vehicle,
-    required this.svc,
-    super.key,
-  });
+  const _VehiclePreviewSheet({required this.vehicle, required this.svc});
   final Map<String, dynamic> vehicle;
   final _VehicleAdminService svc;
 

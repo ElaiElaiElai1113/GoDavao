@@ -255,9 +255,7 @@ class _RequestTile extends StatelessWidget {
 
     return ListTile(
       title: Text('$role – ${userId.substring(0, 8)}'),
-      subtitle: Text(
-        createdAt == null ? 'Submitted' : 'Submitted ${createdAt}',
-      ),
+      subtitle: Text(createdAt == null ? 'Submitted' : 'Submitted $createdAt'),
       onTap: onOpen,
       trailing:
           busy
@@ -368,7 +366,7 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _PreviewSheet extends StatelessWidget {
-  const _PreviewSheet({required this.row, super.key});
+  const _PreviewSheet({required this.row});
   final Map<String, dynamic> row;
 
   String? _key(Map r, String k) =>

@@ -870,6 +870,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                       'View ride',
                       overflow: TextOverflow.ellipsis,
                     ),
+                    style: OutlinedButton.styleFrom(foregroundColor: _purple),
                     onPressed: () {
                       Navigator.push(
                         context,
@@ -888,6 +889,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                       'Rate passenger',
                       overflow: TextOverflow.ellipsis,
                     ),
+                    style: OutlinedButton.styleFrom(foregroundColor: _purple),
                     onPressed: () => _ratePassenger(m),
                   ),
               ],
@@ -1121,6 +1123,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                 OutlinedButton.icon(
                   icon: const Icon(Icons.map),
                   label: const Text('Map: all pickups'),
+                  style: OutlinedButton.styleFrom(foregroundColor: _purple),
                   onPressed:
                       g.items.any((m) => m.hasCoords)
                           ? () => _openMapPreview(group: g)
@@ -1129,6 +1132,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                 OutlinedButton.icon(
                   icon: const Icon(Icons.select_all),
                   label: const Text('Select all pending'),
+                  style: OutlinedButton.styleFrom(foregroundColor: _purple),
                   onPressed:
                       pending.isEmpty
                           ? null
@@ -1141,6 +1145,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                 OutlinedButton.icon(
                   icon: const Icon(Icons.clear_all),
                   label: const Text('Clear selection'),
+                  style: OutlinedButton.styleFrom(foregroundColor: _purple),
                   onPressed:
                       g.selected.isEmpty
                           ? null
@@ -1281,7 +1286,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           point: p,
           width: 34,
           height: 34,
-          child: const Icon(Icons.location_pin, color: Colors.green, size: 32),
+          child: const Icon(Icons.location_pin, color: _purple, size: 32),
         ),
         Marker(
           point: d,
@@ -1294,7 +1299,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         Polyline(
           points: [p, d],
           strokeWidth: 3,
-          color: Colors.black54,
+          color: _purpleDark.withOpacity(.85),
           isDotted: true,
         ),
       );
@@ -1307,7 +1312,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             height: 30,
             child: const Icon(
               Icons.person_pin_circle,
-              color: Colors.green,
+              color: _purple,
               size: 28,
             ),
           ),
@@ -1350,7 +1355,39 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
-        title: const Text('Ride Matches'),
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [_purple.withOpacity(0.4), Colors.transparent],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        ),
+        backgroundColor: const Color.fromARGB(3, 0, 0, 0),
+        elevation: 0,
+        centerTitle: true,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: CircleAvatar(
+            backgroundColor: Colors.white.withOpacity(0.9),
+            child: IconButton(
+              icon: const Icon(
+                Icons.arrow_back_ios_new,
+                color: _purple,
+                size: 18,
+              ),
+              onPressed: () => Navigator.maybePop(context),
+              tooltip: 'Back',
+            ),
+          ),
+        ),
+        title: const Text(
+          'Ride Matches',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+        actionsIconTheme: const IconThemeData(color: Colors.white),
         actions: [
           const _AdminMenuButton(),
           IconButton(
@@ -1366,31 +1403,58 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           ),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(56),
+          preferredSize: const Size.fromHeight(64),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
             child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              height: 52,
               decoration: BoxDecoration(
-                color: Colors.grey.shade200,
-                borderRadius: BorderRadius.circular(30),
-              ),
-              child: TabBar(
-                controller: _tabController,
-                isScrollable: true, // prevents overflow on small screens
-                indicator: BoxDecoration(
-                  color: _purple,
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                indicatorSize: TabBarIndicatorSize.tab,
-                labelColor: Colors.white,
-                unselectedLabelColor: Colors.black87,
-                dividerColor: Colors.transparent,
-                tabs: [
-                  _TabWithBadge(text: 'Upcoming', count: _badgeUpcoming),
-                  _TabWithBadge(text: 'Declined', count: _badgeDeclined),
-                  _TabWithBadge(text: 'Completed', count: _badgeCompleted),
+                color: Colors.white.withOpacity(0.7),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: Colors.white.withOpacity(0.6)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.06),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
                 ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: TabBar(
+                  controller: _tabController,
+                  isScrollable: false, // evenly fills space
+                  indicator: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF6A27F7), Color(0xFF4B18C9)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(999),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Color(0xFF6A27F7).withOpacity(0.25),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  labelColor: Colors.white,
+                  unselectedLabelColor: Colors.black87,
+                  dividerColor: Colors.transparent,
+                  labelStyle: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    letterSpacing: 0.3,
+                  ),
+                  tabs: [
+                    _TabWithBadge(text: 'Upcoming', count: _badgeUpcoming),
+                    _TabWithBadge(text: 'Declined', count: _badgeDeclined),
+                    _TabWithBadge(text: 'Completed', count: _badgeCompleted),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1516,24 +1580,35 @@ class _TabWithBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final has = count > 0;
+
     return FittedBox(
       fit: BoxFit.scaleDown,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(text),
+          Text(
+            text,
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.2,
+            ),
+          ),
           if (has) ...[
             const SizedBox(width: 6),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
               decoration: BoxDecoration(
-                color: Colors.red.shade500,
+                gradient: LinearGradient(
+                  colors: [Colors.red.shade400, Colors.red.shade600],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
                 borderRadius: BorderRadius.circular(999),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.red.withOpacity(0.25),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
+                    color: Colors.red.withOpacity(0.35),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
                   ),
                 ],
               ),
@@ -1543,6 +1618,8 @@ class _TabWithBadge extends StatelessWidget {
                   color: Colors.white,
                   fontSize: 11,
                   fontWeight: FontWeight.w800,
+                  height: 1.1,
+                  letterSpacing: 0.2,
                 ),
               ),
             ),
@@ -1569,7 +1646,8 @@ class _MapThumb extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bounds = LatLngBounds.fromPoints([pickup, destination]);
-
+    const _purple = Color(0xFF6A27F7);
+    const _purpleDark = Color(0xFF4B18C9);
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: DecoratedBox(
@@ -1608,7 +1686,7 @@ class _MapThumb extends StatelessWidget {
                       Polyline(
                         points: [pickup, destination],
                         strokeWidth: 3,
-                        color: Colors.black.withOpacity(0.6),
+                        color: _purpleDark.withOpacity(.9),
                       ),
                     ],
                   ),
@@ -1620,7 +1698,7 @@ class _MapThumb extends StatelessWidget {
                         height: 24,
                         child: const Icon(
                           Icons.location_pin,
-                          color: Colors.green,
+                          color: _purple,
                           size: 24,
                         ),
                       ),

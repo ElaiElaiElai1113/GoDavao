@@ -547,8 +547,9 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
             fontSize: 18,
           ),
         ),
+
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(108),
+          preferredSize: const Size.fromHeight(160),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: Column(

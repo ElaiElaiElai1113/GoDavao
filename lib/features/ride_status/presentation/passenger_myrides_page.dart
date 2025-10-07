@@ -12,13 +12,13 @@ import 'package:godavao/features/ride_status/presentation/passenger_ride_status_
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
 import 'package:godavao/features/ratings/presentation/rate_user.dart'; // <— for rating sheet
 
-class PassengerRidesPage extends StatefulWidget {
-  const PassengerRidesPage({super.key});
+class PassengerMyRidesPage extends StatefulWidget {
+  const PassengerMyRidesPage({super.key});
   @override
-  State<PassengerRidesPage> createState() => _PassengerRidesPageState();
+  State<PassengerMyRidesPage> createState() => _PassengerMyRidesPageState();
 }
 
-class _PassengerRidesPageState extends State<PassengerRidesPage> {
+class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
   final sb = Supabase.instance.client;
 
   bool _loading = true;
@@ -218,12 +218,10 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
           .inFilter('ride_id', ids.toList());
 
       final rated =
-          rows is List
-              ? rows
-                  .map((e) => (e as Map)['ride_id']?.toString())
-                  .whereType<String>()
-                  .toSet()
-              : <String>{};
+          rows
+              .map((e) => (e as Map)['ride_id']?.toString())
+              .whereType<String>()
+              .toSet();
 
       if (!mounted) return;
       setState(() {
@@ -397,7 +395,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                         Polyline(
                           points: [LatLng(pLat, pLng), LatLng(dLat, dLng)],
                           strokeWidth: 3,
-                          color: Colors.purple.shade700,
+                          color: _purpleDark.withOpacity(.9),
                         ),
                     ];
                     return FlutterMap(
@@ -427,7 +425,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                               height: 28,
                               child: const Icon(
                                 Icons.location_on,
-                                color: Colors.purple,
+                                color: _purple,
                               ),
                             ),
                             Marker(
@@ -558,7 +556,7 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
                   label: const Text('Rate your driver'),
                   onPressed: () async {
                     final me = sb.auth.currentUser?.id;
-                    if (me == null || driverId == null) return;
+                    if (me == null) return;
                     await showModalBottomSheet(
                       context: context,
                       isScrollControlled: true,
@@ -661,10 +659,40 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
       return Scaffold(
         backgroundColor: _bg,
         appBar: AppBar(
-          title: const Text('My Rides'),
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.white,
+          flexibleSpace: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [_purple.withOpacity(0.4), Colors.transparent],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+            ),
+          ),
+          backgroundColor: const Color.fromARGB(3, 0, 0, 0),
           elevation: 0,
+          centerTitle: true,
+          leading: Padding(
+            padding: const EdgeInsets.only(left: 12),
+            child: CircleAvatar(
+              backgroundColor: Colors.white.withOpacity(0.9),
+              child: IconButton(
+                icon: const Icon(
+                  Icons.arrow_back_ios_new,
+                  color: _purple,
+                  size: 18,
+                ),
+                onPressed: () => Navigator.maybePop(context),
+              ),
+            ),
+          ),
+          title: const Text(
+            'My Rides',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
+            ),
+          ),
         ),
         body: Center(child: Text(_error!)),
       );
@@ -675,10 +703,40 @@ class _PassengerRidesPageState extends State<PassengerRidesPage> {
       child: Scaffold(
         backgroundColor: _bg,
         appBar: AppBar(
-          title: const Text('My Rides'),
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.white,
+          flexibleSpace: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [_purple.withOpacity(0.4), Colors.transparent],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+            ),
+          ),
+          backgroundColor: const Color.fromARGB(3, 0, 0, 0),
           elevation: 0,
+          centerTitle: true,
+          leading: Padding(
+            padding: const EdgeInsets.only(left: 12),
+            child: CircleAvatar(
+              backgroundColor: Colors.white.withOpacity(0.9),
+              child: IconButton(
+                icon: const Icon(
+                  Icons.arrow_back_ios_new,
+                  color: _purple,
+                  size: 18,
+                ),
+                onPressed: () => Navigator.maybePop(context),
+              ),
+            ),
+          ),
+          title: const Text(
+            'My Rides',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
+            ),
+          ),
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(56),
             child: Padding(

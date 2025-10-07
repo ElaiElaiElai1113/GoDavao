@@ -318,7 +318,7 @@ class _AuthPageState extends State<AuthPage> {
                           const SizedBox(height: 24),
 
                           Text(
-                            _isLogin ? 'Welcome back' : 'Create your account',
+                            _isLogin ? 'Welcome' : 'Create your account',
                             style: Theme.of(
                               context,
                             ).textTheme.titleLarge?.copyWith(
@@ -341,6 +341,7 @@ class _AuthPageState extends State<AuthPage> {
                             controller: _emailCtrl,
                             keyboardType: TextInputType.emailAddress,
                             autofillHints: const [AutofillHints.email],
+                            style: const TextStyle(color: Colors.white),
                             decoration: _fieldDecor(
                               label: 'Email',
                               hint: 'you@example.com',
@@ -359,10 +360,15 @@ class _AuthPageState extends State<AuthPage> {
                             controller: _passwordCtrl,
                             obscureText: _obscure,
                             autofillHints: const [AutofillHints.password],
+                            style: const TextStyle(color: Colors.white),
+
                             decoration: _fieldDecor(
                               label: 'Password',
                               hint: 'Enter your password',
                               suffix: IconButton(
+                                style: IconButton.styleFrom(
+                                  foregroundColor: Colors.white70,
+                                ),
                                 icon: Icon(
                                   _obscure
                                       ? Icons.visibility_off

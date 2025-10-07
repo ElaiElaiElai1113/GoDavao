@@ -160,7 +160,7 @@ class VerificationService {
     // 2) Create a realtime channel and push on any relevant UPDATE
     final controller = StreamController<VerificationStatus>();
 
-    Future<void> _push() async {
+    Future<void> push() async {
       final latest = await fetchStatus(userId: id);
       if (!controller.isClosed) controller.add(latest);
     }
@@ -176,7 +176,7 @@ class VerificationService {
               callback: (payload) {
                 try {
                   final newRec = payload.newRecord ?? {};
-                  if (newRec['id'] == id) _push();
+                  if (newRec['id'] == id) push();
                 } catch (_) {}
               },
             )
@@ -188,7 +188,7 @@ class VerificationService {
               callback: (payload) {
                 try {
                   final newRec = payload.newRecord ?? {};
-                  if (newRec['user_id'] == id) _push();
+                  if (newRec['user_id'] == id) push();
                 } catch (_) {}
               },
             )
@@ -200,14 +200,14 @@ class VerificationService {
               callback: (payload) {
                 try {
                   final newRec = payload.newRecord ?? {};
-                  if (newRec['user_id'] == id) _push();
+                  if (newRec['user_id'] == id) push();
                 } catch (_) {}
               },
             )
             .subscribe();
 
     // Kick once more to avoid UI race
-    _push();
+    push();
 
     try {
       yield* controller.stream;

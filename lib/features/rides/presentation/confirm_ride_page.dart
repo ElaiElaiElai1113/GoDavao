@@ -34,8 +34,8 @@ class ConfirmRidePage extends StatefulWidget {
 
 class _ConfirmRidePageState extends State<ConfirmRidePage> {
   // Theme / formatters
-  static const _accent = Color(0xFF6A27F7);
-  static const _accentDark = Color(0xFF4B18C9);
+  static const _purple = Color(0xFF6A27F7);
+  static const _purpleDark = Color(0xFF4B18C9);
   final _pesoFmt = NumberFormat.currency(
     locale: 'en_PH',
     symbol: '₱',
@@ -118,7 +118,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       if (!mounted) return;
       setState(() {
         _routePolyline = d.toPolyline(
-          color: _accentDark.withOpacity(.9),
+          color: _purpleDark.withOpacity(.9),
           width: 3,
         );
         _distanceKm = double.parse(km.toStringAsFixed(2));
@@ -134,7 +134,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       setState(() {
         _routePolyline = Polyline(
           points: [widget.pickup, widget.destination],
-          color: _accentDark.withOpacity(.9),
+          color: _purpleDark.withOpacity(.9),
           strokeWidth: 3,
         );
         _distanceKm = double.parse(km.toStringAsFixed(2));
@@ -422,6 +422,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   }
 
   // ────────────── UI ──────────────
+
   @override
   Widget build(BuildContext context) {
     final fareTotal = _fare?.total ?? 0.0;
@@ -429,24 +430,85 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         (_effectiveSeats > 0) ? (fareTotal / _effectiveSeats) : fareTotal;
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF7F7F9),
       appBar: AppBar(
-        title: const Text('Confirm Ride'),
-        backgroundColor: _accent,
-        foregroundColor: Colors.white,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [_purple.withOpacity(0.4), Colors.transparent],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        ),
+        backgroundColor: const Color.fromARGB(3, 0, 0, 0),
+        elevation: 0,
+        centerTitle: true,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: CircleAvatar(
+            backgroundColor: Colors.white.withOpacity(0.9),
+            child: IconButton(
+              icon: const Icon(
+                Icons.arrow_back_ios_new,
+                color: _purple,
+                size: 18,
+              ),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
+        ),
+        title: const Text(
+          'Confirm Ride',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
       ),
+
       body: Column(
         children: [
-          SizedBox(height: 240, child: _buildMap()),
-          if (_error != null)
-            Container(
-              width: double.infinity,
-              color: Colors.amber.shade100,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Text(
-                _error!,
-                style: TextStyle(color: Colors.amber.shade900),
+          // --- MAP SECTION ---
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: Container(
+                height: 230,
+                decoration: BoxDecoration(
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: _buildMap(),
               ),
             ),
+          ),
+
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  _error!,
+                  style: TextStyle(color: Colors.amber.shade900),
+                ),
+              ),
+            ),
+
+          // --- DETAILS SECTION ---
           Expanded(
             child: RefreshIndicator(
               onRefresh: () async {
@@ -455,62 +517,108 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 await _refreshCarpoolAndFare();
               },
               child: ListView(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
                 children: [
                   _InfoRow(
                     icon: Icons.route_outlined,
                     title: '${_distanceKm.toStringAsFixed(2)} km',
                     subtitle: '${_durationMin.toStringAsFixed(0)} min (est.)',
                   ),
-                  const SizedBox(height: 8),
-                  _pakyawCard(),
-                  const SizedBox(height: 8),
-                  if (!_pakyaw) _seatsCard(),
-                  if (_pakyaw) _pakyawSeatsSummaryCard(),
-                  const SizedBox(height: 8),
-                  _fareCard(fareTotal, perSeat),
-                  const SizedBox(height: 8),
-                  if (!_pakyaw) _carpoolPreviewTable(),
+                  const SizedBox(height: 10),
+                  _buildCard(child: _pakyawCard()),
+                  if (!_pakyaw) ...[
+                    const SizedBox(height: 10),
+                    _buildCard(child: _seatsCard()),
+                  ],
+                  if (_pakyaw) ...[
+                    const SizedBox(height: 10),
+                    _buildCard(child: _pakyawSeatsSummaryCard()),
+                  ],
+                  const SizedBox(height: 10),
+                  _buildCard(child: _fareCard(fareTotal, perSeat)),
+                  if (!_pakyaw) ...[
+                    const SizedBox(height: 10),
+                    _buildCard(child: _carpoolPreviewTable()),
+                  ],
                 ],
               ),
             ),
           ),
         ],
       ),
+
+      // --- CONFIRM BUTTON ---
       bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-          child: SizedBox(
-            height: 52,
-            child: ElevatedButton.icon(
-              icon: const Icon(Icons.check_circle_outline),
-              label:
-                  _loading || _submitting
-                      ? const Text('Processing...')
-                      : Text(
-                        _pakyaw
-                            ? 'Confirm Pakyaw • ${_peso(fareTotal)}'
-                            : 'Confirm • ${_peso(fareTotal)}',
-                      ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _accent,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                textStyle: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              onPressed:
-                  (_loading ||
-                          _submitting ||
-                          _fare == null ||
-                          (_capacityAvailable ?? 0) <= 0)
-                      ? null
-                      : _confirmRide,
+        child: Container(
+          margin: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [_purple.withOpacity(0.9), _purple],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: _purple.withOpacity(0.4),
+                blurRadius: 10,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: ElevatedButton.icon(
+            icon: const Icon(Icons.check_circle_outline, color: Colors.white),
+            label: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Text(
+                _loading || _submitting
+                    ? 'Processing...'
+                    : _pakyaw
+                    ? 'Confirm Pakyaw • ${_peso(fareTotal)}'
+                    : 'Confirm • ${_peso(fareTotal)}',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            style: ElevatedButton.styleFrom(
+              elevation: 0,
+              backgroundColor: Colors.transparent,
+              shadowColor: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
+            onPressed:
+                (_loading ||
+                        _submitting ||
+                        _fare == null ||
+                        (_capacityAvailable ?? 0) <= 0)
+                    ? null
+                    : _confirmRide,
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildCard({required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: child,
     );
   }
 

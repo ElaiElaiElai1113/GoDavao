@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:godavao/features/profile/presentation/profile_page.dart';
-import 'package:godavao/features/vehicles/data/vehicle.dart';
 import 'package:godavao/features/vehicles/presentation/vehicles_page.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -11,7 +10,7 @@ import 'features/auth/presentation/auth_page.dart';
 import 'features/dashboard/presentation/dashboard_page.dart';
 import 'features/maps/passenger_map_page.dart';
 import 'features/ride_status/presentation/driver_rides_page.dart';
-import 'features/ride_status/presentation/passenger_rides_page.dart';
+import 'features/ride_status/presentation/passenger_myrides_page.dart';
 import 'features/routes/presentation/pages/driver_route_page.dart';
 
 import 'features/chat/data/chat_subscription_service.dart';
@@ -85,7 +84,7 @@ class GoDavaoApp extends StatelessWidget {
       routes: {
         '/dashboard': (_) => const DashboardPage(),
         '/driver_rides': (_) => const DriverRidesPage(),
-        '/passenger_rides': (_) => const PassengerRidesPage(),
+        '/passenger_rides': (_) => const PassengerMyRidesPage(),
         '/passenger_map': (_) => const PassengerMapPage(),
         '/driver_route': (_) => const DriverRoutePage(),
         '/profile': (_) => const ProfilePage(),

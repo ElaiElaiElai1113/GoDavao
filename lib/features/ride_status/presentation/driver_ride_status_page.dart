@@ -313,7 +313,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
             event: PostgresChangeEvent.update,
             callback: (payload) async {
               final newRec = payload.newRecord;
-              if (newRec == null) return;
               if (newRec['id']?.toString() != widget.rideId) return;
 
               final updated = Map<String, dynamic>.from(newRec);
@@ -355,7 +354,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
             event: PostgresChangeEvent.insert,
             callback: (p) {
               final r = p.newRecord;
-              if (r == null) return;
               if (r['ride_id']?.toString() == widget.rideId &&
                   r['actor']?.toString() == actor) {
                 _onLiveRow(actor, r);
@@ -368,7 +366,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
             event: PostgresChangeEvent.update,
             callback: (p) {
               final r = p.newRecord;
-              if (r == null) return;
               if (r['ride_id']?.toString() == widget.rideId &&
                   r['actor']?.toString() == actor) {
                 _onLiveRow(actor, r);
@@ -611,7 +608,44 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     if (_error != null) {
       return Scaffold(
         backgroundColor: _bg,
-        appBar: AppBar(title: const Text('Driver Ride Details')),
+        appBar: AppBar(
+          flexibleSpace: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [_purple.withOpacity(0.4), Colors.transparent],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+            ),
+          ),
+          backgroundColor: const Color.fromARGB(3, 0, 0, 0),
+          elevation: 0,
+          centerTitle: true,
+          leading: Padding(
+            padding: const EdgeInsets.only(left: 12),
+            child: CircleAvatar(
+              backgroundColor: Colors.white.withOpacity(0.9),
+              child: IconButton(
+                icon: const Icon(
+                  Icons.arrow_back_ios_new,
+                  color: _purple,
+                  size: 18,
+                ),
+                onPressed: () => Navigator.maybePop(context),
+              ),
+            ),
+          ),
+          title: const Text(
+            'Driver Ride Details',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
+            ),
+          ),
+          iconTheme: const IconThemeData(color: Colors.white),
+          actionsIconTheme: const IconThemeData(color: Colors.white),
+        ),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -659,10 +693,42 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
-        title: const Text('Driver Ride Details'),
-        backgroundColor: Colors.white,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [_purple.withOpacity(0.4), Colors.transparent],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        ),
+        backgroundColor: const Color.fromARGB(3, 0, 0, 0),
         elevation: 0,
-        surfaceTintColor: Colors.white,
+        centerTitle: true,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: CircleAvatar(
+            backgroundColor: Colors.white.withOpacity(0.9),
+            child: IconButton(
+              icon: const Icon(
+                Icons.arrow_back_ios_new,
+                color: _purple,
+                size: 18,
+              ),
+              onPressed: () => Navigator.maybePop(context),
+            ),
+          ),
+        ),
+        title: const Text(
+          'Driver Ride Details',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+        actionsIconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
             tooltip: _followDriver ? 'Disable follow' : 'Enable follow',
@@ -737,7 +803,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                     Polyline(
                       points: [pickup, dest],
                       strokeWidth: 5,
-                      color: Colors.black.withOpacity(0.6),
+                      color: _purpleDark.withOpacity(.9),
                     ),
                   ],
                 ),
@@ -897,6 +963,9 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                               );
                             },
                             child: const Text('View feedback'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: _purple,
+                            ),
                           ),
                         ],
                       ),
@@ -960,6 +1029,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                           },
                           icon: const Icon(Icons.center_focus_strong, size: 16),
                           label: const Text('Center on me'),
+                          style: TextButton.styleFrom(foregroundColor: _purple),
                         ),
                         const SizedBox(width: 6),
                         TextButton.icon(
@@ -970,6 +1040,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                           },
                           icon: const Icon(Icons.place, size: 16),
                           label: const Text('Destination'),
+                          style: TextButton.styleFrom(foregroundColor: _purple),
                         ),
                         const Spacer(),
                         if (_matchId != null)
@@ -985,6 +1056,9 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                                 ),
                               );
                             },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _purple,
+                            ),
                           ),
                       ],
                     ),
@@ -1002,6 +1076,9 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                             HapticFeedback.selectionClick();
                             await _maybePromptRatingIfCompleted();
                           },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _purple,
+                          ),
                         ),
                       ),
                   ],

@@ -194,8 +194,9 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
 
   void _toggleFollow() {
     setState(() => _followMe = !_followMe);
-    if (_followMe && _myPos != null)
+    if (_followMe && _myPos != null) {
       _map.move(_myPos!, math.max(_map.camera.zoom, 15));
+    }
   }
 
   void _centerOnMe() {
@@ -330,7 +331,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
         _manualRoute = Polyline(
           points: List.of(_manualPoints),
           strokeWidth: 4,
-          color: Colors.blue,
+          color: _purpleDark.withOpacity(.9),
         );
       });
       await _recomputeFareEstimate();
@@ -403,13 +404,17 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                                     ? Polyline(
                                       points: List.of(_manualPoints),
                                       strokeWidth: 4,
-                                      color: Colors.blue,
+                                      color: _purpleDark.withOpacity(.9),
                                     )
                                     : null;
                           });
                           await _recomputeFareEstimate();
                         }
                       },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _purple,
+                        foregroundColor: Colors.white,
+                      ),
                     ),
                     const SizedBox(width: 8),
                     OutlinedButton.icon(
@@ -424,12 +429,14 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                         });
                         await _recomputeFareEstimate();
                       },
+                      style: OutlinedButton.styleFrom(foregroundColor: _purple),
                     ),
                     const Spacer(),
                     TextButton.icon(
                       icon: const Icon(Icons.check),
                       label: const Text('Done'),
                       onPressed: () => Navigator.pop(context),
+                      style: TextButton.styleFrom(foregroundColor: _purple),
                     ),
                   ],
                 ),
@@ -590,9 +597,42 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
-        title: const Text('Create Driver Route'),
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [_purple.withOpacity(0.4), Colors.transparent],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        ),
+        backgroundColor: const Color.fromARGB(3, 0, 0, 0),
+        elevation: 0,
+        centerTitle: true,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: CircleAvatar(
+            backgroundColor: Colors.white.withOpacity(0.9),
+            child: IconButton(
+              icon: const Icon(
+                Icons.arrow_back_ios_new,
+                color: _purple,
+                size: 18,
+              ),
+              onPressed: () => Navigator.maybePop(context),
+            ),
+          ),
+        ),
+        title: const Text(
+          'Create Driver Route',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+        actionsIconTheme: const IconThemeData(color: Colors.white),
       ),
       floatingActionButton: _PublishFab(
         enabled:
@@ -634,14 +674,14 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                         child: Container(
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: Colors.blue.withOpacity(.15),
+                            color: _purple.withOpacity(.15),
                           ),
                           alignment: Alignment.center,
                           child: Container(
                             width: 12,
                             height: 12,
                             decoration: const BoxDecoration(
-                              color: Colors.blue,
+                              color: _purple,
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -656,7 +696,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                       Polyline(
                         points: _osrmRoute!.points,
                         strokeWidth: 4,
-                        color: Colors.purple.shade700,
+                        color: _purpleDark.withOpacity(.9),
                       ),
                     ],
                   ),
@@ -667,7 +707,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                       Polyline(
                         points: _manualRoute!.points,
                         strokeWidth: 4,
-                        color: Colors.blue,
+                        color: _purpleDark.withOpacity(.9),
                       ),
                     ],
                   ),
@@ -739,13 +779,14 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
             child: Align(
               alignment: Alignment.topRight,
               child: Padding(
-                padding: const EdgeInsets.only(top: 8, right: 8),
+                padding: const EdgeInsets.only(top: 12, right: 12),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    FloatingActionButton.small(
+                    // --- Center on Me Button ---
+                    _GlassFab(
                       heroTag: 'centerOnMe',
-                      onPressed: _myPos == null ? null : _centerOnMe,
+                      icon: Icons.my_location,
                       tooltip:
                           _myPos == null
                               ? (_locPermDenied
@@ -754,18 +795,18 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                                   ? 'Locating…'
                                   : 'Location unavailable')
                               : 'Center on me',
-                      child: const Icon(Icons.my_location),
+                      onPressed: _myPos == null ? null : _centerOnMe,
+                      active: false,
                     ),
-                    const SizedBox(height: 8),
-                    FloatingActionButton.small(
+                    const SizedBox(height: 10),
+
+                    // --- Follow Me Button ---
+                    _GlassFab(
                       heroTag: 'followMe',
-                      onPressed: _myPos == null ? null : _toggleFollow,
+                      icon: Icons.navigation_rounded,
                       tooltip: _followMe ? 'Disable follow' : 'Enable follow',
-                      backgroundColor:
-                          _followMe
-                              ? _purple
-                              : Theme.of(context).colorScheme.primary,
-                      child: const Icon(Icons.navigation, color: Colors.white),
+                      onPressed: _myPos == null ? null : _toggleFollow,
+                      active: _followMe,
                     ),
                   ],
                 ),
@@ -937,31 +978,109 @@ class _PublishFab extends StatelessWidget {
 
 class _ModeSegment extends StatelessWidget {
   const _ModeSegment({required this.mode, required this.onChanged});
+
   final RouteMode mode;
   final ValueChanged<RouteMode> onChanged;
 
+  static const _purple = Color(0xFF6A27F7);
+  static const _purpleDark = Color(0xFF4B18C9);
+
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white.withOpacity(.95),
-      elevation: 2,
-      borderRadius: BorderRadius.circular(999),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-        child: SegmentedButton<RouteMode>(
-          segments: const [
-            ButtonSegment(value: RouteMode.osrm, label: Text('OSRM')),
-            ButtonSegment(value: RouteMode.manual, label: Text('Manual')),
-          ],
-          selected: {mode},
-          onSelectionChanged: (s) => onChanged(s.first),
-          style: ButtonStyle(
-            visualDensity: VisualDensity.compact,
-            padding: WidgetStateProperty.all(
-              const EdgeInsets.symmetric(horizontal: 8),
-            ),
+    return Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.4),
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
-        ),
+        ],
+        border: Border.all(color: Colors.white.withOpacity(0.4)),
+        backgroundBlendMode: BlendMode.overlay,
+      ),
+      child: Row(
+        children:
+            RouteMode.values.map((rm) {
+              final selected = rm == mode;
+              return Expanded(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeOutCubic,
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  height: 42,
+                  decoration: BoxDecoration(
+                    gradient:
+                        selected
+                            ? const LinearGradient(
+                              colors: [_purple, _purpleDark],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            )
+                            : LinearGradient(
+                              colors: [
+                                Colors.white.withOpacity(0.8),
+                                Colors.white.withOpacity(0.6),
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                    borderRadius: BorderRadius.circular(40),
+                    boxShadow:
+                        selected
+                            ? [
+                              BoxShadow(
+                                color: _purple.withOpacity(0.35),
+                                blurRadius: 12,
+                                offset: const Offset(0, 6),
+                              ),
+                            ]
+                            : [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.05),
+                                blurRadius: 6,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                    border: Border.all(
+                      color:
+                          selected
+                              ? Colors.transparent
+                              : _purple.withOpacity(0.3),
+                      width: 1.2,
+                    ),
+                  ),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(40),
+                    onTap: () => onChanged(rm),
+                    child: Center(
+                      child: Text(
+                        rm == RouteMode.osrm ? "OSRM" : "Manual",
+                        style: TextStyle(
+                          color: selected ? Colors.white : _purpleDark,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          letterSpacing: 0.3,
+                          shadows:
+                              selected
+                                  ? [
+                                    const Shadow(
+                                      color: Colors.black26,
+                                      blurRadius: 2,
+                                      offset: Offset(0, 1),
+                                    ),
+                                  ]
+                                  : [],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
       ),
     );
   }
@@ -1280,6 +1399,77 @@ class _InfoChip extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _GlassFab extends StatelessWidget {
+  final String heroTag;
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final bool active;
+
+  const _GlassFab({
+    required this.heroTag,
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+    this.active = false,
+  });
+
+  static const _purple = Color(0xFF6A27F7);
+  static const _purpleDark = Color(0xFF4B18C9);
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+      decoration: BoxDecoration(
+        gradient:
+            active
+                ? const LinearGradient(
+                  colors: [_purple, _purpleDark],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+                : LinearGradient(
+                  colors: [
+                    Colors.white.withOpacity(0.9),
+                    Colors.white.withOpacity(0.7),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color:
+                active
+                    ? _purple.withOpacity(0.35)
+                    : Colors.black.withOpacity(0.05),
+            blurRadius: active ? 12 : 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+        border: Border.all(
+          color:
+              active
+                  ? _purpleDark.withOpacity(0.4)
+                  : Colors.grey.withOpacity(0.15),
+          width: 1.2,
+        ),
+      ),
+      child: FloatingActionButton.small(
+        heroTag: heroTag,
+        tooltip: tooltip,
+        onPressed: onPressed,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Icon(icon, color: active ? Colors.white : _purpleDark),
       ),
     );
   }
