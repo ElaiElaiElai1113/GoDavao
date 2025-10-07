@@ -1,9 +1,19 @@
 // lib/features/ride_status/presentation/driver_rides_page.dart
+import 'dart:collection';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:intl/intl.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+// Maps
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:flutter_polyline_points/flutter_polyline_points.dart';
+
+// ➕ Live location (preview-only)
+import 'package:geolocator/geolocator.dart';
 
 import 'package:godavao/features/chat/presentation/chat_page.dart';
 import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
@@ -21,25 +31,124 @@ class DriverRidesPage extends StatefulWidget {
   State<DriverRidesPage> createState() => _DriverRidesPageState();
 }
 
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Models                                                                     */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+class MatchCard {
+  final String matchId;
+  final String rideRequestId;
+  final String? driverRouteId;
+  final String status; // pending | accepted | en_route | declined | completed
+  final DateTime createdAt;
+
+  final String passengerName;
+  final String? passengerId;
+  final String pickupAddress;
+  final String destinationAddress;
+  final double? fare;
+  final int pax;
+
+  // Map coords
+  final double? pickupLat;
+  final double? pickupLng;
+  final double? destLat;
+  final double? destLng;
+
+  const MatchCard({
+    required this.matchId,
+    required this.rideRequestId,
+    required this.driverRouteId,
+    required this.status,
+    required this.createdAt,
+    required this.passengerName,
+    required this.passengerId,
+    required this.pickupAddress,
+    required this.destinationAddress,
+    required this.fare,
+    required this.pax,
+    this.pickupLat,
+    this.pickupLng,
+    this.destLat,
+    this.destLng,
+  });
+
+  bool get hasCoords =>
+      pickupLat != null &&
+      pickupLng != null &&
+      destLat != null &&
+      destLng != null;
+
+  LatLng? get pickup => hasCoords ? LatLng(pickupLat!, pickupLng!) : null;
+  LatLng? get destination => hasCoords ? LatLng(destLat!, destLng!) : null;
+}
+
+class RouteGroup {
+  final String routeId; // "unassigned" for nulls
+  int? capacityTotal;
+  int? capacityAvailable;
+  final List<MatchCard> items;
+  final Set<String> selected = {};
+
+  RouteGroup({
+    required this.routeId,
+    required this.items,
+    this.capacityTotal,
+    this.capacityAvailable,
+  });
+
+  List<MatchCard> byStatus(String s) =>
+      items.where((m) => m.status == s).toList();
+
+  int get acceptedSeats =>
+      items.where((m) => m.status == 'accepted').fold(0, (a, b) => a + b.pax);
+
+  int get pendingSeatsSelected => items
+      .where((m) => selected.contains(m.matchId) && m.status == 'pending')
+      .fold(0, (a, b) => a + b.pax);
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+
 class _DriverRidesPageState extends State<DriverRidesPage>
     with SingleTickerProviderStateMixin {
   final _supabase = Supabase.instance.client;
 
+  static const bool _DBG = true;
+  void _d(Object? msg) {
+    if (_DBG) {
+      // ignore: avoid_print
+      print('[DriverRides] $msg');
+    }
+  }
+
   late final TabController _tabController;
   final _listScroll = ScrollController();
 
-  List<Map<String, dynamic>> _upcoming = [];
-  List<Map<String, dynamic>> _declined = [];
-  List<Map<String, dynamic>> _completed = [];
-  final Set<String> _newMatchIds = {};
+  // Buckets (for Declined/Completed tabs)
+  List<MatchCard> _declined = [];
+  List<MatchCard> _completed = [];
 
+  // Grouped upcoming (pending | accepted | en_route) by route
+  final LinkedHashMap<String, RouteGroup> _routeGroups = LinkedHashMap();
+
+  // Owned route IDs (driver authored)
+  final Set<String> _myRouteIds = {};
+
+  // NEW tracking + tab badges
+  final Set<String> _newMatchIds = {};
+  int _badgeUpcoming = 0;
+  int _badgeDeclined = 0;
+  int _badgeCompleted = 0;
+
+  // ride_id -> {status, amount}
   Map<String, Map<String, dynamic>> _paymentByRide = {};
+
   bool _loading = true;
 
   RealtimeChannel? _matchChannel;
   RealtimeChannel? _feeChannel;
 
-  // default 15% until settings load
   double _platformFeeRate = 0.15;
 
   static const _purple = Color(0xFF6A27F7);
@@ -50,20 +159,26 @@ class _DriverRidesPageState extends State<DriverRidesPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(_onTabChanged);
+
     _initFee();
-    _loadMatches();
+    _refreshMyRouteIds().then((_) async {
+      await _loadMatches();
+      _subscribeToRideMatches();
+    });
   }
 
   @override
   void dispose() {
     if (_matchChannel != null) _supabase.removeChannel(_matchChannel!);
     if (_feeChannel != null) _supabase.removeChannel(_feeChannel!);
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     _listScroll.dispose();
     super.dispose();
   }
 
-  // ===================== fee =====================
+  /* ───────────── Platform fee ───────────── */
 
   Future<void> _initFee() async {
     await _loadFeeFromDb();
@@ -78,13 +193,12 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               .select('key, value, value_num')
               .eq('key', 'platform_fee_rate')
               .maybeSingle();
-
       final rate = _parseFeeRate(row as Map?);
       if (rate != null && rate >= 0 && rate <= 1) {
         setState(() => _platformFeeRate = rate);
       }
-    } catch (_) {
-      // keep default
+    } catch (e) {
+      _d('fee load error: $e');
     }
   }
 
@@ -98,8 +212,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             event: PostgresChangeEvent.insert,
             callback: (payload) {
               final rec = payload.newRecord as Map?;
-              if (rec == null) return;
-              if (rec['key']?.toString() != 'platform_fee_rate') return;
+              if (rec?['key']?.toString() != 'platform_fee_rate') return;
               final rate = _parseFeeRate(rec);
               if (rate != null && rate >= 0 && rate <= 1) {
                 setState(() => _platformFeeRate = rate);
@@ -112,8 +225,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             event: PostgresChangeEvent.update,
             callback: (payload) {
               final rec = payload.newRecord as Map?;
-              if (rec == null) return;
-              if (rec['key']?.toString() != 'platform_fee_rate') return;
+              if (rec?['key']?.toString() != 'platform_fee_rate') return;
               final rate = _parseFeeRate(rec);
               if (rate != null && rate >= 0 && rate <= 1) {
                 setState(() => _platformFeeRate = rate);
@@ -128,47 +240,34 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     final num? n = row['value_num'] as num? ?? row['value'] as num?;
     if (n != null) return n.toDouble();
     final s = row['value']?.toString();
-    if (s == null) return null;
-    return double.tryParse(s);
+    return s == null ? null : double.tryParse(s);
   }
 
-  // ===================== actions =====================
+  /* ───────────── My routes ───────────── */
 
-  Future<void> _acceptViaRpc(String matchId, String rideRequestId) async {
-    if (!mounted) return;
-    setState(() => _loading = true);
+  Future<void> _refreshMyRouteIds() async {
+    final uid = _supabase.auth.currentUser?.id;
+    if (uid == null) return;
     try {
-      await _supabase.rpc('accept_match', params: {'p_match_id': matchId});
-      await _loadPaymentIntents([rideRequestId]);
-
-      if (!mounted) return;
-      setState(() {
-        final item = _findAndRemove(matchId);
-        if (item != null) {
-          item['status'] = 'accepted';
-          _upcoming.insert(0, item);
-        }
-        _loading = false;
-      });
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Ride accepted')));
-    } on PostgrestException catch (e) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
+      final rows = await _supabase
+          .from('driver_routes')
+          .select('id')
+          .eq('driver_id', uid);
+      final ids =
+          (rows as List)
+              .map((r) => (r as Map)['id']?.toString())
+              .whereType<String>()
+              .toList();
+      _myRouteIds
+        ..clear()
+        ..addAll(ids);
+      _d('my routes: $_myRouteIds');
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Accept failed: $e')));
+      _d('refreshMyRouteIds error: $e');
     }
   }
+
+  /* ───────────── Notifications ───────────── */
 
   Future<void> _showNotification(String title, String body) async {
     const android = AndroidNotificationDetails(
@@ -187,50 +286,45 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     );
   }
 
+  /* ───────────── Load & subscribe ───────────── */
+
   Future<void> _loadMatches() async {
     final user = _supabase.auth.currentUser;
     if (user == null) return;
 
     if (mounted) setState(() => _loading = true);
 
-    _subscribeToNewMatchesByDriver(user.id);
-
     try {
-      // Keep this selection minimal + schema-safe
+      final sel = '''
+        id, ride_request_id, status, created_at, driver_id, driver_route_id,
+        ride_requests (
+          id, pickup_lat, pickup_lng, destination_lat, destination_lng,
+          passenger_id, fare, seats, users ( id, name )
+        )
+      ''';
+
+      final uid = user.id;
+      final hasRoutes = _myRouteIds.isNotEmpty;
+      final orExpr =
+          hasRoutes
+              ? 'driver_id.eq.$uid,driver_route_id.in.(${_myRouteIds.map((e) => '"$e"').join(',')})'
+              : 'driver_id.eq.$uid';
+
       final raw = await _supabase
           .from('ride_matches')
-          .select('''
-          id,
-          ride_request_id,
-          status,
-          created_at,
-          driver_id,
-          driver_route_id,
-          ride_requests (
-            id,
-            pickup_lat, pickup_lng,
-            destination_lat, destination_lng,
-            passenger_id,
-            fare,
-            seats,
-            users (
-              id, name
-            )
-          )
-        ''')
-          .eq('driver_id', user.id)
+          .select(sel)
+          .or(orExpr)
           .order('created_at', ascending: false);
 
-      final all = <Map<String, dynamic>>[];
-      final rideIds = <String>[];
+      final List<MatchCard> all = [];
+      final List<String> rideIds = [];
+      final Set<String> routeIds = {};
 
       for (final row in (raw as List)) {
         final m = (row as Map).cast<String, dynamic>();
-
-        // child can be null if RLS blocks it
         final req = (m['ride_requests'] as Map?)?.cast<String, dynamic>();
 
-        // passenger info (best effort)
+        // passenger
         String passengerName = 'Passenger';
         String? passengerId;
         final usersRel = req?['users'];
@@ -246,13 +340,13 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         }
         passengerId ??= req?['passenger_id']?.toString();
 
-        // pax (fallbacks)
+        // seats requested
         final pax =
             (req?['seats'] as num?)?.toInt() ??
             (req?['passenger_count'] as num?)?.toInt() ??
             1;
 
-        // reverse geocode only if coords exist (no exceptions)
+        // reverse geocode best-effort
         String pickupAddr = 'Pickup';
         String destAddr = 'Destination';
         try {
@@ -283,53 +377,72 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             ].whereType<String>().where((s) => s.isNotEmpty).join(', ');
             if (s.isNotEmpty) destAddr = s;
           }
-        } catch (_) {
-          // non-fatal
-        }
+        } catch (_) {}
 
-        final fare = (req?['fare'] as num?)?.toDouble();
+        final card = MatchCard(
+          matchId: m['id'],
+          rideRequestId: m['ride_request_id'],
+          driverRouteId: m['driver_route_id']?.toString(),
+          status: (m['status'] as String?)?.toLowerCase() ?? 'pending',
+          createdAt: DateTime.parse(m['created_at']),
+          passengerName: passengerName,
+          passengerId: passengerId,
+          pickupAddress: pickupAddr,
+          destinationAddress: destAddr,
+          fare: (req?['fare'] as num?)?.toDouble(),
+          pax: pax,
+          pickupLat: (req?['pickup_lat'] as num?)?.toDouble(),
+          pickupLng: (req?['pickup_lng'] as num?)?.toDouble(),
+          destLat: (req?['destination_lat'] as num?)?.toDouble(),
+          destLng: (req?['destination_lng'] as num?)?.toDouble(),
+        );
 
-        all.add({
-          'match_id': m['id'],
-          'ride_request_id': m['ride_request_id'],
-          'driver_route_id': m['driver_route_id'],
-          'status': m['status'],
-          'created_at': m['created_at'],
-          'passenger': passengerName,
-          'passenger_id': passengerId,
-          'pickup_address': pickupAddr,
-          'destination_address': destAddr,
-          'fare': fare,
-          'pax': pax,
-        });
-
-        final rrid = m['ride_request_id'];
-        if (rrid is String) rideIds.add(rrid);
+        all.add(card);
+        if (card.driverRouteId != null) routeIds.add(card.driverRouteId!);
+        rideIds.add(card.rideRequestId);
       }
 
       await _loadPaymentIntents(rideIds);
+      await _loadRouteCapacities(routeIds.toList());
+
+      // Group
+      final updatedGroups = LinkedHashMap<String, RouteGroup>();
+      for (final card in all) {
+        final key = card.driverRouteId ?? 'unassigned';
+        updatedGroups.putIfAbsent(
+          key,
+          () => RouteGroup(
+            routeId: key,
+            items: [],
+            capacityTotal: _routeCapById[key]?['total'],
+            capacityAvailable: _routeCapById[key]?['available'],
+          ),
+        );
+        updatedGroups[key]!.items.add(card);
+      }
+
+      final declined = all.where((m) => m.status == 'declined').toList();
+      final completed = all.where((m) => m.status == 'completed').toList();
 
       if (!mounted) return;
       setState(() {
-        _upcoming =
-            all
-                .where(
-                  (e) =>
-                      e['status'] != 'declined' && e['status'] != 'completed',
-                )
-                .toList();
-        _declined = all.where((e) => e['status'] == 'declined').toList();
-        _completed = all.where((e) => e['status'] == 'completed').toList();
+        _routeGroups
+          ..clear()
+          ..addAll(updatedGroups);
+        _declined = declined;
+        _completed = completed;
         _loading = false;
+
+        _badgeUpcoming =
+            all
+                .where((m) => m.status != 'declined' && m.status != 'completed')
+                .length;
+        _badgeDeclined = declined.length;
+        _badgeCompleted = completed.length;
       });
-    } on PostgrestException catch (e) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Load matches failed: ${e.message}')),
-      );
     } catch (e) {
       if (!mounted) return;
+      _d('_loadMatches error: $e');
       setState(() => _loading = false);
       ScaffoldMessenger.of(
         context,
@@ -337,28 +450,11 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     }
   }
 
-  Future<void> _loadPaymentIntents(List<String> rideIds) async {
-    _paymentByRide = {};
-    if (rideIds.isEmpty) return;
-
-    final res = await _supabase
-        .from('payment_intents')
-        .select('ride_id, status, amount')
-        .inFilter('ride_id', rideIds.toSet().toList());
-
-    for (final row in (res as List)) {
-      final r = (row as Map).cast<String, dynamic>();
-      _paymentByRide[r['ride_id'] as String] = {
-        'status': r['status'] as String?,
-        'amount': (r['amount'] as num?)?.toDouble(),
-      };
-    }
-  }
-
-  void _subscribeToNewMatchesByDriver(String driverId) {
+  void _subscribeToRideMatches() {
     if (_matchChannel != null) return;
+
     _matchChannel =
-        _supabase.channel('ride_matches_driver_$driverId')
+        _supabase.channel('ride_matches_any_for_me')
           ..onPostgresChanges(
             schema: 'public',
             table: 'ride_matches',
@@ -366,8 +462,24 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             callback: (payload) {
               final rec = (payload.newRecord as Map?)?.cast<String, dynamic>();
               if (rec == null) return;
-              if (rec['driver_id']?.toString() != driverId) return;
-              setState(() => _newMatchIds.add(rec['id']?.toString() ?? ''));
+
+              final uid = _supabase.auth.currentUser?.id;
+              final drvId = rec['driver_id']?.toString();
+              final routeId = rec['driver_route_id']?.toString();
+
+              final isMine =
+                  (uid != null && drvId == uid) ||
+                  (routeId != null && _myRouteIds.contains(routeId));
+              if (!isMine) return;
+
+              final id = rec['id']?.toString();
+              if (id != null) {
+                setState(() {
+                  _newMatchIds.add(id);
+                  _badgeUpcoming += 1;
+                });
+              }
+
               _showNotification(
                 'New Request',
                 'A passenger requested a pickup.',
@@ -379,35 +491,61 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             schema: 'public',
             table: 'ride_matches',
             event: PostgresChangeEvent.update,
-            callback: (payload) {
-              final rec = (payload.newRecord as Map?)?.cast<String, dynamic>();
-              if (rec == null) return;
-              if (rec['driver_id']?.toString() != driverId) return;
-              _loadMatches();
-            },
+            callback: (_) => _loadMatches(),
           )
           ..onPostgresChanges(
             schema: 'public',
             table: 'ride_matches',
             event: PostgresChangeEvent.delete,
-            callback: (payload) {
-              final rec = (payload.oldRecord as Map?)?.cast<String, dynamic>();
-              if (rec == null) return;
-              if (rec['driver_id']?.toString() != driverId) return;
-              _loadMatches();
-            },
+            callback: (_) => _loadMatches(),
           )
           ..subscribe();
   }
 
-  Map<String, dynamic>? _findAndRemove(String matchId) {
-    final i1 = _upcoming.indexWhere((e) => e['match_id'] == matchId);
-    if (i1 != -1) return _upcoming.removeAt(i1);
-    final i2 = _declined.indexWhere((e) => e['match_id'] == matchId);
-    if (i2 != -1) return _declined.removeAt(i2);
-    final i3 = _completed.indexWhere((e) => e['match_id'] == matchId);
-    if (i3 != -1) return _completed.removeAt(i3);
-    return null;
+  /* ───────────── Capacities ───────────── */
+
+  final Map<String, Map<String, int?>> _routeCapById = {};
+
+  Future<void> _loadRouteCapacities(List<String> routeIds) async {
+    _routeCapById.clear();
+    if (routeIds.isEmpty) return;
+    final res = await _supabase
+        .from('driver_routes')
+        .select('id, capacity_total, capacity_available')
+        .inFilter('id', routeIds.toSet().toList());
+
+    for (final row in (res as List)) {
+      final m = (row as Map).cast<String, dynamic>();
+      _routeCapById[m['id'] as String] = {
+        'total': (m['capacity_total'] as num?)?.toInt(),
+        'available': (m['capacity_available'] as num?)?.toInt(),
+      };
+    }
+  }
+
+  /* ───────────── Payments load ───────────── */
+
+  Future<void> _loadPaymentIntents(List<String> rideIds) async {
+    _paymentByRide = {};
+    if (rideIds.isEmpty) return;
+    final res = await _supabase
+        .from('payment_intents')
+        .select('ride_id, status, amount')
+        .inFilter('ride_id', rideIds.toSet().toList());
+    for (final row in (res as List)) {
+      final r = (row as Map).cast<String, dynamic>();
+      _paymentByRide[r['ride_id'] as String] = {
+        'status': r['status'] as String?,
+        'amount': (r['amount'] as num?)?.toDouble(),
+      };
+    }
+  }
+
+  /* ───────────── Per-match helpers ───────────── */
+
+  Future<void> _acceptViaRpc(String matchId, String rideRequestId) async {
+    await _supabase.rpc('accept_match', params: {'p_match_id': matchId});
+    await _loadPaymentIntents([rideRequestId]);
   }
 
   Future<void> _syncPaymentForRide(
@@ -426,11 +564,10 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             .update({'status': 'canceled'})
             .eq('ride_id', rideRequestId);
       }
-    } catch (_) {
-      // non-fatal
+    } catch (e) {
+      _d('_syncPaymentForRide error: $e');
     } finally {
       await _loadPaymentIntents([rideRequestId]);
-      if (mounted) setState(() {});
     }
   }
 
@@ -439,99 +576,118 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     String rideRequestId,
     String newStatus,
   ) async {
-    if (!mounted) return;
+    await _supabase
+        .from('ride_matches')
+        .update({'status': newStatus})
+        .eq('id', matchId);
+
+    final upd = {'status': newStatus};
+    await _supabase.from('ride_requests').update(upd).eq('id', rideRequestId);
+
+    if (['completed', 'declined', 'canceled'].contains(newStatus)) {
+      await _syncPaymentForRide(rideRequestId, newStatus);
+    }
+  }
+
+  /* ───────────── Batch actions per route ───────────── */
+
+  Future<void> _acceptSelectedForRoute(RouteGroup g) async {
+    if (g.selected.isEmpty) return;
+
     setState(() => _loading = true);
 
     try {
-      await _supabase
-          .from('ride_matches')
-          .update({'status': newStatus})
-          .eq('id', matchId);
+      final capAvail = g.capacityAvailable ?? 0;
 
-      final upd = {'status': newStatus};
-      if (newStatus == 'accepted') {
-        final u = _supabase.auth.currentUser!;
-        final rd =
-            await _supabase
-                .from('driver_routes')
-                .select('id')
-                .eq('driver_id', u.id)
-                .order('created_at', ascending: false)
-                .limit(1)
-                .maybeSingle();
-        final rid = (rd as Map?)?['id'] as String?;
-        if (rid != null) upd['driver_route_id'] = rid;
-      }
-      await _supabase.from('ride_requests').update(upd).eq('id', rideRequestId);
+      // Sort selected pending by created_at (oldest first)
+      final selectedPending =
+          g.items
+              .where(
+                (m) => g.selected.contains(m.matchId) && m.status == 'pending',
+              )
+              .toList()
+            ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
-      if (['completed', 'declined', 'canceled'].contains(newStatus)) {
-        await _syncPaymentForRide(rideRequestId, newStatus);
+      int allowSeats = capAvail;
+      int acceptedCount = 0;
+
+      for (final m in selectedPending) {
+        if (m.pax > allowSeats) continue;
+        await _acceptViaRpc(m.matchId, m.rideRequestId);
+        allowSeats -= m.pax;
+        acceptedCount += 1;
+        if (allowSeats <= 0) break;
       }
 
-      if (!mounted) return;
-      setState(() {
-        final item = _findAndRemove(matchId);
-        if (item != null) {
-          item['status'] = newStatus;
-          if (newStatus == 'declined' || newStatus == 'canceled') {
-            _declined.insert(0, item);
-          } else if (newStatus == 'completed') {
-            _completed.insert(0, item);
-          } else {
-            _upcoming.insert(0, item);
-          }
-        }
-        _loading = false;
-      });
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Ride $newStatus')));
+      if (acceptedCount == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Selected riders exceed capacity.')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Accepted $acceptedCount rider(s).')),
+        );
+      }
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _loading = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Update failed: $e')));
+      ).showSnackBar(SnackBar(content: Text('Accept failed: $e')));
+    } finally {
+      await _loadMatches();
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _ratePassenger(Map<String, dynamic> m) async {
-    final uid = _supabase.auth.currentUser?.id;
-    final rideId = m['ride_request_id']?.toString();
-    final passengerId = m['passenger_id']?.toString();
-    if (uid == null || rideId == null || passengerId == null) return;
-
-    final existing = await RatingsService(_supabase).getExistingRating(
-      rideId: rideId,
-      raterUserId: uid,
-      rateeUserId: passengerId,
-    );
-    if (existing != null) {
-      if (!mounted) return;
+  Future<void> _startRoute(RouteGroup g) async {
+    setState(() => _loading = true);
+    try {
+      final accepted = g.byStatus('accepted');
+      for (final m in accepted) {
+        await _updateMatchStatus(m.matchId, m.rideRequestId, 'en_route');
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You already rated this passenger.')),
+        SnackBar(content: Text('Started ${accepted.length} rider(s).')),
       );
-      return;
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Start failed: $e')));
+    } finally {
+      await _loadMatches();
+      if (mounted) setState(() => _loading = false);
     }
-
-    if (!mounted) return;
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder:
-          (_) => RateUserSheet(
-            rideId: rideId,
-            raterUserId: uid,
-            rateeUserId: passengerId,
-            rateeName: m['passenger'] ?? 'Passenger',
-            rateeRole: 'passenger',
-          ),
-    );
   }
 
-  // ===================== UI helpers =====================
+  Future<void> _completeRoute(RouteGroup g) async {
+    setState(() => _loading = true);
+    try {
+      final enroute = g.byStatus('en_route');
+      for (final m in enroute) {
+        await _updateMatchStatus(m.matchId, m.rideRequestId, 'completed');
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Completed ${enroute.length} rider(s).')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Complete failed: $e')));
+    } finally {
+      await _loadMatches();
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  /* ───────────── UI helpers ───────────── */
+
+  void _onTabChanged() {
+    if (!_tabController.indexIsChanging) return;
+    setState(() {
+      if (_tabController.index == 0) _badgeUpcoming = 0;
+      if (_tabController.index == 1) _badgeDeclined = 0;
+      if (_tabController.index == 2) _badgeCompleted = 0;
+    });
+  }
 
   Color _statusColor(String s) {
     switch (s) {
@@ -550,281 +706,160 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     }
   }
 
-  Widget _pill(String text, {IconData? icon, Color? color}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: (color ?? Colors.grey.shade100).withOpacity(0.9),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.black12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[
-            Icon(icon, size: 14, color: Colors.black54),
-            const SizedBox(width: 6),
-          ],
-          Text(
-            text,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-          ),
-        ],
-      ),
-    );
-  }
-
   String _peso(num? v) =>
       v == null ? '₱0.00' : '₱${(v.toDouble()).toStringAsFixed(2)}';
   double? _driverNetForFare(num? fare) =>
       fare == null ? null : (fare.toDouble() * (1 - _platformFeeRate));
 
-  Widget _primaryButton({
-    required Widget child,
-    required VoidCallback? onPressed,
+  Widget _miniIconBtn({
+    required IconData icon,
+    required String tooltip,
+    VoidCallback? onTap,
   }) {
-    return SizedBox(
-      height: 40,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          gradient: const LinearGradient(
-            colors: [_purple, _purpleDark],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: _purple.withOpacity(0.25),
-              blurRadius: 12,
-              offset: const Offset(0, 6),
+    return IconButton(
+      tooltip: tooltip,
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+      padding: EdgeInsets.zero,
+      iconSize: 20,
+      onPressed: onTap,
+      icon: Icon(icon),
+    );
+  }
+
+  Widget _pill(String text, {IconData? icon, Color? color}) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: (color ?? const Color(0xFFF2F2F7)),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.black12.withOpacity(0.25)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 14, color: Colors.black54),
+              const SizedBox(width: 6),
+            ],
+            Text(
+              text,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
             ),
           ],
-        ),
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            elevation: 0,
-            backgroundColor: Colors.transparent,
-            shadowColor: Colors.transparent,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          onPressed: onPressed,
-          child: DefaultTextStyle.merge(
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-            ),
-            child: child,
-          ),
         ),
       ),
     );
   }
 
-  Widget _buildCard(Map<String, dynamic> m) {
-    final id = m['match_id'] as String;
-    final status = (m['status'] as String).toLowerCase();
-    final dt = DateFormat(
-      'MMM d, y • h:mm a',
-    ).format(DateTime.parse(m['created_at']));
-    final passengerId = m['passenger_id'] as String?;
-    final rideRequestId = m['ride_request_id'] as String;
-    final isNew = _newMatchIds.remove(id);
+  /* ───────────── Per-rider card (Declined/Completed tabs) ───────────── */
 
+  Widget _buildFlatCard(MatchCard m) {
+    final dt = DateFormat('MMM d, y • h:mm a').format(m.createdAt);
+    final driverNet = _driverNetForFare(m.fare);
     final canOpenMap =
-        status == 'accepted' || status == 'en_route' || status == 'completed';
-    final pax = (m['pax'] as int?) ?? 1;
-    final fare = (m['fare'] as num?)?.toDouble();
-    final driverNet = _driverNetForFare(fare);
+        m.status == 'accepted' ||
+        m.status == 'en_route' ||
+        m.status == 'completed';
 
     return Card(
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.black12.withOpacity(0.06)),
+      ),
       color: Colors.white,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // route line + NEW
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${m['pickup_address']} → ${m['destination_address']}',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (isNew)
-                  Container(
-                    margin: const EdgeInsets.only(left: 8),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade400,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: const Text(
-                      'NEW',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-              ],
+            Text(
+              '${m.pickupAddress} → ${m.destinationAddress}',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
+            if (m.hasCoords) ...[
+              const SizedBox(height: 8),
+              _MapThumb(
+                pickup: m.pickup!,
+                destination: m.destination!,
+                onTap: () => _openMapPreview(single: m),
+              ),
+            ],
             const SizedBox(height: 8),
-
-            // meta
             Wrap(
               spacing: 8,
               runSpacing: 6,
-              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                if (m['driver_route_id'] != null)
-                  _pill(
-                    'Route ${m['driver_route_id'].toString().substring(0, 8)}',
-                    icon: Icons.alt_route,
-                  ),
-                _pill('$pax pax', icon: Icons.people),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 0, maxWidth: 280),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.person, size: 14, color: Colors.black54),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          m['passenger'] ?? 'Passenger',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                _pill('${m.pax} pax', icon: Icons.people),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.person, size: 14, color: Colors.black54),
+                    const SizedBox(width: 4),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 180),
+                      child: Text(
+                        m.passengerName,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      if (passengerId != null) ...[
-                        const SizedBox(width: 6),
-                        VerifiedBadge(userId: passengerId, size: 16),
-                        const SizedBox(width: 6),
-                        UserRatingBadge(userId: passengerId, iconSize: 14),
-                      ],
+                    ),
+                    if (m.passengerId != null) ...[
+                      const SizedBox(width: 6),
+                      VerifiedBadge(userId: m.passengerId!, size: 16),
+                      const SizedBox(width: 6),
+                      UserRatingBadge(userId: m.passengerId!, iconSize: 14),
                     ],
-                  ),
+                  ],
                 ),
               ],
             ),
             const SizedBox(height: 8),
-
-            // time + fare/payments
             Wrap(
               spacing: 8,
               runSpacing: 6,
               children: [
                 _pill(dt, icon: Icons.access_time),
-                if (fare != null) _pill(_peso(fare), icon: Icons.payments),
+                if (m.fare != null) _pill(_peso(m.fare), icon: Icons.payments),
                 if (driverNet != null)
                   _pill(
                     'Driver net ${_peso(driverNet)}',
                     icon: Icons.account_balance_wallet,
                   ),
-                if (_paymentByRide[rideRequestId] != null)
+                if (_paymentByRide[m.rideRequestId] != null)
                   PaymentStatusChip(
-                    status: _paymentByRide[rideRequestId]?['status'] as String?,
-                    amount: _paymentByRide[rideRequestId]?['amount'] as double?,
+                    status:
+                        _paymentByRide[m.rideRequestId]?['status'] as String?,
+                    amount:
+                        _paymentByRide[m.rideRequestId]?['amount'] as double?,
                   ),
               ],
             ),
-
             const Divider(height: 18),
-
-            // status + actions
             Wrap(
               spacing: 8,
               runSpacing: 8,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: Text(
-                    status.toUpperCase(),
-                    style: TextStyle(
-                      color: _statusColor(status),
-                      fontWeight: FontWeight.w700,
-                    ),
+                Text(
+                  m.status.toUpperCase(),
+                  style: TextStyle(
+                    color: _statusColor(m.status),
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-                if (status == 'pending') ...[
-                  SizedBox(
-                    width: 140,
-                    child: _primaryButton(
-                      child: const Text(
-                        'Accept',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      onPressed: () => _acceptViaRpc(id, rideRequestId),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed:
-                        () => _updateMatchStatus(id, rideRequestId, 'declined'),
-                    child: const Text(
-                      'Decline',
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ] else if (status == 'accepted') ...[
-                  SizedBox(
-                    width: 160,
-                    child: _primaryButton(
-                      child: const Text(
-                        'Start Ride',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      onPressed:
-                          () =>
-                              _updateMatchStatus(id, rideRequestId, 'en_route'),
-                    ),
-                  ),
-                ] else if (status == 'en_route') ...[
-                  SizedBox(
-                    width: 180,
-                    child: _primaryButton(
-                      child: const Text(
-                        'Complete Ride',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      onPressed:
-                          () => _updateMatchStatus(
-                            id,
-                            rideRequestId,
-                            'completed',
-                          ),
-                    ),
-                  ),
-                ] else if (status == 'completed' && passengerId != null) ...[
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.star),
-                    label: const Text(
-                      'Rate passenger',
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    onPressed: () => _ratePassenger(m),
-                  ),
-                ],
-                IconButton(
+                _miniIconBtn(
+                  icon: Icons.message_outlined,
                   tooltip: 'Open chat',
-                  icon: const Icon(Icons.message_outlined),
-                  onPressed: () {
+                  onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => ChatPage(matchId: id)),
+                      MaterialPageRoute(
+                        builder: (_) => ChatPage(matchId: m.matchId),
+                      ),
                     );
                   },
                 ),
@@ -841,10 +876,19 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                         MaterialPageRoute(
                           builder:
                               (_) =>
-                                  DriverRideStatusPage(rideId: rideRequestId),
+                                  DriverRideStatusPage(rideId: m.rideRequestId),
                         ),
                       );
                     },
+                  ),
+                if (m.status == 'completed' && m.passengerId != null)
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.star),
+                    label: const Text(
+                      'Rate passenger',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onPressed: () => _ratePassenger(m),
                   ),
               ],
             ),
@@ -854,7 +898,452 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     );
   }
 
-  // ===================== scaffold =====================
+  /* ───────────── Grouped section per route (Upcoming tab) ───────────── */
+
+  Widget _routeSection(RouteGroup g) {
+    final pending = g.byStatus('pending');
+    final accepted = g.byStatus('accepted');
+    final enRoute = g.byStatus('en_route');
+
+    final capText =
+        (g.capacityTotal != null && g.capacityAvailable != null)
+            ? 'Seats: ${g.capacityAvailable} / ${g.capacityTotal}'
+            : 'Seats: n/a';
+
+    List<Widget> _listFor(
+      String label,
+      List<MatchCard> list, {
+      bool selectable = false,
+    }) {
+      if (list.isEmpty) return [];
+      return [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+          ),
+        ),
+        ...list.map(
+          (m) => Column(
+            children: [
+              CheckboxListTile(
+                dense: true,
+                contentPadding: const EdgeInsets.only(left: 12, right: 8),
+                visualDensity: const VisualDensity(
+                  horizontal: -2,
+                  vertical: -2,
+                ),
+                value: selectable ? g.selected.contains(m.matchId) : false,
+                onChanged:
+                    selectable
+                        ? (v) => setState(() {
+                          if (v == true) {
+                            g.selected.add(m.matchId);
+                          } else {
+                            g.selected.remove(m.matchId);
+                          }
+                        })
+                        : null,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: Text(
+                  '${m.pickupAddress} → ${m.destinationAddress}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _pill('${m.pax} pax', icon: Icons.people),
+                    if (m.fare != null)
+                      _pill(_peso(m.fare), icon: Icons.payments),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.person,
+                          size: 14,
+                          color: Colors.black54,
+                        ),
+                        const SizedBox(width: 4),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 180),
+                          child: Text(
+                            m.passengerName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (m.passengerId != null) ...[
+                          const SizedBox(width: 6),
+                          VerifiedBadge(userId: m.passengerId!, size: 16),
+                          const SizedBox(width: 6),
+                          UserRatingBadge(userId: m.passengerId!, iconSize: 14),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+                secondary: SizedBox(
+                  width: 100,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _miniIconBtn(
+                        icon: Icons.message_outlined,
+                        tooltip: 'Chat',
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ChatPage(matchId: m.matchId),
+                            ),
+                          );
+                        },
+                      ),
+                      if (m.status == 'pending')
+                        _miniIconBtn(
+                          icon: Icons.close,
+                          tooltip: 'Decline',
+                          onTap: () async {
+                            setState(() => _loading = true);
+                            try {
+                              await _updateMatchStatus(
+                                m.matchId,
+                                m.rideRequestId,
+                                'declined',
+                              );
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Declined')),
+                              );
+                            } catch (e) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Decline failed: $e')),
+                              );
+                            } finally {
+                              await _loadMatches();
+                              if (mounted) setState(() => _loading = false);
+                            }
+                          },
+                        ),
+                      if (m.status == 'accepted' ||
+                          m.status == 'en_route' ||
+                          m.status == 'completed')
+                        _miniIconBtn(
+                          icon: Icons.map_outlined,
+                          tooltip: 'View ride',
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder:
+                                    (_) => DriverRideStatusPage(
+                                      rideId: m.rideRequestId,
+                                    ),
+                              ),
+                            );
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              if (m.hasCoords)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(56, 0, 12, 10),
+                  child: _MapThumb(
+                    pickup: m.pickup!,
+                    destination: m.destination!,
+                    onTap: () => _openMapPreview(single: m, routeId: g.routeId),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ];
+    }
+
+    return Card(
+      elevation: 0,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.black12.withOpacity(0.06)),
+      ),
+      color: Colors.white,
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        title: Row(
+          children: [
+            Icon(Icons.alt_route, color: _purple),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                g.routeId == 'unassigned'
+                    ? 'Unassigned route'
+                    : 'Route ${g.routeId.substring(0, 8)}',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        subtitle: Container(
+          margin: const EdgeInsets.only(top: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.02),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              _pill(capText, icon: Icons.event_seat),
+              _pill('Pending: ${pending.length}', icon: Icons.hourglass_bottom),
+              _pill('Accepted: ${accepted.length}', icon: Icons.check_circle),
+              _pill('En route: ${enRoute.length}', icon: Icons.directions_car),
+            ],
+          ),
+        ),
+        children: [
+          // Batch actions + route map
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.map),
+                  label: const Text('Map: all pickups'),
+                  onPressed:
+                      g.items.any((m) => m.hasCoords)
+                          ? () => _openMapPreview(group: g)
+                          : null,
+                ),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.select_all),
+                  label: const Text('Select all pending'),
+                  onPressed:
+                      pending.isEmpty
+                          ? null
+                          : () => setState(() {
+                            for (final m in pending) {
+                              g.selected.add(m.matchId);
+                            }
+                          }),
+                ),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.clear_all),
+                  label: const Text('Clear selection'),
+                  onPressed:
+                      g.selected.isEmpty
+                          ? null
+                          : () => setState(() => g.selected.clear()),
+                ),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.done_all),
+                  label: const Text('Accept selected'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _purple,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed:
+                      g.selected.isEmpty
+                          ? null
+                          : () => _acceptSelectedForRoute(g),
+                ),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('Start route'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _purple,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: accepted.isEmpty ? null : () => _startRoute(g),
+                ),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.check_circle),
+                  label: const Text('Complete route'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _purpleDark,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: enRoute.isEmpty ? null : () => _completeRoute(g),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 12, thickness: 0.5),
+          const SizedBox(height: 4),
+          ..._listFor('Pending', pending, selectable: true),
+          ..._listFor('Accepted', accepted, selectable: false),
+          ..._listFor('En route', enRoute, selectable: false),
+          const SizedBox(height: 10),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _ratePassenger(MatchCard m) async {
+    final uid = _supabase.auth.currentUser?.id;
+    if (uid == null || m.passengerId == null) return;
+
+    final existing = await RatingsService(_supabase).getExistingRating(
+      rideId: m.rideRequestId,
+      raterUserId: uid,
+      rateeUserId: m.passengerId!,
+    );
+    if (existing != null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You already rated this passenger.')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder:
+          (_) => RateUserSheet(
+            rideId: m.rideRequestId,
+            raterUserId: uid,
+            rateeUserId: m.passengerId!,
+            rateeName: m.passengerName,
+            rateeRole: 'passenger',
+          ),
+    );
+  }
+
+  /* ───────────── Map previews (single & group) ───────────── */
+
+  Future<void> _openMapPreview({
+    MatchCard? single,
+    RouteGroup? group,
+    String? routeId,
+  }) async {
+    assert(
+      (single != null) ^ (group != null),
+      'Pass exactly one of single or group',
+    );
+
+    // Try to overlay the driver route polyline if routeId (or group.routeId) exists
+    List<LatLng> routePolylinePoints = [];
+    final rid = routeId ?? group?.routeId;
+    if (rid != null && rid != 'unassigned') {
+      try {
+        final row =
+            await _supabase
+                .from('driver_routes')
+                .select('route_mode, route_polyline, manual_polyline')
+                .eq('id', rid)
+                .maybeSingle();
+
+        if (row is Map) {
+          String? encoded;
+          final mode = row?['route_mode']?.toString();
+          final routePolyline = row?['route_polyline']?.toString();
+          final manualPolyline = row?['manual_polyline']?.toString();
+          if (mode == 'manual') {
+            encoded = manualPolyline ?? routePolyline;
+          } else if (mode == 'osrm') {
+            encoded = routePolyline ?? manualPolyline;
+          } else {
+            encoded = routePolyline ?? manualPolyline;
+          }
+          if (encoded != null && encoded.isNotEmpty) {
+            final decoded = PolylinePoints().decodePolyline(encoded);
+            routePolylinePoints =
+                decoded.map((p) => LatLng(p.latitude, p.longitude)).toList();
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+
+    // Prepare markers/lines
+    final markers = <Marker>[];
+    final extraLines = <Polyline>[];
+
+    if (single != null && single.hasCoords) {
+      final p = single.pickup!;
+      final d = single.destination!;
+      markers.addAll([
+        Marker(
+          point: p,
+          width: 34,
+          height: 34,
+          child: const Icon(Icons.location_pin, color: Colors.green, size: 32),
+        ),
+        Marker(
+          point: d,
+          width: 30,
+          height: 30,
+          child: const Icon(Icons.flag, color: Colors.red, size: 26),
+        ),
+      ]);
+      extraLines.add(
+        Polyline(
+          points: [p, d],
+          strokeWidth: 3,
+          color: Colors.black54,
+          isDotted: true,
+        ),
+      );
+    } else if (group != null) {
+      for (final m in group.items.where((x) => x.hasCoords)) {
+        markers.add(
+          Marker(
+            point: m.pickup!,
+            width: 30,
+            height: 30,
+            child: const Icon(
+              Icons.person_pin_circle,
+              color: Colors.green,
+              size: 28,
+            ),
+          ),
+        );
+      }
+    }
+
+    final boundsPoints = <LatLng>[
+      ...markers.map((m) => m.point),
+      ...routePolylinePoints,
+    ];
+    if (boundsPoints.isEmpty) return;
+
+    final bounds = LatLngBounds.fromPoints(boundsPoints);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder:
+          (_) => _LiveMapSheet(
+            title:
+                group != null ? 'All pickups on route' : 'Pickup & destination',
+            bounds: bounds,
+            staticMarkers: markers,
+            routePolylinePoints: routePolylinePoints,
+            extraPolylines: extraLines,
+            purple: _purple,
+          ),
+    );
+  }
+
+  /* ───────────── Scaffold ───────────── */
 
   @override
   Widget build(BuildContext context) {
@@ -888,6 +1377,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               ),
               child: TabBar(
                 controller: _tabController,
+                isScrollable: true, // prevents overflow on small screens
                 indicator: BoxDecoration(
                   color: _purple,
                   borderRadius: BorderRadius.circular(30),
@@ -896,10 +1386,10 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                 labelColor: Colors.white,
                 unselectedLabelColor: Colors.black87,
                 dividerColor: Colors.transparent,
-                tabs: const [
-                  Tab(text: 'Upcoming'),
-                  Tab(text: 'Declined'),
-                  Tab(text: 'Completed'),
+                tabs: [
+                  _TabWithBadge(text: 'Upcoming', count: _badgeUpcoming),
+                  _TabWithBadge(text: 'Declined', count: _badgeDeclined),
+                  _TabWithBadge(text: 'Completed', count: _badgeCompleted),
                 ],
               ),
             ),
@@ -912,26 +1402,87 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               : TabBarView(
                 controller: _tabController,
                 children: [
-                  _list(_upcoming),
-                  _list(_declined),
-                  _list(_completed),
+                  // UPCOMING: grouped by route
+                  RefreshIndicator(
+                    onRefresh: _loadMatches,
+                    child:
+                        _routeGroups.values.any(
+                              (g) => g.items.any(
+                                (m) =>
+                                    m.status != 'declined' &&
+                                    m.status != 'completed',
+                              ),
+                            )
+                            ? ListView(
+                              controller: _listScroll,
+                              padding: const EdgeInsets.all(16),
+                              children:
+                                  _routeGroups.values
+                                      .where(
+                                        (g) => g.items.any(
+                                          (m) =>
+                                              m.status != 'declined' &&
+                                              m.status != 'completed',
+                                        ),
+                                      )
+                                      .map(_routeSection)
+                                      .toList(),
+                            )
+                            : _emptyState('No upcoming matches yet'),
+                  ),
+
+                  // DECLINED
+                  RefreshIndicator(
+                    onRefresh: _loadMatches,
+                    child:
+                        _declined.isEmpty
+                            ? _emptyState('No declined rides')
+                            : ListView.builder(
+                              controller: _listScroll,
+                              padding: const EdgeInsets.all(16),
+                              itemCount: _declined.length,
+                              itemBuilder:
+                                  (_, i) => _buildFlatCard(_declined[i]),
+                            ),
+                  ),
+
+                  // COMPLETED
+                  RefreshIndicator(
+                    onRefresh: _loadMatches,
+                    child:
+                        _completed.isEmpty
+                            ? _emptyState('No completed rides yet')
+                            : ListView.builder(
+                              controller: _listScroll,
+                              padding: const EdgeInsets.all(16),
+                              itemCount: _completed.length,
+                              itemBuilder:
+                                  (_, i) => _buildFlatCard(_completed[i]),
+                            ),
+                  ),
                 ],
               ),
     );
   }
 
-  Widget _list(List<Map<String, dynamic>> items) {
-    return RefreshIndicator(
-      onRefresh: _loadMatches,
-      child: ListView.builder(
-        controller: _listScroll,
-        padding: const EdgeInsets.all(16),
-        itemCount: items.length,
-        itemBuilder: (_, i) => _buildCard(items[i]),
+  Widget _emptyState(String message, {IconData icon = Icons.inbox}) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 42, color: Colors.black26),
+            const SizedBox(height: 10),
+            Text(message, style: const TextStyle(color: Colors.black54)),
+          ],
+        ),
       ),
     );
   }
 }
+
+/* ───────────── Small widgets ───────────── */
 
 class _AdminMenuButton extends StatelessWidget {
   const _AdminMenuButton();
@@ -941,9 +1492,7 @@ class _AdminMenuButton extends StatelessWidget {
     return PopupMenuButton<String>(
       tooltip: 'Admin',
       icon: const Icon(Icons.admin_panel_settings),
-      onSelected: (value) {
-        // Navigate to admin screens as needed
-      },
+      onSelected: (value) {},
       itemBuilder:
           (ctx) => const [
             PopupMenuItem(
@@ -956,5 +1505,384 @@ class _AdminMenuButton extends StatelessWidget {
             ),
           ],
     );
+  }
+}
+
+class _TabWithBadge extends StatelessWidget {
+  const _TabWithBadge({required this.text, required this.count});
+  final String text;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final has = count > 0;
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(text),
+          if (has) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.red.shade500,
+                borderRadius: BorderRadius.circular(999),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.red.withOpacity(0.25),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Text(
+                '$count',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/* ───────────── Map thumbnail widget ───────────── */
+
+class _MapThumb extends StatelessWidget {
+  const _MapThumb({
+    required this.pickup,
+    required this.destination,
+    this.onTap,
+  });
+
+  final LatLng pickup;
+  final LatLng destination;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final bounds = LatLngBounds.fromPoints([pickup, destination]);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: InkWell(
+          onTap: onTap,
+          child: SizedBox(
+            height: 90,
+            child: AbsorbPointer(
+              absorbing: true,
+              child: FlutterMap(
+                options: MapOptions(
+                  interactionOptions: const InteractionOptions(
+                    flags: InteractiveFlag.none,
+                  ),
+                  initialCenter: bounds.center,
+                  initialZoom: 13,
+                  bounds: bounds,
+                ),
+                children: [
+                  TileLayer(
+                    urlTemplate:
+                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'com.godavao.app',
+                  ),
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(
+                        points: [pickup, destination],
+                        strokeWidth: 3,
+                        color: Colors.black.withOpacity(0.6),
+                      ),
+                    ],
+                  ),
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: pickup,
+                        width: 24,
+                        height: 24,
+                        child: const Icon(
+                          Icons.location_pin,
+                          color: Colors.green,
+                          size: 24,
+                        ),
+                      ),
+                      Marker(
+                        point: destination,
+                        width: 22,
+                        height: 22,
+                        child: const Icon(
+                          Icons.flag,
+                          color: Colors.red,
+                          size: 20,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/* ───────────── Live Map Sheet (preview-only tracking) ───────────── */
+
+class _LiveMapSheet extends StatefulWidget {
+  const _LiveMapSheet({
+    required this.title,
+    required this.bounds,
+    required this.staticMarkers,
+    required this.routePolylinePoints,
+    required this.extraPolylines,
+    required this.purple,
+  });
+
+  final String title;
+  final LatLngBounds bounds;
+  final List<Marker> staticMarkers;
+  final List<LatLng> routePolylinePoints;
+  final List<Polyline> extraPolylines;
+  final Color purple;
+
+  @override
+  State<_LiveMapSheet> createState() => _LiveMapSheetState();
+}
+
+class _LiveMapSheetState extends State<_LiveMapSheet> {
+  final _mapController = MapController();
+  StreamSubscription<Position>? _posSub;
+  LatLng? _me;
+  double? _acc; // meters
+  DateTime? _ts;
+
+  @override
+  void initState() {
+    super.initState();
+    _startLivePreview();
+  }
+
+  @override
+  void dispose() {
+    _posSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _startLivePreview() async {
+    LocationPermission perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied) {
+      perm = await Geolocator.requestPermission();
+    }
+    if (perm == LocationPermission.denied ||
+        perm == LocationPermission.deniedForever) {
+      // No permission: silent fail; static map still works
+      return;
+    }
+
+    // Warm up: last known
+    final last = await Geolocator.getLastKnownPosition();
+    if (last != null) {
+      setState(() {
+        _me = LatLng(last.latitude, last.longitude);
+        _acc = last.accuracy;
+        _ts = DateTime.now();
+      });
+    }
+
+    // Live stream (preview-friendly settings)
+    _posSub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.best,
+        distanceFilter: 8, // meters
+      ),
+    ).listen((pos) {
+      setState(() {
+        _me = LatLng(pos.latitude, pos.longitude);
+        _acc = pos.accuracy;
+        _ts = DateTime.now();
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final basePolylines = <Polyline>[
+      if (widget.routePolylinePoints.isNotEmpty)
+        Polyline(
+          points: widget.routePolylinePoints,
+          strokeWidth: 4,
+          color: widget.purple.withOpacity(0.85),
+        ),
+      ...widget.extraPolylines,
+    ];
+
+    final allMarkers = <Marker>[
+      ...widget.staticMarkers,
+      if (_me != null)
+        Marker(
+          point: _me!,
+          width: 36,
+          height: 36,
+          child: const Icon(Icons.my_location, size: 28, color: Colors.blue),
+        ),
+    ];
+
+    return SafeArea(
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.72,
+        child: Stack(
+          children: [
+            FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: widget.bounds.center,
+                initialZoom: 13,
+                bounds: widget.bounds,
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.godavao.app',
+                ),
+                if (basePolylines.isNotEmpty)
+                  PolylineLayer(polylines: basePolylines),
+                if (allMarkers.isNotEmpty) MarkerLayer(markers: allMarkers),
+                Align(
+                  alignment: Alignment.topRight,
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.92),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.black12),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.route,
+                              size: 16,
+                              color: Colors.purple,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              widget.title,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            // Center on me
+            Positioned(
+              right: 12,
+              bottom: 72,
+              child: FloatingActionButton.small(
+                heroTag: 'centerOnMe',
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black87,
+                onPressed:
+                    _me == null ? null : () => _mapController.move(_me!, 16),
+                child: const Icon(Icons.my_location),
+              ),
+            ),
+
+            // GPS status pill
+            if (_me != null)
+              Positioned(
+                left: 12,
+                bottom: 16,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.92),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: Colors.black12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.06),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.gps_fixed,
+                        size: 14,
+                        color: Colors.black54,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _acc != null
+                            ? '±${_acc!.toStringAsFixed(0)} m • ${_ago(_ts)}'
+                            : 'Live',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // Close
+            Positioned(
+              right: 12,
+              bottom: 16,
+              child: FloatingActionButton.small(
+                heroTag: 'closeMapSheet',
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black87,
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Icon(Icons.close),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _ago(DateTime? t) {
+    if (t == null) return '';
+    final s = DateTime.now().difference(t).inSeconds;
+    if (s < 60) return '${s}s ago';
+    final m = (s / 60).floor();
+    return '${m}m ago';
   }
 }

@@ -1,7 +1,9 @@
 // lib/features/ride_status/presentation/driver_ride_status_page.dart
 import 'dart:async';
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -32,7 +34,7 @@ class DriverRideStatusPage extends StatefulWidget {
 }
 
 class _DriverRideStatusPageState extends State<DriverRideStatusPage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final sb = Supabase.instance.client;
 
   // Realtime channels
@@ -41,7 +43,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
   RealtimeChannel? _passengerLiveChan;
   RealtimeChannel? _feeChannel;
 
-  // Map control (+ safe center until ready)
+  // Map
   final MapController _map = MapController();
   bool _mapReady = false;
   LatLng? _pendingCenter;
@@ -77,7 +79,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
   // Live passenger
   LatLng? _passengerLive;
 
-  // fare + fee
+  // Fare + fee
   double? _fare; // gross ride value
   double _platformFeeRate = 0.15; // default until dashboard loads
 
@@ -93,20 +95,25 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     actor: 'driver',
   );
 
-  // Theme tokens
+  // UX/Theme tokens
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
   static const _bg = Color(0xFFF7F7FB);
 
+  // Distance helper for rough ETA
+  static const Distance _dist = Distance();
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initFee();
     _loadAll();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _publisher.stop();
     _rideChannel._kill(sb);
     _driverLiveChan._kill(sb);
@@ -116,8 +123,33 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     super.dispose();
   }
 
-  // ===================== fee =====================
+  // ---------- Lifecycle: resubscribe & ensure publisher state ----------
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _resubscribeAll();
+      _syncPublisherToStatus(status);
+    } else if (state == AppLifecycleState.paused) {
+      // Keep publishing only if en_route to maintain ETA for passenger app
+      if (status != 'en_route') _publisher.stop();
+    }
+  }
 
+  Future<void> _resubscribeAll() async {
+    // Clean + resubscribe silently
+    _rideChannel._kill(sb);
+    _driverLiveChan._kill(sb);
+    _passengerLiveChan._kill(sb);
+
+    await _seedLive('driver');
+    await _seedLive('passenger');
+
+    _subscribeRideStatus();
+    _subscribeLive('driver');
+    _subscribeLive('passenger');
+  }
+
+  // ===================== Platform fee =====================
   Future<void> _initFee() async {
     await _loadFeeFromDb();
     _subscribeFee();
@@ -134,6 +166,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
 
       final rate = _parseFeeRate(row);
       if (rate != null && rate >= 0 && rate <= 1) {
+        if (!mounted) return;
         setState(() => _platformFeeRate = rate);
       }
     } catch (_) {
@@ -155,6 +188,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
               if (rec['key']?.toString() != 'platform_fee_rate') return;
               final rate = _parseFeeRate(rec);
               if (rate != null && rate >= 0 && rate <= 1) {
+                if (!mounted) return;
                 setState(() => _platformFeeRate = rate);
               }
             },
@@ -169,6 +203,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
               if (rec['key']?.toString() != 'platform_fee_rate') return;
               final rate = _parseFeeRate(rec);
               if (rate != null && rate >= 0 && rate <= 1) {
+                if (!mounted) return;
                 setState(() => _platformFeeRate = rate);
               }
             },
@@ -183,6 +218,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     final s = row['value']?.toString();
     if (s == null) return null;
     return double.tryParse(s);
+    // Done
   }
 
   // ===================== LOAD ALL =====================
@@ -223,24 +259,30 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
       _passengerId = _ride?['passenger_id']?.toString();
       if (_passengerId != null) _fetchPassengerAggregate();
 
+      // Seed last known live points
       await _seedLive('driver');
       await _seedLive('passenger');
 
+      // Map camera start
       _safeMove(_pickup, 13);
 
+      // Subscriptions
       _subscribeRideStatus();
       _subscribeLive('driver');
       _subscribeLive('passenger');
 
+      // Publisher state
       _syncPublisherToStatus(status);
 
+      // Prompt for rating if already completed
       await _maybePromptRatingIfCompleted();
     } on PostgrestException catch (e) {
       _error = 'Supabase error: ${e.message}';
     } catch (e) {
       _error = e.toString();
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (!mounted) return;
+      setState(() => _loading = false);
     }
   }
 
@@ -254,13 +296,15 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     } catch (_) {
       // ignore
     } finally {
-      if (mounted) setState(() => _fetchingPassengerAgg = false);
+      if (!mounted) return;
+      setState(() => _fetchingPassengerAgg = false);
     }
   }
 
   // ===================== SUPABASE LIVE =====================
 
   void _subscribeRideStatus() {
+    _rideChannel?._kill(sb);
     _rideChannel =
         sb.channel('ride_requests:${widget.rideId}')
           ..onPostgresChanges(
@@ -295,6 +339,13 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
   }
 
   void _subscribeLive(String actor) {
+    // Reset if existing
+    if (actor == 'driver') {
+      _driverLiveChan?._kill(sb);
+    } else {
+      _passengerLiveChan?._kill(sb);
+    }
+
     final chan =
         sb.channel('live_locations:${widget.rideId}:$actor')
           ..onPostgresChanges(
@@ -371,19 +422,22 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
 
   // ===================== driver interp =====================
 
+  double _smooth(double prev, double next, [double a = 0.20]) =>
+      prev + a * (next - prev);
+
   void _consumeDriverLocation(Map rec) {
     final lat = (rec['lat'] as num?)?.toDouble();
     final lng = (rec['lng'] as num?)?.toDouble();
     if (lat == null || lng == null) return;
 
     final next = LatLng(lat, lng);
-    final hdg = (rec['heading'] as num?)?.toDouble() ?? _driverHeading;
+    final hdgRaw = (rec['heading'] as num?)?.toDouble() ?? _driverHeading;
 
     if (!mounted) return;
     setState(() {
       _driverPrev = _driverInterp ?? _driverNext ?? next;
       _driverNext = next;
-      _driverHeading = hdg;
+      _driverHeading = _smooth(_driverHeading, hdgRaw);
       _driverAnim
         ..reset()
         ..forward();
@@ -399,6 +453,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     setState(() => _driverInterp = p);
 
     if (_followDriver && status == 'en_route') {
+      // Gentle clamp to avoid zoom jumps
       final z = _mapReady ? _map.camera.zoom : 15.0;
       _safeMove(p, z.clamp(14, 16));
     }
@@ -462,10 +517,23 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
 
   String get status => (_ride?['status'] as String?) ?? 'pending';
 
+  bool get _isCanceled =>
+      {'canceled', 'cancelled'}.contains(status.toLowerCase());
+
   String _peso(num? v) =>
       v == null ? '₱0.00' : '₱${(v.toDouble()).toStringAsFixed(2)}';
   double? _driverNet(num? fare) =>
       fare == null ? null : (fare.toDouble() * (1 - _platformFeeRate));
+
+  // Rough ETA in minutes based on straight-line distance and a city speed.
+  Duration? get _roughEta {
+    final from = _driverNext ?? _driverInterp ?? _pickup;
+    final meters = _dist.as(LengthUnit.Meter, from, _dest);
+    // ~28.8 km/h average ⇒ 8 m/s. Tune or replace with server ETA later.
+    const mps = 8.0;
+    if (meters <= 0) return null;
+    return Duration(seconds: (meters / mps).round());
+  }
 
   Widget _statusPill(String s) {
     final c = _statusColor(s);
@@ -508,56 +576,26 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     }
   }
 
-  Widget _primaryGradientButton({
-    required String label,
-    required VoidCallback? onPressed,
-    IconData? icon,
-  }) {
-    return SizedBox(
-      height: 48,
-      width: double.infinity,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          gradient: const LinearGradient(
-            colors: [_purple, _purpleDark],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: _purple.withOpacity(0.25),
-              blurRadius: 14,
-              offset: Offset(0, 8),
-            ),
-          ],
-        ),
-        child: ElevatedButton.icon(
-          onPressed: onPressed,
-          icon:
-              icon == null
-                  ? const SizedBox.shrink()
-                  : Icon(icon, color: Colors.white),
-          label: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          style: ElevatedButton.styleFrom(
-            elevation: 0,
-            backgroundColor: Colors.transparent,
-            shadowColor: Colors.transparent,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-          ),
-        ),
-      ),
-    );
+  void _fitTrip() {
+    try {
+      final pts = <LatLng>[
+        _pickup,
+        _dest,
+        if (_driverNext != null) _driverNext!,
+        if (_passengerLive != null) _passengerLive!,
+      ];
+      final b = LatLngBounds.fromPoints(pts);
+      if (_mapReady) {
+        _map.fitCamera(
+          CameraFit.bounds(bounds: b, padding: const EdgeInsets.all(48)),
+        );
+      } else {
+        _safeMove(b.center, 13);
+      }
+    } catch (_) {
+      // fallback
+      _safeMove(_pickup, 13);
+    }
   }
 
   // ===================== build =====================
@@ -568,7 +606,36 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (_error != null) {
-      return Scaffold(body: Center(child: Text('Error: $_error')));
+      return Scaffold(
+        backgroundColor: _bg,
+        appBar: AppBar(title: const Text('Driver Ride Details')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, size: 40, color: Colors.red),
+                const SizedBox(height: 12),
+                Text(
+                  'Error: $_error',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    HapticFeedback.selectionClick();
+                    _loadAll();
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
     }
     if (_ride == null) {
       return const Scaffold(body: Center(child: Text('No ride data')));
@@ -576,6 +643,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
 
     final pickup = _pickup;
     final dest = _dest;
+    final driverPoint = _driverInterp ?? _driverNext ?? pickup;
 
     final passengerRatingText = () {
       if (_fetchingPassengerAgg) return 'Loading…';
@@ -584,8 +652,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
       if (avg == null) return 'No ratings yet';
       return '${avg.toStringAsFixed(2)} ★  ($cnt)';
     }();
-
-    final driverPoint = _driverInterp ?? _driverNext ?? pickup;
 
     return Scaffold(
       backgroundColor: _bg,
@@ -597,10 +663,21 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
         actions: [
           IconButton(
             tooltip: _followDriver ? 'Disable follow' : 'Enable follow',
-            onPressed: () => setState(() => _followDriver = !_followDriver),
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              setState(() => _followDriver = !_followDriver);
+            },
             icon: Icon(
               _followDriver ? Icons.my_location : Icons.location_disabled,
             ),
+          ),
+          IconButton(
+            tooltip: 'Fit trip',
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              _fitTrip();
+            },
+            icon: const Icon(Icons.fullscreen),
           ),
         ],
       ),
@@ -609,6 +686,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
         icon: const Icon(Icons.emergency_share),
         label: const Text('SOS'),
         onPressed: () {
+          HapticFeedback.selectionClick();
           showModalBottomSheet(
             context: context,
             isScrollControlled: true,
@@ -638,7 +716,10 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                   }
                 },
                 onTap: (_, __) {
-                  if (_followDriver) setState(() => _followDriver = false);
+                  if (_followDriver) {
+                    HapticFeedback.selectionClick();
+                    setState(() => _followDriver = false);
+                  }
                 },
               ),
               children: [
@@ -665,10 +746,13 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                       width: 48,
                       height: 56,
                       alignment: Alignment.center,
-                      child: DriverMarker(
-                        size: 36,
-                        headingDeg: _driverHeading,
-                        active: status == 'en_route' || status == 'accepted',
+                      child: Semantics(
+                        label: 'Your location',
+                        child: DriverMarker(
+                          size: 36,
+                          headingDeg: _driverHeading,
+                          active: status == 'en_route' || status == 'accepted',
+                        ),
                       ),
                     ),
                     // Passenger live (if available) else pickup
@@ -676,24 +760,29 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                       point: _passengerLive ?? pickup,
                       width: 36,
                       height: 44,
-                      child:
-                          _passengerLive == null
-                              ? const Icon(
-                                Icons.location_on,
-                                color: Colors.green,
-                                size: 38,
-                              )
-                              : const PassengerMarker(size: 26, ripple: true),
+                      child: Semantics(
+                        label:
+                            _passengerLive == null
+                                ? 'Pickup location'
+                                : 'Passenger location',
+                        child:
+                            _passengerLive == null
+                                ? const Icon(
+                                  Icons.location_on,
+                                  color: Colors.green,
+                                  size: 38,
+                                )
+                                : const PassengerMarker(size: 26, ripple: true),
+                      ),
                     ),
                     // Destination
                     Marker(
                       point: dest,
                       width: 38,
                       height: 38,
-                      child: const Icon(
-                        Icons.flag,
-                        color: Colors.red,
-                        size: 38,
+                      child: Semantics(
+                        label: 'Destination',
+                        child: Icon(Icons.flag, color: Colors.red, size: 38),
                       ),
                     ),
                   ],
@@ -701,6 +790,41 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
               ],
             ),
           ),
+
+          // Top banner if canceled
+          if (_isCanceled)
+            Align(
+              alignment: Alignment.topCenter,
+              child: SafeArea(
+                bottom: false,
+                child: Container(
+                  margin: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.red.withOpacity(0.25)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.cancel, size: 16, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text(
+                        'This ride has been canceled',
+                        style: TextStyle(
+                          color: Colors.red,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
 
           // Bottom sheet
           Align(
@@ -758,6 +882,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                           ),
                           TextButton(
                             onPressed: () {
+                              HapticFeedback.selectionClick();
                               showModalBottomSheet(
                                 context: context,
                                 isScrollControlled: true,
@@ -773,80 +898,45 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                         ],
                       ),
 
-                    // ==== Earnings breakdown ====
-                    if (_fare != null) ...[
-                      const SizedBox(height: 8),
+                    // ETA chip (en_route)
+                    if (status == 'en_route' && _roughEta != null) ...[
+                      const SizedBox(height: 6),
                       Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.black12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
                         ),
-                        child: Column(
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.09),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: Colors.orange.withOpacity(0.25),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.receipt_long,
-                                  size: 16,
-                                  color: Colors.black54,
-                                ),
-                                const SizedBox(width: 6),
-                                const Text(
-                                  'Ride value',
-                                  style: TextStyle(fontWeight: FontWeight.w600),
-                                ),
-                                const Spacer(),
-                                Text(
-                                  _peso(_fare),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.percent,
-                                  size: 16,
-                                  color: Colors.black54,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'Platform fee (${(_platformFeeRate * 100).toStringAsFixed(0)}%)',
-                                ),
-                                const Spacer(),
-                                Text('- ${_peso(_fare! * _platformFeeRate)}'),
-                              ],
-                            ),
-                            const Divider(height: 14),
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.account_balance_wallet_outlined,
-                                  size: 18,
-                                  color: Colors.green,
-                                ),
-                                const SizedBox(width: 6),
-                                const Text(
-                                  'Your take',
-                                  style: TextStyle(fontWeight: FontWeight.w700),
-                                ),
-                                const Spacer(),
-                                Text(
-                                  _peso(_driverNet(_fare)),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    color: Colors.green,
-                                  ),
-                                ),
-                              ],
+                            const Icon(Icons.timer, size: 16),
+                            const SizedBox(width: 6),
+                            Text(
+                              'ETA ~ ${_roughEta!.inMinutes} min',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ],
                         ),
+                      ),
+                    ],
+
+                    // ==== Earnings breakdown ====
+                    if (_fare != null) ...[
+                      const SizedBox(height: 8),
+                      _EarningsCard(
+                        fare: _fare!,
+                        platformFeeRate: _platformFeeRate,
+                        peso: _peso,
+                        driverNet: _driverNet,
                       ),
                     ],
 
@@ -857,6 +947,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                       children: [
                         TextButton.icon(
                           onPressed: () {
+                            HapticFeedback.selectionClick();
                             final p = _driverInterp ?? _driverNext;
                             if (p != null) {
                               final z = _mapReady ? _map.camera.zoom : 15.0;
@@ -869,7 +960,11 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                         ),
                         const SizedBox(width: 6),
                         TextButton.icon(
-                          onPressed: () => _safeMove(_dest, 15),
+                          onPressed: () {
+                            HapticFeedback.selectionClick();
+                            _safeMove(_dest, 15);
+                            setState(() => _followDriver = false);
+                          },
                           icon: const Icon(Icons.place, size: 16),
                           label: const Text('Destination'),
                         ),
@@ -879,6 +974,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                             icon: const Icon(Icons.message),
                             label: const Text('Chat'),
                             onPressed: () {
+                              HapticFeedback.selectionClick();
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -899,14 +995,99 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                         child: OutlinedButton.icon(
                           icon: const Icon(Icons.star),
                           label: const Text('Rate your passenger'),
-                          onPressed:
-                              () async => _maybePromptRatingIfCompleted(),
+                          onPressed: () async {
+                            HapticFeedback.selectionClick();
+                            await _maybePromptRatingIfCompleted();
+                          },
                         ),
                       ),
                   ],
                 ),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ----- Small widget: Earnings card (perf: avoids rebuilding big tree) -----
+class _EarningsCard extends StatelessWidget {
+  const _EarningsCard({
+    required this.fare,
+    required this.platformFeeRate,
+    required this.peso,
+    required this.driverNet,
+  });
+
+  final double fare;
+  final double platformFeeRate;
+  final String Function(num?) peso;
+  final double? Function(num?) driverNet;
+
+  @override
+  Widget build(BuildContext context) {
+    final fee = fare * platformFeeRate;
+    final net = driverNet(fare) ?? 0;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.receipt_long, size: 16, color: Colors.black54),
+              const SizedBox(width: 6),
+              const Text(
+                'Ride value',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const Spacer(),
+              Text(
+                peso(fare),
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              const Icon(Icons.percent, size: 16, color: Colors.black54),
+              const SizedBox(width: 6),
+              Text(
+                'Platform fee (${(platformFeeRate * 100).toStringAsFixed(0)}%)',
+              ),
+              const Spacer(),
+              Text('- ${peso(fee)}'),
+            ],
+          ),
+          const Divider(height: 14),
+          Row(
+            children: [
+              const Icon(
+                Icons.account_balance_wallet_outlined,
+                size: 18,
+                color: Colors.green,
+              ),
+              const SizedBox(width: 6),
+              const Text(
+                'Your take',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const Spacer(),
+              Text(
+                peso(net),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: Colors.green,
+                ),
+              ),
+            ],
           ),
         ],
       ),
