@@ -20,6 +20,7 @@ class _VehiclesPageState extends State<VehiclesPage> {
 
   // Brand
   static const _purple = Color(0xFF6A27F7);
+  static const _purpleDark = Color(0xFF4B18C9);
 
   @override
   void initState() {
@@ -58,13 +59,39 @@ class _VehiclesPageState extends State<VehiclesPage> {
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
       appBar: AppBar(
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [_purple.withOpacity(0.4), Colors.transparent],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        ),
+        backgroundColor: const Color.fromARGB(3, 0, 0, 0),
+        elevation: 0,
+        centerTitle: true,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: CircleAvatar(
+            backgroundColor: Colors.white.withOpacity(0.9),
+            child: IconButton(
+              icon: const Icon(
+                Icons.arrow_back_ios_new,
+                color: _purple,
+                size: 18,
+              ),
+              onPressed: () => Navigator.maybePop(context),
+              tooltip: 'Back',
+            ),
+          ),
+        ),
         title: const Text(
           'My Vehicles',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
+        iconTheme: const IconThemeData(color: Colors.white),
+        actionsIconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
             tooltip: 'Refresh',
@@ -364,6 +391,7 @@ class _VehicleCardState extends State<_VehicleCard> {
                   icon: const Icon(Icons.delete),
                   label: const Text('Delete'),
                   onPressed: _working ? null : _deleteVehicle,
+                  style: OutlinedButton.styleFrom(foregroundColor: _purple),
                 ),
               ],
             ),
@@ -380,7 +408,7 @@ class _VehicleCardState extends State<_VehicleCard> {
                 childrenPadding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
                 title: Row(
                   children: [
-                    const Icon(Icons.folder_open, size: 18),
+                    const Icon(Icons.folder_open, size: 18, color: _purple),
                     const SizedBox(width: 8),
                     const Text(
                       'Documents',
@@ -409,6 +437,9 @@ class _VehicleCardState extends State<_VehicleCard> {
                           icon: const Icon(Icons.upload_file),
                           label: Text(hasOR ? 'Replace OR' : 'Upload OR'),
                           onPressed: _working ? null : () => _upload(true),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _purple,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -417,6 +448,9 @@ class _VehicleCardState extends State<_VehicleCard> {
                           icon: const Icon(Icons.upload_file),
                           label: Text(hasCR ? 'Replace CR' : 'Upload CR'),
                           onPressed: _working ? null : () => _upload(false),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _purple,
+                          ),
                         ),
                       ),
                     ],
@@ -775,6 +809,7 @@ class _Empty extends StatelessWidget {
             onPressed: onAdd,
             icon: const Icon(Icons.add),
             label: const Text('Add a vehicle'),
+            style: OutlinedButton.styleFrom(foregroundColor: Color(0xFF6A27F7)),
           ),
         ),
       ],
