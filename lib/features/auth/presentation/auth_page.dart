@@ -3,7 +3,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 // Existing routes
 import 'package:godavao/features/dashboard/presentation/dashboard_page.dart';
-import 'package:godavao/features/auth/presentation/vehicle_form.dart';
 import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
 
 class AuthPage extends StatefulWidget {
@@ -178,17 +177,19 @@ class _AuthPageState extends State<AuthPage> {
         final user = res.user;
         if (user == null) throw 'Login failed';
 
-        // Get role from DB (fallback passenger)
+        // Fetch role (fallback to passenger)
         final role = await _getRole(user.id) ?? 'passenger';
 
         // Ensure row exists, but DO NOT reset verification_status on login
         await _ensureUserRow(userId: user.id, role: role, isSignup: false);
 
-        // Check status; treat 'verified' and legacy 'approved' as verified
+        // Check verification; treat 'verified' and legacy 'approved' as verified
         final v = (await _getVerificationStatus(user.id))?.toLowerCase();
         final isVerified = v == 'verified' || v == 'approved';
 
-        if (!isVerified) {
+        // For PASSENGERS: still prompt if not verified
+        // For DRIVERS: skip the verification sheet here (ORCR/vehicle will be handled later in-app)
+        if (role == 'passenger' && !isVerified) {
           await _promptVerify(role);
         }
 
@@ -204,7 +205,6 @@ class _AuthPageState extends State<AuthPage> {
         final fullName = _nameCtrl.text.trim();
         final phone = _phoneCtrl.text.trim();
 
-        // Send auth metadata too (helps if you keep a provisioning trigger)
         final res = await _sb.auth.signUp(
           email: email,
           password: pwd,
@@ -213,7 +213,7 @@ class _AuthPageState extends State<AuthPage> {
         final user = res.user;
         if (user == null) throw 'Signup failed';
 
-        // Create users row (first time). We start unverified.
+        // Create users row (first time). Start unverified/pending.
         await _ensureUserRow(
           userId: user.id,
           role: _role,
@@ -222,27 +222,21 @@ class _AuthPageState extends State<AuthPage> {
           isSignup: true,
         );
 
-        // Immediately prompt for verification
-        await _promptVerify(_role);
+        // Passengers: prompt to verify now.
+        // Drivers: SKIP verification sheet; we’ll collect ORCR/vehicle later inside the app.
+        if (_role == 'passenger') {
+          await _promptVerify(_role);
+        }
 
         if (!mounted) return;
-
-        if (_role == 'driver') {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const DashboardPage()),
-          );
-        } else {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const DashboardPage()),
-          );
-        }
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const DashboardPage()),
+        );
       }
     } on AuthException catch (e) {
       setState(() => _error = e.message);
     } on PostgrestException catch (e) {
-      // surface useful PostgREST messages
       setState(() => _error = e.message);
     } catch (e) {
       setState(() => _error = e.toString());
@@ -449,11 +443,7 @@ class _AuthPageState extends State<AuthPage> {
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(20),
                                 color: Colors.white,
-                                // gradient: const LinearGradient(
-                                //   colors: [_purple, Colors.white70],
-                                //   begin: Alignment.topLeft,
-                                //   end: Alignment.bottomRight,
-                                // ),
+
                                 boxShadow: [
                                   BoxShadow(
                                     color: _purple.withOpacity(0.25),

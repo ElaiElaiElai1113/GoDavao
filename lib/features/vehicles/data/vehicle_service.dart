@@ -1,20 +1,23 @@
 // lib/features/vehicles/data/vehicles_service.dart
 import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 class VehiclesService {
   final SupabaseClient sb;
   VehiclesService(this.sb);
 
+  // Storage
   static const String _bucket = 'verifications';
 
+  // Columns your UI expects
   static const String _vehicleCols =
       'id, driver_id, make, model, plate, color, year, seats, '
       'is_default, verification_status, created_at, '
       'submitted_at, reviewed_by, reviewed_at, review_notes, '
       'or_key, cr_key, orcr_key, or_number, cr_number';
 
-  // ---------------- Utilities ----------------
+  /* ──────────────────────────── Utilities ─────────────────────────── */
 
   String _requireUid() {
     final uid = sb.auth.currentUser?.id;
@@ -46,7 +49,9 @@ class VehiclesService {
     return Exception(e.message ?? 'Vehicle operation failed.');
   }
 
-  // ---------------- Queries ----------------
+  String _nowUtcIso() => DateTime.now().toUtc().toIso8601String();
+
+  /* ──────────────────────────── Queries ───────────────────────────── */
 
   Future<List<Map<String, dynamic>>> listMine() async {
     final uid = _requireUid();
@@ -94,9 +99,10 @@ class VehiclesService {
     return res == null ? null : _castRow(res);
   }
 
-  // ---------------- Create ----------------
+  /* ─────────────────────────── Create/Update ──────────────────────── */
 
-  Future<void> createVehicle({
+  /// Create vehicle and RETURN its id so UI can immediately use it (e.g., to upload OR/CR).
+  Future<String> createVehicle({
     required String make,
     required String model,
     String? plate,
@@ -110,24 +116,35 @@ class VehiclesService {
     final uid = _requireUid();
 
     try {
-      await sb.from('vehicles').insert({
-        'driver_id': uid,
-        'make': make,
-        'model': model,
-        'plate': _nullIfBlank(plate),
-        'color': _nullIfBlank(color),
-        'year': year,
-        'seats': seats,
-        'is_default': isDefault,
-        if (_nullIfBlank(orNumber) != null) 'or_number': _nullIfBlank(orNumber),
-        if (_nullIfBlank(crNumber) != null) 'cr_number': _nullIfBlank(crNumber),
-      });
+      final inserted =
+          await sb
+              .from('vehicles')
+              .insert({
+                'driver_id': uid,
+                'make': make,
+                'model': model,
+                'plate': _nullIfBlank(plate),
+                'color': _nullIfBlank(color),
+                'year': year,
+                'seats': seats,
+                'is_default': isDefault,
+                if (_nullIfBlank(orNumber) != null)
+                  'or_number': _nullIfBlank(orNumber),
+                if (_nullIfBlank(crNumber) != null)
+                  'cr_number': _nullIfBlank(crNumber),
+              })
+              .select('id')
+              .single();
+
+      final id = (inserted['id'] as String?) ?? '';
+      if (id.isEmpty) {
+        throw Exception('Vehicle created but id not returned.');
+      }
+      return id;
     } on PostgrestException catch (e) {
       throw _friendlyVehicleError(e);
     }
   }
-
-  // ---------------- Update ----------------
 
   Future<void> updateVehicle(
     String vehicleId,
@@ -192,7 +209,7 @@ class VehiclesService {
     });
   }
 
-  // ---------------- Default toggle ----------------
+  /* ───────────────────────── Default toggle ───────────────────────── */
 
   Future<void> setDefault(String vehicleId) async {
     final uid = _requireUid();
@@ -201,29 +218,59 @@ class VehiclesService {
         .update({'is_default': true})
         .eq('id', vehicleId)
         .eq('driver_id', uid);
+    // If you have a DB trigger to clear other defaults, great.
+    // If not, you could also clear others here in a second update.
   }
 
-  // ---------------- Delete ----------------
+  /* ─────────────────────────── Delete ────────────────────────────── */
 
   Future<void> deleteVehicle(String vehicleId) async {
     final uid = _requireUid();
+
+    // Clean up storage keys first (best effort)
+    try {
+      final v = await getVehicle(vehicleId);
+      final keys = <String>[];
+      final orKey = v?['or_key'] as String?;
+      final crKey = v?['cr_key'] as String?;
+      final legacy = v?['orcr_key'] as String?;
+      if (orKey != null && orKey.isNotEmpty) keys.add(orKey);
+      if (crKey != null && crKey.isNotEmpty) keys.add(crKey);
+      if (legacy != null && legacy.isNotEmpty) keys.add(legacy);
+      if (keys.isNotEmpty) {
+        await sb.storage.from(_bucket).remove(keys);
+      }
+    } catch (_) {
+      // ignore storage errors on delete
+    }
+
     await sb.from('vehicles').delete().eq('id', vehicleId).eq('driver_id', uid);
   }
 
-  // ---------------- Document Uploads ----------------
+  /* ─────────────────────── Document Uploads ──────────────────────── */
 
   Future<void> uploadOR({required String vehicleId, required File file}) async {
     final uid = _requireUid();
     final ext = file.path.split('.').last.toLowerCase();
-    final key =
-        'or/$uid/$vehicleId-${DateTime.now().millisecondsSinceEpoch}.$ext';
+    final fileName = 'or_${const Uuid().v4()}.$ext';
+    final key = '$uid/$vehicleId/$fileName';
 
+    // Upload
     await sb.storage
         .from(_bucket)
         .upload(key, file, fileOptions: const FileOptions(upsert: true));
+
+    // Update DB + mark pending (review restarts)
     await sb
         .from('vehicles')
-        .update({'or_key': key})
+        .update({
+          'or_key': key,
+          'verification_status': 'pending',
+          'submitted_at': _nowUtcIso(),
+          'reviewed_by': null,
+          'reviewed_at': null,
+          'review_notes': null,
+        })
         .eq('id', vehicleId)
         .eq('driver_id', uid);
   }
@@ -231,15 +278,23 @@ class VehiclesService {
   Future<void> uploadCR({required String vehicleId, required File file}) async {
     final uid = _requireUid();
     final ext = file.path.split('.').last.toLowerCase();
-    final key =
-        'cr/$uid/$vehicleId-${DateTime.now().millisecondsSinceEpoch}.$ext';
+    final fileName = 'cr_${const Uuid().v4()}.$ext';
+    final key = '$uid/$vehicleId/$fileName';
 
     await sb.storage
         .from(_bucket)
         .upload(key, file, fileOptions: const FileOptions(upsert: true));
+
     await sb
         .from('vehicles')
-        .update({'cr_key': key})
+        .update({
+          'cr_key': key,
+          'verification_status': 'pending',
+          'submitted_at': _nowUtcIso(),
+          'reviewed_by': null,
+          'reviewed_at': null,
+          'review_notes': null,
+        })
         .eq('id', vehicleId)
         .eq('driver_id', uid);
   }
@@ -280,8 +335,9 @@ class VehiclesService {
     return res;
   }
 
-  // ---------------- Verification ----------------
+  /* ───────────────────────── Verification ───────────────────────── */
 
+  /// Requires both OR and CR (or legacy ORCR) before marking as pending.
   Future<void> submitForVerificationBoth(String vehicleId) async {
     final uid = _requireUid();
     final v =
@@ -308,7 +364,7 @@ class VehiclesService {
         .from('vehicles')
         .update({
           'verification_status': 'pending',
-          'submitted_at': DateTime.now().toUtc().toIso8601String(),
+          'submitted_at': _nowUtcIso(),
           'reviewed_by': null,
           'reviewed_at': null,
           'review_notes': null,

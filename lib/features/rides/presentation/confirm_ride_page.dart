@@ -535,6 +535,8 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                     _buildCard(child: _pakyawSeatsSummaryCard()),
                   ],
                   const SizedBox(height: 10),
+                  _pickupDestinationBubbles(),
+                  const SizedBox(height: 10),
                   _buildCard(child: _fareCard(fareTotal, perSeat)),
                   if (!_pakyaw) ...[
                     const SizedBox(height: 10),
@@ -796,6 +798,85 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _pickupDestinationBubbles() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardTitle(icon: Icons.my_location, text: 'Trip Summary'),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _bubble(
+                label: 'Pickup',
+                color: Colors.green,
+                active: true,
+                icon: Icons.radio_button_checked,
+              ),
+              const Expanded(
+                child: Divider(
+                  thickness: 2,
+                  color: Colors.grey,
+                  indent: 10,
+                  endIndent: 10,
+                ),
+              ),
+              _bubble(
+                label: 'Destination',
+                color: Colors.red,
+                active: true,
+                icon: Icons.flag,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Pickup comes first, followed by destination.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _bubble({
+    required String label,
+    required Color color,
+    required bool active,
+    required IconData icon,
+  }) {
+    return Column(
+      children: [
+        CircleAvatar(
+          radius: 20,
+          backgroundColor: color.withOpacity(active ? 0.15 : 0.08),
+          child: Icon(icon, color: color, size: 22),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.w700,
+            fontSize: 13,
+          ),
+        ),
+      ],
     );
   }
 

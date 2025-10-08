@@ -102,7 +102,7 @@ class AppDrawer extends StatelessWidget {
                       _item(
                         icon: Icons.dashboard,
                         label: 'Dashboard',
-                        highlight: true, // example active
+                        highlight: true,
                         onTap: () {
                           Navigator.pop(context);
                           Navigator.pushReplacement(
@@ -113,17 +113,7 @@ class AppDrawer extends StatelessWidget {
                           );
                         },
                       ),
-                      _item(
-                        icon: Icons.credit_card,
-                        label: 'Payment methods',
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Payment methods coming soon'),
-                            ),
-                          );
-                        },
-                      ),
+
                       _item(
                         icon: Icons.history,
                         label: 'Booking History',
@@ -137,11 +127,7 @@ class AppDrawer extends StatelessWidget {
                           );
                         },
                       ),
-                      _item(
-                        icon: Icons.local_offer_outlined,
-                        label: 'Promotion code',
-                        onTap: () {},
-                      ),
+
                       const Divider(),
 
                       _sectionTitle("Account"),
@@ -150,16 +136,7 @@ class AppDrawer extends StatelessWidget {
                         label: 'How it works',
                         onTap: () {},
                       ),
-                      _item(
-                        icon: Icons.support_agent,
-                        label: 'Support',
-                        onTap: () {},
-                      ),
-                      _item(
-                        icon: Icons.settings_outlined,
-                        label: 'Settings',
-                        onTap: () {},
-                      ),
+
                       _item(
                         icon: Icons.person_outline,
                         label: 'View Profile',

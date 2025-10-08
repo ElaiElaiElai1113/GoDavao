@@ -616,11 +616,13 @@ class _DocPreviews extends StatelessWidget {
         title: 'OR',
         futureUrl: svc.signedUrl(orKey),
         empty: orKey == null || orKey!.isEmpty,
+        heroTag: 'doc-or-${orKey ?? ""}',
       ),
       _DocTile(
         title: 'CR',
         futureUrl: svc.signedUrl(crKey),
         empty: crKey == null || crKey!.isEmpty,
+        heroTag: 'doc-cr-${crKey ?? ""}',
       ),
     ];
 
@@ -652,11 +654,13 @@ class _DocTile extends StatelessWidget {
   final String title;
   final Future<String?> futureUrl;
   final bool empty;
+  final String? heroTag;
 
   const _DocTile({
     required this.title,
     required this.futureUrl,
     required this.empty,
+    this.heroTag,
   });
 
   @override
@@ -671,6 +675,7 @@ class _DocTile extends StatelessWidget {
         ),
       );
     }
+
     return FutureBuilder<String?>(
       future: futureUrl,
       builder: (context, snap) {
@@ -690,13 +695,117 @@ class _DocTile extends StatelessWidget {
             ),
           );
         }
+
+        final tag = (heroTag ?? 'viewer-$title-$url');
         return _DocBox(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Image.network(url, fit: BoxFit.cover),
+          child: InkWell(
+            onTap: () => _openImageViewer(context, title, url, tag),
+            child: Hero(
+              tag: tag,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(url, fit: BoxFit.cover),
+              ),
+            ),
           ),
         );
       },
+    );
+  }
+
+  void _openImageViewer(
+    BuildContext context,
+    String title,
+    String url,
+    String heroTag,
+  ) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        pageBuilder:
+            (_, __, ___) => _FullScreenImageViewer(
+              title: title,
+              imageUrl: url,
+              heroTag: heroTag,
+            ),
+        transitionsBuilder:
+            (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+      ),
+    );
+  }
+}
+
+class _FullScreenImageViewer extends StatefulWidget {
+  final String title;
+  final String imageUrl;
+  final String heroTag;
+
+  const _FullScreenImageViewer({
+    required this.title,
+    required this.imageUrl,
+    required this.heroTag,
+  });
+
+  @override
+  State<_FullScreenImageViewer> createState() => _FullScreenImageViewerState();
+}
+
+class _FullScreenImageViewerState extends State<_FullScreenImageViewer> {
+  // Optional: double-tap zoom
+  final TransformationController _controller = TransformationController();
+  TapDownDetails? _doubleTapDetails;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black.withOpacity(0.98),
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: Text(widget.title),
+      ),
+      body: GestureDetector(
+        onTap: () => Navigator.of(context).maybePop(),
+        onDoubleTapDown: (d) => _doubleTapDetails = d,
+        onDoubleTap: () {
+          final pos = _doubleTapDetails?.localPosition;
+          if (pos == null) return;
+
+          const zoom = 2.5;
+          final matrix =
+              _controller.value.isIdentity()
+                  ? (Matrix4.identity()
+                    ..translate(-pos.dx * (zoom - 1), -pos.dy * (zoom - 1))
+                    ..scale(zoom))
+                  : Matrix4.identity();
+
+          _controller.value = matrix;
+        },
+        child: Center(
+          child: Hero(
+            tag: widget.heroTag,
+            child: InteractiveViewer(
+              transformationController: _controller,
+              panEnabled: true,
+              minScale: 1.0,
+              maxScale: 5.0,
+              child: Image.network(
+                widget.imageUrl,
+                fit: BoxFit.contain,
+                // Add gapless playback to avoid flicker on hero transition
+                gaplessPlayback: true,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -925,9 +1034,11 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
   Future<void> _save() async {
     if (!_form.currentState!.validate()) return;
     setState(() => _saving = true);
+
     try {
       final svc = VehiclesService(Supabase.instance.client);
 
+      // 1️⃣ Create the vehicle — this function returns void, so just await it
       await svc.createVehicle(
         make: _make.text.trim(),
         model: _model.text.trim(),
@@ -940,6 +1051,52 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
         orNumber: _orNumber.text.trim().isEmpty ? null : _orNumber.text.trim(),
         crNumber: _crNumber.text.trim().isEmpty ? null : _crNumber.text.trim(),
       );
+
+      // 2️⃣ After insertion, fetch the newest vehicle ID owned by the user
+      final list = await svc.listMine();
+      if (list.isEmpty) throw Exception('Vehicle created but not found');
+      // sort newest first
+      list.sort((a, b) {
+        final ta =
+            DateTime.tryParse('${a['created_at'] ?? ''}') ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        final tb =
+            DateTime.tryParse('${b['created_at'] ?? ''}') ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        return tb.compareTo(ta);
+      });
+      final newId = list.first['id'] as String?;
+
+      if (newId == null) throw Exception('Could not find new vehicle ID.');
+
+      // 3️⃣ Upload OR/CR if provided
+      bool uploadedOR = false, uploadedCR = false;
+      if (_orFile != null) {
+        await svc.uploadOR(vehicleId: newId, file: _orFile!);
+        uploadedOR = true;
+      }
+      if (_crFile != null) {
+        await svc.uploadCR(vehicleId: newId, file: _crFile!);
+        uploadedCR = true;
+      }
+
+      // 4️⃣ Optionally auto-submit for verification if both uploaded
+      if (uploadedOR && uploadedCR) {
+        try {
+          await svc.submitForVerificationBoth(newId);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Submitted for verification.')),
+            );
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Saved but could not submit: $e')),
+            );
+          }
+        }
+      }
 
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -1062,7 +1219,7 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
                 const SizedBox(height: 8),
 
                 _Section(
-                  title: 'OR / CR (optional for now)',
+                  title: 'OR / CR',
                   children: [
                     TextFormField(
                       controller: _orNumber,

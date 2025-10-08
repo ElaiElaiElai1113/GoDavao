@@ -111,11 +111,6 @@ class _VerifyIdentitySheetState extends State<VerifyIdentitySheet> {
                   license,
                   () => _pick((f) => license = f),
                 ),
-                _pickerTile(
-                  'OR/CR of Vehicle',
-                  orcr,
-                  () => _pick((f) => orcr = f),
-                ),
               ],
 
               const SizedBox(height: 16),
