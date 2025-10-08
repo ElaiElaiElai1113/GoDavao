@@ -727,27 +727,31 @@ class _DriverRidesPageState extends State<DriverRidesPage>
   }
 
   Widget _pill(String text, {IconData? icon, Color? color}) {
-    return DecoratedBox(
+    final baseColor = color ?? const Color(0xFF6A27F7);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: (color ?? const Color(0xFFF2F2F7)),
+        color: baseColor.withOpacity(0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.black12.withOpacity(0.25)),
+        border: Border.all(color: baseColor.withOpacity(0.15)),
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[
-              Icon(icon, size: 14, color: Colors.black54),
-              const SizedBox(width: 6),
-            ],
-            Text(
-              text,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-            ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: baseColor.withOpacity(0.9)),
+            const SizedBox(width: 5),
           ],
-        ),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: baseColor.withOpacity(0.9),
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -920,277 +924,344 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       if (list.isEmpty) return [];
       return [
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
           child: Text(
             label,
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+              color: Color(0xFF4B18C9),
+            ),
           ),
         ),
         ...list.map(
-          (m) => Column(
-            children: [
-              CheckboxListTile(
-                dense: true,
-                contentPadding: const EdgeInsets.only(left: 12, right: 8),
-                visualDensity: const VisualDensity(
-                  horizontal: -2,
-                  vertical: -2,
+          (m) => Container(
+            margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.9),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 6,
+                  offset: const Offset(0, 3),
                 ),
-                value: selectable ? g.selected.contains(m.matchId) : false,
-                onChanged:
-                    selectable
-                        ? (v) => setState(() {
-                          if (v == true) {
-                            g.selected.add(m.matchId);
-                          } else {
-                            g.selected.remove(m.matchId);
-                          }
-                        })
-                        : null,
-                controlAffinity: ListTileControlAffinity.leading,
-                title: Text(
-                  '${m.pickupAddress} → ${m.destinationAddress}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    _pill('${m.pax} pax', icon: Icons.people),
-                    if (m.fare != null)
-                      _pill(_peso(m.fare), icon: Icons.payments),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.person,
-                          size: 14,
-                          color: Colors.black54,
-                        ),
-                        const SizedBox(width: 4),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 180),
-                          child: Text(
-                            m.passengerName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (m.passengerId != null) ...[
-                          const SizedBox(width: 6),
-                          VerifiedBadge(userId: m.passengerId!, size: 16),
-                          const SizedBox(width: 6),
-                          UserRatingBadge(userId: m.passengerId!, iconSize: 14),
-                        ],
-                      ],
-                    ),
-                  ],
-                ),
-                secondary: SizedBox(
-                  width: 100,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _miniIconBtn(
-                        icon: Icons.message_outlined,
-                        tooltip: 'Chat',
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ChatPage(matchId: m.matchId),
-                            ),
-                          );
-                        },
-                      ),
-                      if (m.status == 'pending')
-                        _miniIconBtn(
-                          icon: Icons.close,
-                          tooltip: 'Decline',
-                          onTap: () async {
-                            setState(() => _loading = true);
-                            try {
-                              await _updateMatchStatus(
-                                m.matchId,
-                                m.rideRequestId,
-                                'declined',
-                              );
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Declined')),
-                              );
-                            } catch (e) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Decline failed: $e')),
-                              );
-                            } finally {
-                              await _loadMatches();
-                              if (mounted) setState(() => _loading = false);
-                            }
-                          },
-                        ),
-                      if (m.status == 'accepted' ||
-                          m.status == 'en_route' ||
-                          m.status == 'completed')
-                        _miniIconBtn(
-                          icon: Icons.map_outlined,
-                          tooltip: 'View ride',
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder:
-                                    (_) => DriverRideStatusPage(
-                                      rideId: m.rideRequestId,
-                                    ),
-                              ),
-                            );
-                          },
-                        ),
-                    ],
-                  ),
+              ],
+              border: Border.all(color: Colors.black12.withOpacity(0.05)),
+            ),
+            child: CheckboxListTile(
+              dense: true,
+              visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 2,
+              ),
+              value: selectable ? g.selected.contains(m.matchId) : false,
+              onChanged:
+                  selectable
+                      ? (v) => setState(() {
+                        if (v == true) {
+                          g.selected.add(m.matchId);
+                        } else {
+                          g.selected.remove(m.matchId);
+                        }
+                      })
+                      : null,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: Text(
+                '${m.pickupAddress} → ${m.destinationAddress}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
                 ),
               ),
-              if (m.hasCoords)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(56, 0, 12, 10),
-                  child: _MapThumb(
-                    pickup: m.pickup!,
-                    destination: m.destination!,
-                    onTap: () => _openMapPreview(single: m, routeId: g.routeId),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      _pill('${m.pax} pax', icon: Icons.people),
+                      if (m.fare != null)
+                        _pill(_peso(m.fare), icon: Icons.payments),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.person,
+                            size: 14,
+                            color: Colors.black54,
+                          ),
+                          const SizedBox(width: 4),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 180),
+                            child: Text(
+                              m.passengerName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (m.passengerId != null) ...[
+                            const SizedBox(width: 6),
+                            VerifiedBadge(userId: m.passengerId!, size: 16),
+                            const SizedBox(width: 6),
+                            UserRatingBadge(
+                              userId: m.passengerId!,
+                              iconSize: 14,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
                   ),
-                ),
-            ],
+                  if (m.hasCoords)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6, left: 4, right: 4),
+                      child: _MapThumb(
+                        pickup: m.pickup!,
+                        destination: m.destination!,
+                        onTap:
+                            () =>
+                                _openMapPreview(single: m, routeId: g.routeId),
+                      ),
+                    ),
+                ],
+              ),
+              secondary: Wrap(
+                spacing: 4,
+                children: [
+                  _miniIconBtn(
+                    icon: Icons.message_outlined,
+                    tooltip: 'Chat',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ChatPage(matchId: m.matchId),
+                        ),
+                      );
+                    },
+                  ),
+                  if (m.status == 'pending')
+                    _miniIconBtn(
+                      icon: Icons.close,
+                      tooltip: 'Decline',
+                      onTap: () async {
+                        setState(() => _loading = true);
+                        try {
+                          await _updateMatchStatus(
+                            m.matchId,
+                            m.rideRequestId,
+                            'declined',
+                          );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Declined')),
+                          );
+                        } catch (e) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Decline failed: $e')),
+                          );
+                        } finally {
+                          await _loadMatches();
+                          if (mounted) setState(() => _loading = false);
+                        }
+                      },
+                    ),
+                  if (m.status == 'accepted' ||
+                      m.status == 'en_route' ||
+                      m.status == 'completed')
+                    _miniIconBtn(
+                      icon: Icons.map_outlined,
+                      tooltip: 'View ride',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder:
+                                (_) => DriverRideStatusPage(
+                                  rideId: m.rideRequestId,
+                                ),
+                          ),
+                        );
+                      },
+                    ),
+                ],
+              ),
+            ),
           ),
         ),
       ];
     }
 
-    return Card(
-      elevation: 0,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.black12.withOpacity(0.06)),
-      ),
-      color: Colors.white,
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        title: Row(
-          children: [
-            Icon(Icons.alt_route, color: _purple),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                g.routeId == 'unassigned'
-                    ? 'Unassigned route'
-                    : 'Route ${g.routeId.substring(0, 8)}',
-                style: const TextStyle(fontWeight: FontWeight.w700),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          colors: [
+            Colors.white.withOpacity(0.75),
+            Colors.white.withOpacity(0.55),
           ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-        subtitle: Container(
-          margin: const EdgeInsets.only(top: 6),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.02),
-            borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              _pill(capText, icon: Icons.event_seat),
-              _pill('Pending: ${pending.length}', icon: Icons.hourglass_bottom),
-              _pill('Accepted: ${accepted.length}', icon: Icons.check_circle),
-              _pill('En route: ${enRoute.length}', icon: Icons.directions_car),
-            ],
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          collapsedBackgroundColor: Colors.white.withOpacity(0.8),
+          backgroundColor: Colors.white.withOpacity(0.9),
+          leading: const Icon(Icons.alt_route, color: Color(0xFF6A27F7)),
+          title: Text(
+            g.routeId == 'unassigned'
+                ? 'Unassigned route'
+                : 'Route ${g.routeId.substring(0, 8)}',
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF4B18C9),
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
-        ),
-        children: [
-          // Batch actions + route map
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 6),
             child: Wrap(
               spacing: 8,
-              runSpacing: 8,
+              runSpacing: 6,
               children: [
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.map),
-                  label: const Text('Map: all pickups'),
-                  style: OutlinedButton.styleFrom(foregroundColor: _purple),
-                  onPressed:
-                      g.items.any((m) => m.hasCoords)
-                          ? () => _openMapPreview(group: g)
-                          : null,
+                _pill(capText, icon: Icons.event_seat),
+                _pill(
+                  'Pending: ${pending.length}',
+                  icon: Icons.hourglass_bottom,
                 ),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.select_all),
-                  label: const Text('Select all pending'),
-                  style: OutlinedButton.styleFrom(foregroundColor: _purple),
-                  onPressed:
-                      pending.isEmpty
-                          ? null
-                          : () => setState(() {
-                            for (final m in pending) {
-                              g.selected.add(m.matchId);
-                            }
-                          }),
-                ),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.clear_all),
-                  label: const Text('Clear selection'),
-                  style: OutlinedButton.styleFrom(foregroundColor: _purple),
-                  onPressed:
-                      g.selected.isEmpty
-                          ? null
-                          : () => setState(() => g.selected.clear()),
-                ),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.done_all),
-                  label: const Text('Accept selected'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _purple,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed:
-                      g.selected.isEmpty
-                          ? null
-                          : () => _acceptSelectedForRoute(g),
-                ),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('Start route'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _purple,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: accepted.isEmpty ? null : () => _startRoute(g),
-                ),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.check_circle),
-                  label: const Text('Complete route'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _purpleDark,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: enRoute.isEmpty ? null : () => _completeRoute(g),
+                _pill('Accepted: ${accepted.length}', icon: Icons.check_circle),
+                _pill(
+                  'En route: ${enRoute.length}',
+                  icon: Icons.directions_car,
                 ),
               ],
             ),
           ),
-          const Divider(height: 12, thickness: 0.5),
-          const SizedBox(height: 4),
-          ..._listFor('Pending', pending, selectable: true),
-          ..._listFor('Accepted', accepted, selectable: false),
-          ..._listFor('En route', enRoute, selectable: false),
-          const SizedBox(height: 10),
-        ],
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.map),
+                    label: const Text('Map: all pickups'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF6A27F7),
+                      side: const BorderSide(color: Color(0xFF6A27F7)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    onPressed:
+                        g.items.any((m) => m.hasCoords)
+                            ? () => _openMapPreview(group: g)
+                            : null,
+                  ),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.select_all),
+                    label: const Text('Select all pending'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF6A27F7),
+                      side: const BorderSide(color: Color(0xFF6A27F7)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    onPressed:
+                        pending.isEmpty
+                            ? null
+                            : () => setState(() {
+                              for (final m in pending) {
+                                g.selected.add(m.matchId);
+                              }
+                            }),
+                  ),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.clear_all),
+                    label: const Text('Clear selection'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF6A27F7),
+                      side: const BorderSide(color: Color(0xFF6A27F7)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    onPressed:
+                        g.selected.isEmpty
+                            ? null
+                            : () => setState(() => g.selected.clear()),
+                  ),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.done_all),
+                    label: const Text('Accept selected'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF6A27F7),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      elevation: 4,
+                    ),
+                    onPressed:
+                        g.selected.isEmpty
+                            ? null
+                            : () => _acceptSelectedForRoute(g),
+                  ),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('Start route'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF6A27F7),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      elevation: 4,
+                    ),
+                    onPressed: accepted.isEmpty ? null : () => _startRoute(g),
+                  ),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.check_circle),
+                    label: const Text('Complete route'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF4B18C9),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      elevation: 4,
+                    ),
+                    onPressed: enRoute.isEmpty ? null : () => _completeRoute(g),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 12, thickness: 0.5),
+            const SizedBox(height: 4),
+            ..._listFor('Pending', pending, selectable: true),
+            ..._listFor('Accepted', accepted, selectable: false),
+            ..._listFor('En route', enRoute, selectable: false),
+            const SizedBox(height: 10),
+          ],
+        ),
       ),
     );
   }
