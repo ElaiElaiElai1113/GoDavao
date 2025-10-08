@@ -10,7 +10,7 @@ import 'package:godavao/core/osrm_service.dart';
 
 import 'package:godavao/features/ride_status/presentation/passenger_ride_status_page.dart';
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
-import 'package:godavao/features/ratings/presentation/rate_user.dart'; // <— for rating sheet
+import 'package:godavao/features/ratings/presentation/rate_user.dart';
 
 class PassengerMyRidesPage extends StatefulWidget {
   const PassengerMyRidesPage({super.key});
@@ -31,13 +31,9 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
   StreamSubscription<List<Map<String, dynamic>>>? _rideReqSub;
   StreamSubscription<List<Map<String, dynamic>>>? _rideMatchSub;
 
-  // address cache
-  final Map<String, String> _addr = {}; // "lat,lng" -> text
-
-  // rating cache (rides already rated by current user)
+  final Map<String, String> _addr = {};
   final Set<String> _ratedRideIds = {};
 
-  // theme
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
   static const _bg = Color(0xFFF7F7FB);
@@ -55,8 +51,6 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
     super.dispose();
   }
 
-  // --------------------------- bootstrap ---------------------------
-
   Future<void> _bootstrap() async {
     setState(() {
       _loading = true;
@@ -72,7 +66,6 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
     }
 
     try {
-      // initial fetch from the RPC/view that already merges match + request
       final rows = await sb.rpc('passenger_rides_for_user').select();
       final list =
           (rows as List).map((e) => Map<String, dynamic>.from(e)).toList();
@@ -84,7 +77,6 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
       if (mounted) setState(() => _loading = false);
     }
 
-    // realtime: listen to both parents → then refetch from the view
     _rideReqSub?.cancel();
     _rideReqSub = sb
         .from('ride_requests')
@@ -133,12 +125,8 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
 
       await _ingestFromView(list);
       await _refreshRatedFlagsForCompleted(list);
-    } catch (_) {
-      // non-fatal
-    }
+    } catch (_) {}
   }
-
-  // --------------------------- ingest ---------------------------
 
   Future<void> _ingestFromView(List<Map<String, dynamic>> rows) async {
     Future<String> geotext(double lat, double lng) async {
@@ -194,14 +182,12 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
     });
   }
 
-  /// Batch-check which completed rides already have a rating from current user.
   Future<void> _refreshRatedFlagsForCompleted(
     List<Map<String, dynamic>> justFetched,
   ) async {
     final me = sb.auth.currentUser?.id;
     if (me == null) return;
 
-    // collect completed ride ids from either list
     final ids = <String>{};
     for (final r in justFetched) {
       final status = (r['effective_status'] as String?)?.toLowerCase();
@@ -226,15 +212,11 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
       if (!mounted) return;
       setState(() {
         _ratedRideIds
-          ..removeWhere((id) => ids.contains(id)) // clean stale
+          ..removeWhere((id) => ids.contains(id))
           ..addAll(rated);
       });
-    } catch (_) {
-      // ignore
-    }
+    } catch (_) {}
   }
-
-  // --------------------------- actions ---------------------------
 
   Future<void> _cancelRide(String rideId, {String? reason}) async {
     if (_working) return;
@@ -273,9 +255,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  'You can optionally tell the driver why you’re cancelling.',
-                ),
+                const Text('You can optionally tell the driver why.'),
                 const SizedBox(height: 10),
                 TextField(
                   controller: ctrl,
@@ -304,8 +284,6 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
       await _cancelRide(rideId, reason: reason);
     }
   }
-
-  // --------------------------- ui helpers ---------------------------
 
   Color _statusColor(String s) {
     switch (s) {
@@ -344,8 +322,6 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
   String _peso(num? v) =>
       v == null ? '₱0.00' : '₱${v.toDouble().toStringAsFixed(2)}';
 
-  // --------------------------- card ---------------------------
-
   Widget _rideCard(Map<String, dynamic> ride, {required bool upcoming}) {
     final status = (ride['effective_status'] as String).toLowerCase();
     final created = DateFormat(
@@ -377,7 +353,6 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // mini map
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: SizedBox(
@@ -442,10 +417,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                 ),
               ),
             ),
-
             const SizedBox(height: 10),
-
-            // addresses
             Text(
               '${ride['pickup_address']} → ${ride['destination_address']}',
               maxLines: 2,
@@ -453,8 +425,6 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
               style: const TextStyle(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 6),
-
-            // meta
             Wrap(
               spacing: 8,
               runSpacing: 6,
@@ -515,10 +485,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                 _statusPill(status),
               ],
             ),
-
             const SizedBox(height: 10),
-
-            // actions
             if (upcoming)
               Row(
                 children: [
@@ -546,8 +513,6 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                   ],
                 ],
               ),
-
-            // rating action (only when completed and not yet rated)
             if (!upcoming && needsRating)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
@@ -569,13 +534,11 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                             rateeRole: 'driver',
                           ),
                     );
-                    // After rating, refresh rated flags for this single ride
                     await _refreshRatedFlagsForCompleted([ride]);
-                    if (mounted) setState(() {}); // refresh UI
+                    if (mounted) setState(() {});
                   },
                 ),
               ),
-
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
@@ -647,8 +610,6 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
       ),
     );
   }
-
-  // --------------------------- scaffold ---------------------------
 
   @override
   Widget build(BuildContext context) {

@@ -1,11 +1,9 @@
-// lib/features/ride_status/presentation/passenger_ride_status_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// Chat / Verify / Ratings / Payments
 import 'package:godavao/features/chat/presentation/chat_page.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
@@ -13,11 +11,9 @@ import 'package:godavao/features/ratings/presentation/rate_user.dart';
 import 'package:godavao/features/ratings/data/ratings_service.dart';
 import 'package:godavao/features/payments/presentation/payment_status_chip.dart';
 
-// Live tracking
 import 'package:godavao/features/live_tracking/data/live_publisher.dart';
 import 'package:godavao/features/live_tracking/data/live_subscriber.dart';
 
-// Fare calc
 import 'package:godavao/core/fare_service.dart';
 
 class PassengerRideStatusPage extends StatefulWidget {
@@ -34,31 +30,26 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   final _sb = Supabase.instance.client;
   final _map = MapController();
 
-  Map<String, dynamic>? _ride; // merged from RPC
+  Map<String, dynamic>? _ride;
   Map<String, dynamic>? _payment;
 
   bool _loading = true;
   String? _error;
   bool _ratingPromptShown = false;
 
-  // parent watchers
   StreamSubscription<List<Map<String, dynamic>>>? _rideReqSub;
   StreamSubscription<List<Map<String, dynamic>>>? _rideMatchSub;
 
-  // chat
   String? _matchId;
 
-  // live tracking
-  LivePublisher? _publisher; // publish passenger
-  LiveSubscriber? _driverSub; // follow driver
-  LiveSubscriber? _selfSub; // (optional) mirror passenger point
+  LivePublisher? _publisher;
+  LiveSubscriber? _driverSub;
+  LiveSubscriber? _selfSub;
   LatLng? _driverLive;
   LatLng? _myLive;
 
-  // camera / UX
   bool _didFitOnce = false;
 
-  // fare
   final FareService _fareService = FareService();
   FareBreakdown? _fareBx;
   bool _estimatingFare = false;
@@ -88,11 +79,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     super.dispose();
   }
 
-  /* ───────────────────────── Lifecycle ───────────────────────── */
-
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Only publish passenger location while the app is foregrounded & ride active
     if (state == AppLifecycleState.resumed) {
       _syncPassengerPublisherToStatus();
     } else if (state == AppLifecycleState.paused) {
@@ -101,8 +89,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
       }
     }
   }
-
-  /* ───────────────────────── Bootstrap ───────────────────────── */
 
   Future<void> _bootstrap() async {
     setState(() {
@@ -197,8 +183,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
         });
   }
 
-  /* ───────────────────── Platform fee + Fare ─────────────────── */
-
   Future<void> _loadPlatformFeeRate() async {
     try {
       final row =
@@ -215,9 +199,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
         if (!mounted) return;
         setState(() => _platformFeeRate = parsed);
       }
-    } catch (_) {
-      /* keep default */
-    }
+    } catch (_) {}
   }
 
   void _subscribePlatformFee() {
@@ -271,7 +253,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     if (p == null || d == null) return;
 
     final seats = (_ride?['requested_seats'] as int?) ?? 1;
-    // server-provided current rider count if available (includes unique riders)
     final carpoolPassengers = (_ride?['passenger_count'] as int?) ?? seats;
     final surge = (_ride?['surge_multiplier'] as num?)?.toDouble() ?? 1.0;
 
@@ -288,13 +269,10 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
       if (!mounted) return;
       setState(() => _fareBx = bx);
     } catch (_) {
-      /* ignore */
     } finally {
       if (mounted) setState(() => _estimatingFare = false);
     }
   }
-
-  /* ───────────────────── Live tracking glue ──────────────────── */
 
   void _syncPassengerPublisherToStatus() {
     final s = _status;
@@ -309,9 +287,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
         minPeriod: const Duration(seconds: 3),
         distanceFilter: 3,
       );
-      if (!(_publisher!.isRunning)) {
-        _publisher!.start();
-      }
+      if (!(_publisher!.isRunning)) _publisher!.start();
     } else {
       _publisher?.stop();
     }
@@ -325,7 +301,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
       actor: 'driver',
       onUpdate: (pos, heading) {
         if (!mounted) return;
-
         final prev = _driverLive;
         if (prev != null &&
             prev.latitude == pos.latitude &&
@@ -333,7 +308,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
           return;
         }
         setState(() => _driverLive = pos);
-
         if (!_didFitOnce) {
           _didFitOnce = true;
           _fitImportant();
@@ -350,7 +324,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
       actor: 'passenger',
       onUpdate: (pos, heading) {
         if (!mounted) return;
-
         final prev = _myLive;
         if (prev != null &&
             prev.latitude == pos.latitude &&
@@ -358,7 +331,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
           return;
         }
         setState(() => _myLive = pos);
-
         if (!_didFitOnce && _driverLive != null) {
           _didFitOnce = true;
           _fitImportant();
@@ -380,8 +352,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
       CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(36)),
     );
   }
-
-  /* ───────────────────────── Helpers ───────────────────────── */
 
   String get _status =>
       (_ride?['effective_status'] as String?)?.toLowerCase() ??
@@ -425,14 +395,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
 
   Future<void> _cancelRide() async {
     try {
-      await _sb
-          .from('ride_requests')
-          .update({'status': 'canceled'})
-          .eq('id', widget.rideId);
-      await _sb
-          .from('payment_intents')
-          .update({'status': 'canceled'})
-          .eq('ride_id', widget.rideId);
+      await _sb.rpc('cancel_ride', params: {'p_ride_id': widget.rideId});
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -474,8 +437,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     );
   }
 
-  /* ───────────────────────── UI ───────────────────────── */
-
   @override
   Widget build(BuildContext context) {
     final fare = (_ride?['fare'] as num?)?.toDouble();
@@ -484,15 +445,13 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     final driverName = (_ride?['driver_name'] as String?) ?? '—';
     final seatsReq = (_ride?['requested_seats'] as int?) ?? 1;
     final bookingType = (_ride?['booking_type'] as String?) ?? 'shared';
-    final currentCarpool =
-        (_ride?['passenger_count'] as int?) ??
-        1; // server-populated count of unique riders
+    final currentCarpool = (_ride?['passenger_count'] as int?) ?? 1;
 
     final center =
-        _driverLive ??
-        _pickup ??
-        _dropoff ??
-        const LatLng(7.1907, 125.4553); // fallback (Davao)
+        _driverLive ?? _pickup ?? _dropoff ?? const LatLng(7.1907, 125.4553);
+
+    final isCancelable = _status == 'pending' || _status == 'accepted';
+    final isCanceled = _status == 'canceled';
 
     return Scaffold(
       backgroundColor: _bg,
@@ -569,7 +528,31 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
                   children: [
-                    // Status & chips
+                    if (isCanceled)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(.08),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.red.withOpacity(.2)),
+                        ),
+                        child: Row(
+                          children: const [
+                            Icon(Icons.cancel, color: Colors.red),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'This ride has been canceled.',
+                                style: TextStyle(
+                                  color: Colors.red,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (isCanceled) const SizedBox(height: 12),
                     _SectionCard(
                       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                       child: Wrap(
@@ -607,10 +590,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                         ],
                       ),
                     ),
-
                     const SizedBox(height: 12),
-
-                    // Map card
                     _SectionCard(
                       child: Column(
                         children: [
@@ -685,7 +665,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                               _MiniAction(
                                 icon: Icons.center_focus_strong,
                                 label: 'Driver',
-                                onTap: () {
+                                onPressed: () {
                                   if (_driverLive != null) {
                                     _map.move(_driverLive!, 16);
                                   }
@@ -695,7 +675,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                               _MiniAction(
                                 icon: Icons.place_outlined,
                                 label: 'Pickup',
-                                onTap: () {
+                                onPressed: () {
                                   if (_pickup != null) {
                                     _map.move(_pickup!, 16);
                                   }
@@ -705,7 +685,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                               _MiniAction(
                                 icon: Icons.flag_outlined,
                                 label: 'Dropoff',
-                                onTap: () {
+                                onPressed: () {
                                   if (_dropoff != null) {
                                     _map.move(_dropoff!, 16);
                                   }
@@ -725,10 +705,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                         ],
                       ),
                     ),
-
                     const SizedBox(height: 12),
-
-                    // Driver info
                     _SectionCard(
                       child: Row(
                         children: [
@@ -770,10 +747,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                         ],
                       ),
                     ),
-
                     const SizedBox(height: 12),
-
-                    // Fare breakdown
                     if (_fareBx != null)
                       _SectionCard(
                         child: _FareBreakdownPro(
@@ -791,8 +765,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                           peso: _peso,
                         ),
                       ),
-
-                    // NEW: Carpool breakdown preview (uses fare rules & current distance/time)
                     if (_fareBx != null) ...[
                       const SizedBox(height: 12),
                       _SectionCard(
@@ -805,8 +777,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                         ),
                       ),
                     ],
-
-                    // Rating CTA
                     if (_status == 'completed' && driverId != null) ...[
                       const SizedBox(height: 16),
                       OutlinedButton.icon(
@@ -825,11 +795,17 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
         passengerId ?? 'You',
         driverName,
         (_ride?['fare'] as num?)?.toDouble(),
+        isCancelable: isCancelable,
       ),
     );
   }
 
-  Widget _buildBottomBar(String passenger, String driverName, double? fare) {
+  Widget _buildBottomBar(
+    String passenger,
+    String driverName,
+    double? fare, {
+    required bool isCancelable,
+  }) {
     return SafeArea(
       top: false,
       child: Container(
@@ -867,19 +843,21 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                 icon: Icon(
                   _status == 'en_route'
                       ? Icons.emergency_share
-                      : Icons.cancel_outlined,
+                      : isCancelable
+                      ? Icons.cancel_outlined
+                      : Icons.close,
                 ),
                 label: Text(
                   _status == 'en_route'
                       ? 'SOS'
-                      : (_status == 'pending' || _status == 'accepted')
+                      : isCancelable
                       ? 'Cancel ride'
                       : 'Close',
                 ),
                 onPressed: () {
                   if (_status == 'en_route') {
                     _showSosDialog();
-                  } else if (_status == 'pending' || _status == 'accepted') {
+                  } else if (isCancelable) {
                     _cancelRide();
                   } else {
                     Navigator.maybePop(context);
@@ -978,7 +956,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('SOS triggered')),
                   );
-                  // Hook your SOS flow here
                 },
               ),
             ],
@@ -986,8 +963,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     );
   }
 }
-
-/* -------------------- UI bits -------------------- */
 
 class _SectionCard extends StatelessWidget {
   final Widget child;
@@ -1018,11 +993,11 @@ class _SectionCard extends StatelessWidget {
 class _MiniAction extends StatelessWidget {
   final IconData icon;
   final String label;
-  final VoidCallback onTap;
+  final VoidCallback onPressed;
   const _MiniAction({
     required this.icon,
     required this.label,
-    required this.onTap,
+    required this.onPressed,
   });
 
   @override
@@ -1034,7 +1009,7 @@ class _MiniAction extends StatelessWidget {
         foregroundColor: _PassengerRideStatusPageState._purple,
         side: const BorderSide(color: _PassengerRideStatusPageState._purple),
       ),
-      onPressed: onTap,
+      onPressed: onPressed,
       icon: Icon(icon, size: 16),
       label: Text(label),
     );
@@ -1044,7 +1019,7 @@ class _MiniAction extends StatelessWidget {
 class _FareBreakdownSimple extends StatelessWidget {
   final double total;
   final int seats;
-  final String bookingType; // shared | pakyaw
+  final String bookingType;
   final String Function(num?) peso;
 
   const _FareBreakdownSimple({
@@ -1057,7 +1032,6 @@ class _FareBreakdownSimple extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final perSeat = seats > 0 ? (total / seats) : total;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1147,8 +1121,6 @@ class _FareBreakdownPro extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-
-        // Trip metrics
         Row(
           children: [
             Expanded(
@@ -1160,7 +1132,6 @@ class _FareBreakdownPro extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 6),
-
         row('Seats billed', '${bx.seatsBilled}'),
         row(
           'Carpool discount',
@@ -1168,9 +1139,7 @@ class _FareBreakdownPro extends StatelessWidget {
         ),
         row('Night surcharge', peso(bx.nightSurcharge)),
         row('Surge used', '${bx.surgeMultiplier.toStringAsFixed(2)}×'),
-
         const Divider(height: 18),
-
         row('Subtotal', peso(bx.subtotal)),
         row('Per seat (approx.)', peso(perSeat)),
         row('Platform fee', '- ${peso(bx.platformFee)}'),
@@ -1182,7 +1151,6 @@ class _FareBreakdownPro extends StatelessWidget {
   }
 }
 
-/// NEW: Carpool breakdown table (1..N riders)
 class _CarpoolBreakdownTable extends StatelessWidget {
   final int currentCarpool;
   final int seatsRequested;
@@ -1200,7 +1168,6 @@ class _CarpoolBreakdownTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Build rider counts from rules (keys) + ensure "1" is included
     final keys =
         <int>{1, ...fareService.rules.carpoolDiscountByPax.keys}.toList()
           ..sort();
@@ -1247,8 +1214,7 @@ class _CarpoolBreakdownTable extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          'How your fare changes with the number of riders sharing this route. '
-          'Current riders highlighted.',
+          'How your fare changes with the number of riders sharing this route. Current riders highlighted.',
           style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
         ),
         const SizedBox(height: 10),
