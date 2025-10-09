@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:godavao/features/routes/presentation/pages/driver_route_edit_page.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
 import 'package:godavao/core/osrm_service.dart';
 import 'package:godavao/core/reverse_geocoder.dart';
 
@@ -311,12 +311,16 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
                   child: _primary(
                     label: 'Edit',
                     icon: Icons.edit_outlined,
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Open editor with this route'),
+                    onPressed: () async {
+                      final updated = await Navigator.push<bool>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => DriverRouteEditPage(routeId: id),
                         ),
                       );
+                      if (updated == true && mounted) {
+                        _bootstrap();
+                      }
                     },
                   ),
                 ),
