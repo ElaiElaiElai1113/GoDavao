@@ -180,15 +180,15 @@ class _AuthPageState extends State<AuthPage> {
         // Fetch role (fallback to passenger)
         final role = await _getRole(user.id) ?? 'passenger';
 
-        // Ensure row exists, but DO NOT reset verification_status on login
+        // Ensure row exists, but keep verification process(if it is still on going or verified)
         await _ensureUserRow(userId: user.id, role: role, isSignup: false);
 
-        // Check verification; treat 'verified' and legacy 'approved' as verified
+        // Check verification; if verified or not
         final v = (await _getVerificationStatus(user.id))?.toLowerCase();
         final isVerified = v == 'verified' || v == 'approved';
 
         // For PASSENGERS: still prompt if not verified
-        // For DRIVERS: skip the verification sheet here (ORCR/vehicle will be handled later in-app)
+        // For DRIVERS: skip the verification prompt, the verification will be handled later on
         if (role == 'passenger' && !isVerified) {
           await _promptVerify(role);
         }
@@ -223,7 +223,7 @@ class _AuthPageState extends State<AuthPage> {
         );
 
         // Passengers: prompt to verify now.
-        // Drivers: SKIP verification sheet; we’ll collect ORCR/vehicle later inside the app.
+        // Drivers: SKIP verification sheet; same as login
         if (_role == 'passenger') {
           await _promptVerify(_role);
         }

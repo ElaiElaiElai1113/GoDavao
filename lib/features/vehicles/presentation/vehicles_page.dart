@@ -1080,7 +1080,6 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
         uploadedCR = true;
       }
 
-      // 4️⃣ Optionally auto-submit for verification if both uploaded
       if (uploadedOR && uploadedCR) {
         try {
           await svc.submitForVerificationBoth(newId);
