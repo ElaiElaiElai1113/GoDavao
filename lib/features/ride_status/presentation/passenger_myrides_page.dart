@@ -400,7 +400,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                               height: 28,
                               child: const Icon(
                                 Icons.location_on,
-                                color: _purple,
+                                color: Colors.green,
                               ),
                             ),
                             Marker(
