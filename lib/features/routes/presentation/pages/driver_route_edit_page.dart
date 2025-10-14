@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:godavao/features/routes/presentation/pages/driver_route_geometry_page.dart';
 
 class DriverRouteEditPage extends StatefulWidget {
   final String routeId;
@@ -159,6 +160,22 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
     }
   }
 
+  Future<void> _openGeometryEditor() async {
+    final updated = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DriverRouteGeometryPage(routeId: widget.routeId),
+      ),
+    );
+    // If geometry was saved, reload the route (route_mode/anything else may have changed)
+    if (updated == true && mounted) {
+      await _load();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Geometry updated')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final title = 'Edit Route';
@@ -174,6 +191,11 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
               tooltip: 'Reload',
               onPressed: _loading ? null : _load,
               icon: const Icon(Icons.refresh),
+            ),
+            IconButton(
+              tooltip: 'Edit geometry',
+              onPressed: _loading ? null : _openGeometryEditor,
+              icon: const Icon(Icons.place),
             ),
           ],
         ),
@@ -321,13 +343,35 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
                           ),
                           const SizedBox(height: 6),
                           const Text(
-                            'To edit start/end points, use the Geometry editor on the list screen.',
+                            'Mode changes affect how your route is drawn for passengers.',
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.black54,
                             ),
                           ),
                         ]),
+                        const SizedBox(height: 10),
+
+                        // ⬇️ New Geometry section
+                        _section('Geometry', [
+                          const Text(
+                            'Edit the start & end points on a map.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.black54,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            height: 44,
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.place),
+                              label: const Text('Edit geometry on map'),
+                              onPressed: _openGeometryEditor,
+                            ),
+                          ),
+                        ]),
+
                         const SizedBox(height: 16),
                         SizedBox(
                           height: 48,
