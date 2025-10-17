@@ -395,6 +395,7 @@ class _AuthPageState extends State<AuthPage> {
                             const SizedBox(height: 8),
                             TextFormField(
                               controller: _nameCtrl,
+                              style: const TextStyle(color: Colors.white),
                               decoration: _fieldDecor(label: 'Full Name'),
                               validator: (v) {
                                 if (_isLogin) return null;
@@ -407,6 +408,7 @@ class _AuthPageState extends State<AuthPage> {
                             TextFormField(
                               controller: _phoneCtrl,
                               keyboardType: TextInputType.phone,
+                              style: const TextStyle(color: Colors.white),
                               decoration: _fieldDecor(label: 'Phone Number'),
                               validator: (v) {
                                 if (_isLogin) return null;
@@ -419,14 +421,24 @@ class _AuthPageState extends State<AuthPage> {
                             DropdownButtonFormField<String>(
                               value: _role,
                               decoration: _fieldDecor(label: 'Role'),
-                              items: const [
+                              dropdownColor: _purpleDark,
+                              iconEnabledColor: Colors.white,
+                              iconDisabledColor: Colors.white54,
+                              style: const TextStyle(color: Colors.white),
+                              items: [
                                 DropdownMenuItem(
                                   value: 'passenger',
-                                  child: Text('Passenger'),
+                                  child: Text(
+                                    'Passenger',
+                                    style: const TextStyle(color: Colors.white),
+                                  ),
                                 ),
                                 DropdownMenuItem(
                                   value: 'driver',
-                                  child: Text('Driver'),
+                                  child: Text(
+                                    'Driver',
+                                    style: const TextStyle(color: Colors.white),
+                                  ),
                                 ),
                               ],
                               onChanged:
