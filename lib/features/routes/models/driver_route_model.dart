@@ -3,11 +3,12 @@ class DriverRoute {
   final double startLat;
   final double startLng;
   final String? name;
+  final String driverName;
   final double endLat;
   final double endLng;
 
   DriverRoute(
-    this.name, {
+    this.name, this.driverName, {
     required this.driverId,
     required this.startLat,
     required this.startLng,

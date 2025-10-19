@@ -962,10 +962,10 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                                     ),
                               );
                             },
-                            child: const Text('View feedback'),
                             style: TextButton.styleFrom(
                               foregroundColor: _purple,
                             ),
+                            child: const Text('View feedback'),
                           ),
                         ],
                       ),

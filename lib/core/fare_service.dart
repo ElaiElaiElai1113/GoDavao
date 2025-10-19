@@ -229,10 +229,10 @@ class FareService {
       final mins = d.durationSeconds / 60.0;
       if (km > 0) return (km, _max(mins, 1.0));
     } catch (_) {
-      // fall through
+   
     }
     final km = _haversineKm(from, to);
-    const avgKmh = 22.0; // fallback city speed
+    const avgKmh = 22.0; 
     final mins = (km / avgKmh) * 60.0;
     return (km, _max(mins, 1.0));
   }
@@ -265,7 +265,7 @@ class FareService {
     }
   }
 
-  // rounding + math helpers
+
   double _round(double v, int places) =>
       double.parse(v.toStringAsFixed(places));
   double _round2(double v) => _round(v, 2);
