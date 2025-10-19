@@ -64,9 +64,11 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
             capacity_total, capacity_available,
             vehicle_id,
             vehicles!driver_routes_vehicle_id_fkey (make, model, plate),
-            created_at
+            created_at,
+            updated_at
           ''')
           .eq('driver_id', me.id)
+          .order('updated_at', ascending: false)
           .order('created_at', ascending: false);
 
       await _ingest(
@@ -88,33 +90,52 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
         });
   }
 
+  DateTime _ts(Map<String, dynamic> r, String key) {
+  final v = r[key];
+  if (v == null) return DateTime.fromMillisecondsSinceEpoch(0);
+  if (v is DateTime) return v;
+  return DateTime.tryParse(v.toString()) ?? DateTime.fromMillisecondsSinceEpoch(0);
+}
+
   Future<void> _ingest(List<Map<String, dynamic>> rows) async {
-    Future<String> geotext(double? lat, double? lng) async {
-      if (lat == null || lng == null) return '—';
-      final key = '${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}';
-      if (_addr.containsKey(key)) return _addr[key]!;
-      final t = await reverseGeocodeText(lat, lng);
-      _addr[key] = t;
-      return t;
-    }
-
-    final enriched = await Future.wait(
-      rows.map((r) async {
-        final sLat = (r['start_lat'] as num?)?.toDouble();
-        final sLng = (r['start_lng'] as num?)?.toDouble();
-        final eLat = (r['end_lat'] as num?)?.toDouble();
-        final eLng = (r['end_lng'] as num?)?.toDouble();
-        return {
-          ...r,
-          'start_address': await geotext(sLat, sLng),
-          'end_address': await geotext(eLat, eLng),
-        };
-      }),
-    );
-
-    if (!mounted) return;
-    setState(() => _routes = enriched);
+  // cache-aware reverse geocode
+  Future<String> geotext(double? lat, double? lng) async {
+    if (lat == null || lng == null) return '—';
+    final key = '${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}';
+    if (_addr.containsKey(key)) return _addr[key]!;
+    final t = await reverseGeocodeText(lat, lng);
+    _addr[key] = t;
+    return t;
   }
+
+  // enrich with readable addresses
+  final enriched = await Future.wait(
+    rows.map((r) async {
+      final sLat = (r['start_lat'] as num?)?.toDouble();
+      final sLng = (r['start_lng'] as num?)?.toDouble();
+      final eLat = (r['end_lat'] as num?)?.toDouble();
+      final eLng = (r['end_lng'] as num?)?.toDouble();
+      return {
+        ...r,
+        'start_address': await geotext(sLat, sLng),
+        'end_address': await geotext(eLat, eLng),
+      };
+    }),
+  );
+
+  // ⬇️ NEW: always keep newest edits on top (stream snapshots are unordered)
+  enriched.sort((b, a) {
+    final au = _ts(a, 'updated_at');
+    final bu = _ts(b, 'updated_at');
+    if (au != bu) return au.compareTo(bu); // DESC by updated_at
+    final ac = _ts(a, 'created_at');
+    final bc = _ts(b, 'created_at');
+    return ac.compareTo(bc);              // DESC tie-breaker
+  });
+
+  if (!mounted) return;
+  setState(() => _routes = enriched);
+}
 
   Future<void> _toggleActive(String id, bool newVal) async {
     if (_working) return;
