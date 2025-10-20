@@ -3,7 +3,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AdminVehicleVerificationPage extends StatefulWidget {
   const AdminVehicleVerificationPage({super.key});
-
   @override
   State<AdminVehicleVerificationPage> createState() =>
       _AdminVehicleVerificationPageState();
@@ -12,20 +11,18 @@ class AdminVehicleVerificationPage extends StatefulWidget {
 class _AdminVehicleVerificationPageState
     extends State<AdminVehicleVerificationPage>
     with SingleTickerProviderStateMixin {
-  late final _VehicleAdminService svc;
-  late final TabController _tabs;
-  final TextEditingController _searchCtrl = TextEditingController();
-
-  final Set<String> _busy = {};
-  List<Map<String, dynamic>> _approved = [];
-  List<Map<String, dynamic>> _rejected = [];
-  bool _loadingApproved = true;
-  bool _loadingRejected = true;
   static const _bg = Color(0xFFF7F7FB);
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
-  String _docFilter = 'all';
-  String _searchTerm = '';
+
+  late final _VehicleAdminService svc;
+  late final TabController _tabs;
+  final _searchCtrl = TextEditingController();
+  final _busy = <String>{};
+
+  List<Map<String, dynamic>> _approved = [], _rejected = [];
+  bool _loadingApproved = true, _loadingRejected = true;
+  String _docFilter = 'all', _searchTerm = '';
 
   @override
   void initState() {
@@ -35,8 +32,8 @@ class _AdminVehicleVerificationPageState
     _searchCtrl.addListener(() {
       setState(() => _searchTerm = _searchCtrl.text.trim().toLowerCase());
     });
-    _loadApproved();
-    _loadRejected();
+    _loadHistory('approved');
+    _loadHistory('rejected');
   }
 
   @override
@@ -46,26 +43,28 @@ class _AdminVehicleVerificationPageState
     super.dispose();
   }
 
-  Future<void> _loadApproved() async {
-    setState(() => _loadingApproved = true);
+  Future<void> _loadHistory(String status) async {
+    if (status == 'approved') _loadingApproved = true;
+    if (status == 'rejected') _loadingRejected = true;
+    setState(() {});
     try {
-      _approved = await svc.fetch(status: 'approved');
+      final data = await svc.fetch(status: status);
+      if (status == 'approved') _approved = data;
+      if (status == 'rejected') _rejected = data;
     } finally {
-      if (mounted) setState(() => _loadingApproved = false);
+      if (!mounted) return;
+      setState(() {
+        if (status == 'approved') _loadingApproved = false;
+        if (status == 'rejected') _loadingRejected = false;
+      });
     }
   }
 
-  Future<void> _loadRejected() async {
-    setState(() => _loadingRejected = true);
-    try {
-      _rejected = await svc.fetch(status: 'rejected');
-    } finally {
-      if (mounted) setState(() => _loadingRejected = false);
-    }
-  }
+  void _showSnack(String msg) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
   Future<void> _approve(Map<String, dynamic> v) async {
-    final id = v['id'].toString();
+    final id = '${v['id']}';
     final ok = await _confirm(
       'Approve vehicle?',
       'This will mark the vehicle as verified. Continue?',
@@ -76,23 +75,17 @@ class _AdminVehicleVerificationPageState
     setState(() => _busy.add(id));
     try {
       await svc.approve(id);
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Vehicle approved ✔')));
-      _loadApproved();
+      _showSnack('Vehicle approved ✔');
+      _loadHistory('approved');
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Approve failed: $e')));
+      _showSnack('Approve failed: $e');
     } finally {
       if (mounted) setState(() => _busy.remove(id));
     }
   }
 
   Future<void> _reject(Map<String, dynamic> v) async {
-    final id = v['id'].toString();
+    final id = '${v['id']}';
     String? notes;
     final ok = await showDialog<bool>(
       context: context,
@@ -107,57 +100,45 @@ class _AdminVehicleVerificationPageState
     setState(() => _busy.add(id));
     try {
       await svc.reject(id, notes: notes?.trim().isEmpty == true ? null : notes);
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Vehicle rejected ✖')));
-      _loadRejected();
+      _showSnack('Vehicle rejected ✖');
+      _loadHistory('rejected');
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Reject failed: $e')));
+      _showSnack('Reject failed: $e');
     } finally {
       if (mounted) setState(() => _busy.remove(id));
     }
   }
 
-  bool _hasDocs(Map<String, dynamic> v) {
-    final orKey = (v['or_key'] ?? '').toString();
-    final crKey = (v['cr_key'] ?? '').toString();
-    if (_docFilter == 'complete') {
-      return orKey.isNotEmpty && crKey.isNotEmpty;
-    }
-    if (_docFilter == 'missing') {
-      return orKey.isEmpty || crKey.isEmpty;
-    }
-    return true;
+  bool _filterDocs(Map<String, dynamic> v) {
+    final or = (v['or_key'] ?? '').toString().isNotEmpty;
+    final cr = (v['cr_key'] ?? '').toString().isNotEmpty;
+    return switch (_docFilter) {
+      'complete' => or && cr,
+      'missing' => !or || !cr,
+      _ => true,
+    };
   }
 
-  bool _matchesSearch(Map<String, dynamic> v) {
+  bool _filterSearch(Map<String, dynamic> v) {
     if (_searchTerm.isEmpty) return true;
-    final plate = (v['plate'] ?? '').toString().toLowerCase();
-    final make = (v['make'] ?? '').toString().toLowerCase();
-    final model = (v['model'] ?? '').toString().toLowerCase();
-    final color = (v['color'] ?? '').toString().toLowerCase();
-    final driver =
-        (v['driver_name'] ?? v['owner_name'] ?? '').toString().toLowerCase();
-    final driverId = (v['driver_id'] ?? '').toString().toLowerCase();
-    return plate.contains(_searchTerm) ||
-        make.contains(_searchTerm) ||
-        model.contains(_searchTerm) ||
-        color.contains(_searchTerm) ||
-        driver.contains(_searchTerm) ||
-        driverId.contains(_searchTerm);
+    final text = [
+      v['plate'],
+      v['make'],
+      v['model'],
+      v['color'],
+      v['driver_name'],
+      v['owner_name'],
+      v['driver_id'],
+    ].map((e) => (e ?? '').toString().toLowerCase()).join(' ');
+    return text.contains(_searchTerm);
   }
 
-  List<Map<String, dynamic>> _applyFilters(List<Map<String, dynamic>> rows) {
-    return rows.where((v) => _matchesSearch(v) && _hasDocs(v)).toList();
-  }
+  List<Map<String, dynamic>> _applyFilters(List<Map<String, dynamic>> rows) =>
+      rows.where((v) => _filterSearch(v) && _filterDocs(v)).toList();
 
   Future<bool?> _confirm(
     String title,
-    String message, {
+    String msg, {
     String confirmText = 'Confirm',
   }) {
     return showDialog<bool>(
@@ -165,7 +146,7 @@ class _AdminVehicleVerificationPageState
       builder:
           (_) => AlertDialog(
             title: Text(title),
-            content: Text(message),
+            content: Text(msg),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
@@ -180,173 +161,142 @@ class _AdminVehicleVerificationPageState
     );
   }
 
-  void _openPreview(Map<String, dynamic> v) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => _VehiclePreviewSheet(vehicle: v, svc: svc),
-    );
-  }
+  void _openPreview(Map<String, dynamic> v) => showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (_) => _VehiclePreviewSheet(vehicle: v, svc: svc),
+  );
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _bg,
-      appBar: AppBar(
-        title: const Text('Vehicle Verification'),
-        centerTitle: true,
-        elevation: 0,
-        backgroundColor: _purple,
-        foregroundColor: Colors.white,
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [_purple, _purpleDark],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: _bg,
+    appBar: AppBar(
+      title: const Text('Vehicle Verification'),
+      centerTitle: true,
+      backgroundColor: _purple,
+      foregroundColor: Colors.white,
+      flexibleSpace: const DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [_purple, _purpleDark],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
-        ),
-        bottom: TabBar(
-          controller: _tabs,
-          indicatorColor: Colors.white,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          tabs: const [
-            Tab(text: 'Pending'),
-            Tab(text: 'Approved'),
-            Tab(text: 'Rejected'),
-          ],
         ),
       ),
-      body: Column(
-        children: [
-          _VehicleFilterPanel(
-            controller: _searchCtrl,
-            docFilter: _docFilter,
-            onFilterChanged: (value) => setState(() => _docFilter = value),
-          ),
-          Expanded(
-            child: TabBarView(
-              controller: _tabs,
-              children: [
-                _PendingVehicleTab(
-                  stream: svc.watchPending(),
-                  busy: _busy,
-                  applyFilters: _applyFilters,
-                  onPreview: _openPreview,
-                  onApprove: _approve,
-                  onReject: _reject,
-                ),
-                _VehicleHistoryTab(
-                  loading: _loadingApproved,
-                  items: _applyFilters(_approved),
-                  onRefresh: _loadApproved,
-                  stateLabel: 'Approved',
-                  accentColor: Colors.green.shade600,
-                ),
-                _VehicleHistoryTab(
-                  loading: _loadingRejected,
-                  items: _applyFilters(_rejected),
-                  onRefresh: _loadRejected,
-                  stateLabel: 'Rejected',
-                  accentColor: Colors.red.shade600,
-                ),
-              ],
-            ),
-          ),
+      bottom: TabBar(
+        controller: _tabs,
+        indicatorColor: Colors.white,
+        labelColor: Colors.white,
+        unselectedLabelColor: Colors.white70,
+        tabs: const [
+          Tab(text: 'Pending'),
+          Tab(text: 'Approved'),
+          Tab(text: 'Rejected'),
         ],
       ),
-    );
-  }
+    ),
+    body: Column(
+      children: [
+        _VehicleFilterPanel(
+          controller: _searchCtrl,
+          docFilter: _docFilter,
+          onFilterChanged: (v) => setState(() => _docFilter = v),
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabs,
+            children: [
+              _PendingVehicleTab(
+                stream: svc.watchPending(),
+                busy: _busy,
+                applyFilters: _applyFilters,
+                onPreview: _openPreview,
+                onApprove: _approve,
+                onReject: _reject,
+              ),
+              _VehicleHistoryTab(
+                loading: _loadingApproved,
+                items: _applyFilters(_approved),
+                onRefresh: () => _loadHistory('approved'),
+                stateLabel: 'Approved',
+                accentColor: Colors.green.shade600,
+              ),
+              _VehicleHistoryTab(
+                loading: _loadingRejected,
+                items: _applyFilters(_rejected),
+                onRefresh: () => _loadHistory('rejected'),
+                stateLabel: 'Rejected',
+                accentColor: Colors.red.shade600,
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
-/* ================== SERVICE ================== */
+/* ------------------ SERVICE ------------------ */
 
 class _VehicleAdminService {
   _VehicleAdminService(this.client);
   final SupabaseClient client;
 
-  // Realtime pending list
-  Stream<List<Map<String, dynamic>>> watchPending() {
-    final s = client
-        .from('vehicles')
-        .stream(primaryKey: ['id'])
-        .eq('verification_status', 'pending');
-
-    return s.map((rows) {
-      final list =
-          rows
-              .map((e) => Map<String, dynamic>.from(e as Map))
-              // // If you want to require BOTH uploaded before showing in Pending:
-              // .where(
-              //   (v) =>
-              //       ((v['or_key'] as String?)?.isNotEmpty ?? false) &&
-              //       ((v['cr_key'] as String?)?.isNotEmpty ?? false),
-              // )
-              // // If you want to allow showing even if only one uploaded, change to:
-              // // .where((v) => ((v['or_key'] as String?)?.isNotEmpty ?? false) || ((v['cr_key'] as String?)?.isNotEmpty ?? false))
-              .toList();
-
-      list.sort((a, b) {
-        final ad =
-            DateTime.tryParse('${a['submitted_at']}') ??
-            DateTime.fromMillisecondsSinceEpoch(0);
-        final bd =
-            DateTime.tryParse('${b['submitted_at']}') ??
-            DateTime.fromMillisecondsSinceEpoch(0);
-        return bd.compareTo(ad); // newest first
+  Stream<List<Map<String, dynamic>>> watchPending() => client
+      .from('vehicles')
+      .stream(primaryKey: ['id'])
+      .eq('verification_status', 'pending')
+      .map((rows) {
+        final list = rows.map((e) => Map<String, dynamic>.from(e)).toList();
+        list.sort((a, b) {
+          final ad =
+              DateTime.tryParse('${a['submitted_at']}') ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          final bd =
+              DateTime.tryParse('${b['submitted_at']}') ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          return bd.compareTo(ad);
+        });
+        return list;
       });
-      return list;
-    });
-  }
 
-  Future<List<Map<String, dynamic>>> fetch({required String status}) async {
-    return await client
-        .from('vehicles')
-        .select('*')
-        .eq('verification_status', status)
-        .order('reviewed_at', ascending: false);
-  }
+  Future<List<Map<String, dynamic>>> fetch({required String status}) => client
+      .from('vehicles')
+      .select('*')
+      .eq('verification_status', status)
+      .order('reviewed_at', ascending: false);
 
-  Future<void> approve(String vehicleId) async {
-    await client
-        .from('vehicles')
-        .update({
-          'verification_status': 'approved',
-          'reviewed_by': client.auth.currentUser!.id,
-          'reviewed_at': DateTime.now().toIso8601String(),
-          'review_notes': null,
-        })
-        .eq('id', vehicleId);
-  }
+  Future<void> approve(String id) => client
+      .from('vehicles')
+      .update({
+        'verification_status': 'approved',
+        'reviewed_by': client.auth.currentUser!.id,
+        'reviewed_at': DateTime.now().toIso8601String(),
+        'review_notes': null,
+      })
+      .eq('id', id);
 
-  Future<void> reject(String vehicleId, {String? notes}) async {
-    await client
-        .from('vehicles')
-        .update({
-          'verification_status': 'rejected',
-          'reviewed_by': client.auth.currentUser!.id,
-          'reviewed_at': DateTime.now().toIso8601String(),
-          if (notes != null) 'review_notes': notes,
-        })
-        .eq('id', vehicleId);
-  }
+  Future<void> reject(String id, {String? notes}) => client
+      .from('vehicles')
+      .update({
+        'verification_status': 'rejected',
+        'reviewed_by': client.auth.currentUser!.id,
+        'reviewed_at': DateTime.now().toIso8601String(),
+        if (notes != null) 'review_notes': notes,
+      })
+      .eq('id', id);
 
-  Future<String?> signedUrl(
-    String? storageKey, {
-    int expiresInSeconds = 300,
-  }) async {
-    if (storageKey == null || storageKey.isEmpty) return null;
-    final res = await client.storage
+  Future<String?> signedUrl(String? key, {int expiresInSeconds = 300}) async {
+    if (key == null || key.isEmpty) return null;
+    return client.storage
         .from('verifications')
-        .createSignedUrl(storageKey, expiresInSeconds);
-    return res;
+        .createSignedUrl(key, expiresInSeconds);
   }
 }
 
-/* ================== WIDGETS ================== */
+/* ------------------ FILTER PANEL ------------------ */
 
 class _VehicleFilterPanel extends StatelessWidget {
   const _VehicleFilterPanel({
@@ -354,96 +304,69 @@ class _VehicleFilterPanel extends StatelessWidget {
     required this.docFilter,
     required this.onFilterChanged,
   });
-
   final TextEditingController controller;
   final String docFilter;
   final ValueChanged<String> onFilterChanged;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      color: const Color(0xFFF7F7FB),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: controller,
-            decoration: InputDecoration(
-              hintText: 'Search plate, make, model, driver…',
-              prefixIcon: const Icon(Icons.search),
-              filled: true,
-              fillColor: Colors.white,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.black12.withOpacity(0.08)),
-              ),
+  Widget build(BuildContext context) => Container(
+    color: const Color(0xFFF7F7FB),
+    padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: controller,
+          decoration: InputDecoration(
+            hintText: 'Search plate, make, model, driver…',
+            prefixIcon: const Icon(Icons.search),
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
             ),
           ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            children: [
-              _VehicleFilterChip(
-                label: 'All documents',
-                selected: docFilter == 'all',
-                onSelected: () => onFilterChanged('all'),
-                icon: Icons.inventory_2_outlined,
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          children: [
+            for (final f in [
+              ('all', Icons.inventory_2_outlined, 'All documents'),
+              ('complete', Icons.check_circle_outline, 'Complete uploads'),
+              ('missing', Icons.error_outline, 'Missing docs'),
+            ])
+              ChoiceChip(
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(f.$2, size: 16),
+                    const SizedBox(width: 4),
+                    Text(f.$3),
+                  ],
+                ),
+                selected: docFilter == f.$1,
+                onSelected: (_) => onFilterChanged(f.$1),
+                selectedColor: const Color(0xFF6A27F7).withOpacity(.18),
+                labelStyle: TextStyle(
+                  color:
+                      docFilter == f.$1
+                          ? const Color(0xFF4B18C9)
+                          : Colors.black87,
+                  fontWeight:
+                      docFilter == f.$1 ? FontWeight.w700 : FontWeight.w500,
+                ),
+                backgroundColor: Colors.white,
               ),
-              _VehicleFilterChip(
-                label: 'Complete uploads',
-                selected: docFilter == 'complete',
-                onSelected: () => onFilterChanged('complete'),
-                icon: Icons.check_circle_outline,
-              ),
-              _VehicleFilterChip(
-                label: 'Missing docs',
-                selected: docFilter == 'missing',
-                onSelected: () => onFilterChanged('missing'),
-                icon: Icons.error_outline,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+          ],
+        ),
+      ],
+    ),
+  );
 }
 
-class _VehicleFilterChip extends StatelessWidget {
-  const _VehicleFilterChip({
-    required this.label,
-    required this.selected,
-    required this.onSelected,
-    required this.icon,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onSelected;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return ChoiceChip(
-      selected: selected,
-      onSelected: (_) => onSelected(),
-      label: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [Icon(icon, size: 16), const SizedBox(width: 4), Text(label)],
-      ),
-      selectedColor: const Color(0xFF6A27F7).withOpacity(.18),
-      labelStyle: TextStyle(
-        color: selected ? const Color(0xFF4B18C9) : Colors.black87,
-        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-      ),
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
-    );
-  }
-}
+/* ------------------ TABS, CARDS & DIALOGS ------------------ */
 
 class _PendingVehicleTab extends StatelessWidget {
   const _PendingVehicleTab({
@@ -468,10 +391,7 @@ class _PendingVehicleTab extends StatelessWidget {
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: stream,
       builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return _VehicleErrorState(onRetry: () async {});
-        }
-
+        if (snapshot.hasError) return _VehicleErrorState(onRetry: () async {});
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
@@ -488,11 +408,11 @@ class _PendingVehicleTab extends StatelessWidget {
         return RefreshIndicator(
           onRefresh: () async {},
           child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
             itemCount: rows.length,
             itemBuilder: (_, i) {
               final row = rows[i];
-              final isBusy = busy.contains(row['id'].toString());
+              final isBusy = busy.contains('${row['id']}');
               return _PendingVehicleCard(
                 vehicle: row,
                 busy: isBusy,
@@ -525,9 +445,7 @@ class _VehicleHistoryTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    if (loading) return const Center(child: CircularProgressIndicator());
     if (items.isEmpty) {
       return _VehicleEmptyState(
         icon: stateLabel == 'Approved' ? Icons.verified : Icons.block,
@@ -537,19 +455,20 @@ class _VehicleHistoryTab extends StatelessWidget {
     return RefreshIndicator(
       onRefresh: onRefresh,
       child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
         itemCount: items.length,
-        itemBuilder: (_, i) {
-          return _VehicleHistoryCard(
-            vehicle: items[i],
-            stateLabel: stateLabel,
-            accentColor: accentColor,
-          );
-        },
+        itemBuilder:
+            (_, i) => _VehicleHistoryCard(
+              vehicle: items[i],
+              stateLabel: stateLabel,
+              accentColor: accentColor,
+            ),
       ),
     );
   }
 }
+
+/* ----- Compact Cards & Subwidgets ----- */
 
 class _PendingVehicleCard extends StatelessWidget {
   const _PendingVehicleCard({
@@ -571,22 +490,18 @@ class _PendingVehicleCard extends StatelessWidget {
     final plate = (vehicle['plate'] ?? '—').toString();
     final make = (vehicle['make'] ?? '').toString();
     final model = (vehicle['model'] ?? '').toString();
-    final color = (vehicle['color'] ?? '—').toString();
-    final seats = (vehicle['seats'] ?? '—').toString();
-    final submitted = DateTime.tryParse('${vehicle['submitted_at']}');
-    final submittedPretty =
-        submitted == null ? '—' : _relTime(submitted.toLocal());
-    final orKey = (vehicle['or_key'] ?? '').toString().isNotEmpty;
-    final crKey = (vehicle['cr_key'] ?? '').toString().isNotEmpty;
     final driverName =
         (vehicle['driver_name'] ?? vehicle['owner_name'] ?? '—').toString();
-    final driverId = (vehicle['driver_id'] ?? '').toString();
+    final submitted = DateTime.tryParse('${vehicle['submitted_at']}');
+    final timeAgo = _relTime(submitted);
+    final orKey = (vehicle['or_key'] ?? '').toString().isNotEmpty;
+    final crKey = (vehicle['cr_key'] ?? '').toString().isNotEmpty;
 
     return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -596,7 +511,7 @@ class _PendingVehicleCard extends StatelessWidget {
                   child: Text(
                     '$plate • $make $model',
                     style: const TextStyle(
-                      fontSize: 16,
+                      fontSize: 15,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -604,33 +519,19 @@ class _PendingVehicleCard extends StatelessWidget {
                 _VehicleTag(label: 'Pending', color: Colors.orange.shade600),
               ],
             ),
-            const SizedBox(height: 6),
-            Text(
-              driverId.isEmpty
-                  ? 'Driver: $driverName'
-                  : 'Driver: $driverName ($driverId)',
-              style: const TextStyle(fontSize: 12.5, color: Colors.black54),
-            ),
             const SizedBox(height: 4),
-            Text(
-              'Color: $color • Seats: $seats',
-              style: const TextStyle(fontSize: 12.5, color: Colors.black54),
-            ),
+            Text('Driver: $driverName', style: _subStyle),
+            Text('Submitted $timeAgo', style: _metaStyle),
             const SizedBox(height: 6),
-            Text(
-              'Submitted $submittedPretty',
-              style: const TextStyle(fontSize: 12, color: Colors.black45),
-            ),
-            const SizedBox(height: 12),
             Wrap(
               spacing: 6,
-              runSpacing: 6,
+              runSpacing: 4,
               children: [
                 _DocStatusChip(label: 'OR', available: orKey),
                 _DocStatusChip(label: 'CR', available: crKey),
               ],
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 10),
             Row(
               children: [
                 TextButton.icon(
@@ -641,14 +542,14 @@ class _PendingVehicleCard extends StatelessWidget {
                 const Spacer(),
                 if (busy)
                   const SizedBox(
-                    width: 24,
-                    height: 24,
+                    width: 22,
+                    height: 22,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 else ...[
                   OutlinedButton.icon(
                     onPressed: onReject,
-                    icon: const Icon(Icons.close, color: Colors.red),
+                    icon: const Icon(Icons.close, size: 18, color: Colors.red),
                     label: const Text('Reject'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.red.shade600,
@@ -669,16 +570,15 @@ class _PendingVehicleCard extends StatelessWidget {
     );
   }
 
-  static String _relTime(DateTime dt) {
-    final now = DateTime.now();
-    final diff = now.difference(dt);
-    if (diff.inMinutes < 60) {
-      return '${diff.inMinutes} min ago';
-    } else if (diff.inHours < 24) {
-      return '${diff.inHours} hr ago';
-    } else {
-      return '${diff.inDays} day${diff.inDays == 1 ? '' : 's'} ago';
-    }
+  static const _subStyle = TextStyle(fontSize: 12.5, color: Colors.black54);
+  static const _metaStyle = TextStyle(fontSize: 12, color: Colors.black45);
+
+  static String _relTime(DateTime? dt) {
+    if (dt == null) return '—';
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
+    if (diff.inHours < 24) return '${diff.inHours} h ago';
+    return '${diff.inDays} day${diff.inDays == 1 ? '' : 's'} ago';
   }
 }
 
@@ -688,7 +588,6 @@ class _VehicleHistoryCard extends StatelessWidget {
     required this.stateLabel,
     required this.accentColor,
   });
-
   final Map<String, dynamic> vehicle;
   final String stateLabel;
   final Color accentColor;
@@ -701,20 +600,13 @@ class _VehicleHistoryCard extends StatelessWidget {
     final reviewed = DateTime.tryParse(
       '${vehicle['reviewed_at'] ?? vehicle['updated_at']}',
     );
-    final reviewedPretty =
-        reviewed == null
-            ? '—'
-            : reviewed.toLocal().toString().replaceFirst('.000', '');
     final notes = (vehicle['review_notes'] ?? '').toString().trim();
-    final driverName =
-        (vehicle['driver_name'] ?? vehicle['owner_name'] ?? '—').toString();
-    final driverId = (vehicle['driver_id'] ?? '').toString();
 
     return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -724,28 +616,18 @@ class _VehicleHistoryCard extends StatelessWidget {
                   child: Text(
                     '$plate • $make $model',
                     style: const TextStyle(
+                      fontSize: 15,
                       fontWeight: FontWeight.w700,
-                      fontSize: 16,
                     ),
                   ),
                 ),
                 _VehicleTag(label: stateLabel, color: accentColor),
               ],
             ),
-            const SizedBox(height: 6),
-            Text(
-              driverId.isEmpty
-                  ? 'Driver: $driverName'
-                  : 'Driver: $driverName ($driverId)',
-              style: const TextStyle(fontSize: 12.5, color: Colors.black54),
-            ),
             const SizedBox(height: 4),
-            Text(
-              'Reviewed: $reviewedPretty',
-              style: const TextStyle(fontSize: 12.5, color: Colors.black54),
-            ),
+            Text('Reviewed: ${reviewed ?? '—'}', style: _metaStyle),
             if (notes.isNotEmpty) ...[
-              const SizedBox(height: 10),
+              const SizedBox(height: 6),
               Text(
                 notes,
                 style: const TextStyle(fontSize: 12.5, color: Colors.black87),
@@ -756,6 +638,8 @@ class _VehicleHistoryCard extends StatelessWidget {
       ),
     );
   }
+
+  static const _metaStyle = TextStyle(fontSize: 12, color: Colors.black54);
 }
 
 class _VehicleTag extends StatelessWidget {
@@ -764,23 +648,21 @@ class _VehicleTag extends StatelessWidget {
   final Color color;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(.12),
-        borderRadius: BorderRadius.circular(999),
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+    decoration: BoxDecoration(
+      color: color.withOpacity(.12),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Text(
+      label.toUpperCase(),
+      style: TextStyle(
+        fontSize: 10.5,
+        fontWeight: FontWeight.w700,
+        color: color,
       ),
-      child: Text(
-        label.toUpperCase(),
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: color,
-        ),
-      ),
-    );
-  }
+    ),
+  );
 }
 
 class _DocStatusChip extends StatelessWidget {
@@ -790,10 +672,10 @@ class _DocStatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = available ? Colors.green.shade600 : Colors.orange.shade600;
+    final color = available ? Colors.green.shade600 : Colors.orange.shade700;
     final bg = available ? Colors.green.shade50 : Colors.orange.shade50;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(999),
@@ -803,10 +685,10 @@ class _DocStatusChip extends StatelessWidget {
         children: [
           Icon(
             available ? Icons.check_circle : Icons.error_outline,
-            size: 16,
+            size: 14,
             color: color,
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 4),
           Text(
             label,
             style: TextStyle(
@@ -827,29 +709,23 @@ class _VehicleEmptyState extends StatelessWidget {
   final String message;
 
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 46, color: Colors.black26),
-            const SizedBox(height: 12),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.black54,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 42, color: Colors.black26),
+          const SizedBox(height: 10),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 13, color: Colors.black54),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
 }
 
 class _VehicleErrorState extends StatelessWidget {
@@ -857,36 +733,28 @@ class _VehicleErrorState extends StatelessWidget {
   final Future<void> Function() onRetry;
 
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline, size: 46, color: Colors.redAccent),
-            const SizedBox(height: 12),
-            const Text(
-              'Failed to load vehicles. Pull to refresh or try again.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.black87,
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-            ),
-          ],
+  Widget build(BuildContext context) => Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.error_outline, size: 42, color: Colors.redAccent),
+        const SizedBox(height: 10),
+        const Text(
+          'Failed to load vehicles. Try again.',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
         ),
-      ),
-    );
-  }
+        const SizedBox(height: 12),
+        TextButton.icon(
+          onPressed: onRetry,
+          icon: const Icon(Icons.refresh),
+          label: const Text('Retry'),
+        ),
+      ],
+    ),
+  );
 }
+
+/* ------------------ PREVIEW & DIALOG ------------------ */
 
 class _VehiclePreviewSheet extends StatefulWidget {
   const _VehiclePreviewSheet({required this.vehicle, required this.svc});
@@ -898,38 +766,27 @@ class _VehiclePreviewSheet extends StatefulWidget {
 }
 
 class _VehiclePreviewSheetState extends State<_VehiclePreviewSheet> {
-  String? _signedOr;
-  String? _signedCr;
+  String? _signedOr, _signedCr;
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    final orKey = widget.vehicle['or_key'] as String?;
-    final crKey = widget.vehicle['cr_key'] as String?;
-    _load(orKey, crKey);
+    final or = widget.vehicle['or_key'] as String?;
+    final cr = widget.vehicle['cr_key'] as String?;
+    _load(or, cr);
   }
 
-  Future<void> _load(String? orKey, String? crKey) async {
+  Future<void> _load(String? or, String? cr) async {
     setState(() => _loading = true);
-    try {
-      _signedOr = await widget.svc.signedUrl(orKey, expiresInSeconds: 300);
-    } catch (_) {
-      _signedOr = null;
-    }
-    try {
-      _signedCr = await widget.svc.signedUrl(crKey, expiresInSeconds: 300);
-    } catch (_) {
-      _signedCr = null;
-    }
+    _signedOr = await widget.svc.signedUrl(or);
+    _signedCr = await widget.svc.signedUrl(cr);
     if (mounted) setState(() => _loading = false);
   }
 
   @override
   Widget build(BuildContext context) {
     final v = widget.vehicle;
-    final driverName = (v['driver_name'] ?? v['owner_name'] ?? '—').toString();
-    final driverId = (v['driver_id'] ?? '').toString();
     final orAvailable = (v['or_key'] ?? '').toString().isNotEmpty;
     final crAvailable = (v['cr_key'] ?? '').toString().isNotEmpty;
 
@@ -940,24 +797,10 @@ class _VehiclePreviewSheetState extends State<_VehiclePreviewSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Vehicle overview',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
               '${v['plate'] ?? '—'} • ${v['make'] ?? ''} ${v['model'] ?? ''}',
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
-            Text('Color: ${v['color'] ?? '—'} — Seats: ${v['seats'] ?? '—'}'),
-            const SizedBox(height: 6),
-            Text(
-              driverId.isEmpty
-                  ? 'Driver: $driverName'
-                  : 'Driver: $driverName ($driverId)',
-              style: const TextStyle(color: Colors.black54, fontSize: 12.5),
-            ),
-            const SizedBox(height: 12),
             Wrap(
               spacing: 6,
               runSpacing: 6,
@@ -971,72 +814,63 @@ class _VehiclePreviewSheetState extends State<_VehiclePreviewSheet> {
               'Documents',
               style: TextStyle(fontWeight: FontWeight.w600),
             ),
-            const SizedBox(height: 8),
-
+            const SizedBox(height: 6),
             if (_loading)
               const SizedBox(
                 height: 160,
                 child: Center(child: CircularProgressIndicator()),
               )
             else ...[
-              // OR
-              const Text('Official Receipt (OR)'),
-              const SizedBox(height: 6),
-              if (_signedOr == null)
-                const Text(
-                  'No OR uploaded',
-                  style: TextStyle(color: Colors.black54),
-                )
-              else
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    _signedOr!,
-                    height: 200,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-              const SizedBox(height: 12),
-
-              // CR
-              const Text('Certificate of Registration (CR)'),
-              const SizedBox(height: 6),
-              if (_signedCr == null)
-                const Text(
-                  'No CR uploaded',
-                  style: TextStyle(color: Colors.black54),
-                )
-              else
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    _signedCr!,
-                    height: 200,
-                    fit: BoxFit.cover,
-                  ),
-                ),
+              _buildImage('Official Receipt (OR)', _signedOr),
+              const SizedBox(height: 10),
+              _buildImage('Certificate of Registration (CR)', _signedCr),
             ],
-
-            const SizedBox(height: 12),
-            if (v['review_notes'] != null &&
-                (v['review_notes'] as String).toString().isNotEmpty) ...[
-              const Text(
-                'Notes',
-                style: TextStyle(fontWeight: FontWeight.w600),
+            const SizedBox(height: 10),
+            if ((v['review_notes'] ?? '').toString().isNotEmpty)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Notes',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    v['review_notes'] ?? '',
+                    style: const TextStyle(fontSize: 12.5),
+                  ),
+                ],
               ),
-              const SizedBox(height: 6),
-              Text(v['review_notes'] as String),
-            ],
           ],
         ),
       ),
     );
   }
+
+  Widget _buildImage(String title, String? url) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        title,
+        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+      ),
+      const SizedBox(height: 4),
+      if (url == null)
+        const Text(
+          'No file uploaded',
+          style: TextStyle(color: Colors.black54, fontSize: 12),
+        )
+      else
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.network(url, height: 200, fit: BoxFit.cover),
+        ),
+    ],
+  );
 }
 
 class _ReasonDialog extends StatefulWidget {
   const _ReasonDialog({required this.title, required this.onSubmit});
-
   final String title;
   final void Function(String notes) onSubmit;
 
@@ -1055,41 +889,39 @@ class _ReasonDialogState extends State<_ReasonDialog> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.title),
-      content: TextField(
-        controller: _ctrl,
-        decoration: const InputDecoration(
-          labelText: 'Notes (optional)',
-          hintText: 'Why is this being rejected?',
-        ),
-        maxLines: 3,
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(widget.title),
+    content: TextField(
+      controller: _ctrl,
+      decoration: const InputDecoration(
+        labelText: 'Notes (optional)',
+        hintText: 'Reason for rejection…',
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed:
-              _sending
-                  ? null
-                  : () async {
-                    setState(() => _sending = true);
-                    widget.onSubmit(_ctrl.text);
-                    if (mounted) Navigator.pop(context, true);
-                  },
-          child:
-              _sending
-                  ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                  : const Text('Reject'),
-        ),
-      ],
-    );
-  }
+      maxLines: 3,
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context, false),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed:
+            _sending
+                ? null
+                : () async {
+                  setState(() => _sending = true);
+                  widget.onSubmit(_ctrl.text);
+                  if (mounted) Navigator.pop(context, true);
+                },
+        child:
+            _sending
+                ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+                : const Text('Reject'),
+      ),
+    ],
+  );
 }
