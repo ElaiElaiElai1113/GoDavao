@@ -30,6 +30,7 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
   String? _vehicleId;
 
   List<Map<String, dynamic>> _vehicles = [];
+  bool _hasActiveRide = false;
 
   static const _purple = Color(0xFF6A27F7);
 
@@ -91,6 +92,16 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
       final avail = (r['capacity_available'] as num?)?.toInt() ?? total;
       _capTotal.text = total.toString();
       _capAvail.text = avail.toString();
+      try {
+  final matches = await _sb
+      .from('ride_matches')
+      .select('id')
+      .eq('driver_route_id', widget.routeId)
+      .inFilter('status', ['accepted', 'en_route']);
+  _hasActiveRide = (matches as List).isNotEmpty;
+} catch (_) {
+  _hasActiveRide = false; // fail-open for UI; DB trigger still protects
+}
       _dirty = false;
     } catch (e) {
       _error = 'Failed to load route: $e';
@@ -123,42 +134,59 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
   }
 
   Future<void> _save() async {
-    if (!_form.currentState!.validate()) return;
+  if (!_form.currentState!.validate()) return;
 
-    setState(() => _saving = true);
-    try {
-      final total = int.parse(_capTotal.text.trim());
-      final avail = int.parse(_capAvail.text.trim());
-      final fixedAvail = avail.clamp(0, total);
+  setState(() => _saving = true);
+  try {
+    final total = int.parse(_capTotal.text.trim());
+    final avail = int.parse(_capAvail.text.trim());
+    final fixedAvail = avail.clamp(0, total);
 
-      await _sb
-          .from('driver_routes')
-          .update({
-            'name': _name.text.trim().isEmpty ? null : _name.text.trim(),
-            'notes': _notes.text.trim().isEmpty ? null : _notes.text.trim(),
-            'is_active': _isActive,
-            'route_mode': _routeMode,
-            'vehicle_id': _vehicleId,
-            'capacity_total': total,
-            'capacity_available': fixedAvail,
-          })
-          .eq('id', widget.routeId);
+    await _sb
+        .from('driver_routes')
+        .update({
+          'name': _name.text.trim().isEmpty ? null : _name.text.trim(),
+          'notes': _notes.text.trim().isEmpty ? null : _notes.text.trim(),
+          'is_active': _isActive,
+          'route_mode': _routeMode,
+          'vehicle_id': _vehicleId,
+          'capacity_total': total,
+          'capacity_available': fixedAvail,
+        })
+        .eq('id', widget.routeId)
+        .select() // return row so errors throw here
+        .single();
 
-      if (!mounted) return;
-      _dirty = false;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Route updated')));
-      Navigator.pop(context, true);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
-    } finally {
-      if (mounted) setState(() => _saving = false);
+    if (!mounted) return;
+    _dirty = false;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Route updated')),
+    );
+    Navigator.pop(context, true);
+  } on PostgrestException catch (e) {
+    // Friendly message for the trigger block
+    final msg = (e.code == '45000' ||
+            (e.message != null &&
+                e.message!.toLowerCase().contains('cannot deactivate route')))
+        ? 'Cannot deactivate route while you have an accepted/active ride.'
+        : (e.message ?? 'Save failed.');
+    if (!mounted) return;
+    // If we tried to turn it off but are blocked, revert the toggle in UI
+    if (_isActive == false && (e.code == '45000')) {
+      setState(() {
+        _isActive = true;
+      });
     }
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  } catch (e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Save failed. Please try again.')),
+    );
+  } finally {
+    if (mounted) setState(() => _saving = false);
   }
+}
 
   Future<void> _openGeometryEditor() async {
     final updated = await Navigator.push<bool>(
@@ -226,16 +254,24 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
                             maxLines: 3,
                           ),
                           SwitchListTile.adaptive(
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text('Active'),
-                            value: _isActive,
-                            onChanged: (v) {
-                              setState(() {
-                                _isActive = v;
-                                _dirty = true;
-                              });
-                            },
-                          ),
+  contentPadding: EdgeInsets.zero,
+  title: const Text('Active'),
+  subtitle: _hasActiveRide
+      ? const Text(
+          'You have an accepted or ongoing ride. Complete or cancel it before deactivating this route.',
+          style: TextStyle(fontSize: 12),
+        )
+      : null,
+  value: _isActive,
+  onChanged: (_hasActiveRide && _isActive)
+      ? null // disable turning OFF when blocked
+      : (v) {
+          setState(() {
+            _isActive = v;
+            _dirty = true;
+          });
+        },
+),
                         ]),
                         const SizedBox(height: 10),
                         _section('Vehicle', [
