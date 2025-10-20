@@ -12,6 +12,7 @@ import 'features/maps/passenger_map_page.dart';
 import 'features/ride_status/presentation/driver_rides_page.dart';
 import 'features/ride_status/presentation/passenger_myrides_page.dart';
 import 'features/routes/presentation/pages/driver_route_page.dart';
+import 'features/verify/presentation/admin_panel_page.dart';
 
 import 'features/chat/data/chat_subscription_service.dart';
 import 'features/chat/data/chat_messages_service.dart';
@@ -100,9 +101,20 @@ class SessionRouter extends StatelessWidget {
 
   Future<Widget> _getInitial() async {
     final client = Supabase.instance.client;
-    return client.auth.currentUser == null
-        ? const AuthPage()
-        : const DashboardPage();
+    final user = client.auth.currentUser;
+    if (user == null) return const AuthPage();
+    try {
+      final row =
+          await client
+              .from('users')
+              .select('is_admin')
+              .eq('id', user.id)
+              .maybeSingle();
+      final isAdmin = (row?['is_admin'] as bool?) ?? false;
+      return isAdmin ? const AdminPanelPage() : const DashboardPage();
+    } catch (_) {
+      return const DashboardPage();
+    }
   }
 
   @override

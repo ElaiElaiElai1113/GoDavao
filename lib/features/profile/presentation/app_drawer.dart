@@ -5,8 +5,7 @@ import 'package:godavao/features/dashboard/presentation/dashboard_page.dart';
 import 'package:godavao/features/history/presentation/booking_history_page.dart';
 import 'package:godavao/features/profile/presentation/profile_page.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
-import 'package:godavao/features/verify/presentation/admin_verification_page.dart';
-import 'package:godavao/features/verify/presentation/admin_vehicle_verification_page.dart';
+import 'package:godavao/features/verify/presentation/admin_panel_page.dart';
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
@@ -79,7 +78,6 @@ class AppDrawer extends StatelessWidget {
                                 color: Colors.white,
                               ),
                             ),
-                            const SizedBox(height: 4),
                             if (uid != null)
                               VerifiedBadge(userId: uid, size: 18),
                           ],
@@ -155,28 +153,14 @@ class AppDrawer extends StatelessWidget {
                         const Divider(),
                         _sectionTitle("Admin"),
                         _item(
-                          icon: Icons.verified_user_outlined,
-                          label: 'Verification Review',
+                          icon: Icons.admin_panel_settings,
+                          label: 'Admin Panel',
                           onTap: () {
                             Navigator.pop(context);
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => const AdminVerificationPage(),
-                              ),
-                            );
-                          },
-                        ),
-                        _item(
-                          icon: Icons.verified_user,
-                          label: 'Vehicle Verification',
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder:
-                                    (_) => const AdminVehicleVerificationPage(),
+                                builder: (_) => const AdminPanelPage(),
                               ),
                             );
                           },

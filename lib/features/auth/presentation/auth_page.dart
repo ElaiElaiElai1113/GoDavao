@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 // Existing routes
 import 'package:godavao/features/dashboard/presentation/dashboard_page.dart';
+import 'package:godavao/features/verify/presentation/admin_panel_page.dart';
 import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
 
 class AuthPage extends StatefulWidget {
@@ -145,6 +146,12 @@ class _AuthPageState extends State<AuthPage> {
     return row?['role'] as String?;
   }
 
+  Future<bool> _isAdmin(String userId) async {
+    final row =
+        await _sb.from('users').select('is_admin').eq('id', userId).maybeSingle();
+    return (row?['is_admin'] as bool?) ?? false;
+  }
+
   Future<void> _promptVerify(String role) async {
     await showModalBottomSheet(
       context: context,
@@ -186,17 +193,20 @@ class _AuthPageState extends State<AuthPage> {
         // Check verification; if verified or not
         final v = (await _getVerificationStatus(user.id))?.toLowerCase();
         final isVerified = v == 'verified' || v == 'approved';
+        final isAdminUser = await _isAdmin(user.id);
 
         // For PASSENGERS: still prompt if not verified
         // For DRIVERS: skip the verification prompt, the verification will be handled later on
-        if (role == 'passenger' && !isVerified) {
+        if (!isAdminUser && role == 'passenger' && !isVerified) {
           await _promptVerify(role);
         }
 
         if (!mounted) return;
+        final landing =
+            isAdminUser ? const AdminPanelPage() : const DashboardPage();
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const DashboardPage()),
+          MaterialPageRoute(builder: (_) => landing),
         );
       } else {
         // -------------------- SIGNUP --------------------
@@ -228,10 +238,14 @@ class _AuthPageState extends State<AuthPage> {
           await _promptVerify(_role);
         }
 
+        final isAdminUser = await _isAdmin(user.id);
+
         if (!mounted) return;
+        final landing =
+            isAdminUser ? const AdminPanelPage() : const DashboardPage();
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const DashboardPage()),
+          MaterialPageRoute(builder: (_) => landing),
         );
       }
     } on AuthException catch (e) {

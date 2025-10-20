@@ -1,143 +1,179 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/admin_service.dart';
 
 class AdminVerificationPage extends StatefulWidget {
   const AdminVerificationPage({super.key});
-
   @override
   State<AdminVerificationPage> createState() => _AdminVerificationPageState();
 }
 
 class _AdminVerificationPageState extends State<AdminVerificationPage>
     with SingleTickerProviderStateMixin {
+  static const _bg = Color(0xFFF7F7FB);
+  static const _purple = Color(0xFF6A27F7);
+  static const _purpleDark = Color(0xFF4B18C9);
+  final _tsFmt = DateFormat('MMM d, yyyy • h:mm a');
+
   late final AdminVerificationService admin;
   late final TabController _tabs;
+  final _searchCtrl = TextEditingController();
+  final _busyIds = <String>{};
 
-  // per-row busy state while approving/rejecting
-  final Set<String> _busyIds = {};
-
-  // cached lists for Approved / Rejected tabs
   List<Map<String, dynamic>> _approved = [];
   List<Map<String, dynamic>> _rejected = [];
-  bool _loadingApproved = true;
-  bool _loadingRejected = true;
+  bool _loadingApproved = true, _loadingRejected = true;
+  String _roleFilter = 'all', _query = '';
 
   @override
   void initState() {
     super.initState();
     admin = AdminVerificationService(Supabase.instance.client);
     _tabs = TabController(length: 3, vsync: this);
-    _loadApproved();
-    _loadRejected();
+    _searchCtrl.addListener(() {
+      setState(() => _query = _searchCtrl.text.trim().toLowerCase());
+    });
+    _loadHistory('approved');
+    _loadHistory('rejected');
   }
 
-  Future<void> _loadApproved() async {
-    setState(() => _loadingApproved = true);
+  Future<void> _loadHistory(String status) async {
+    setState(() {
+      if (status == 'approved') {
+        _loadingApproved = true;
+      } else {
+        _loadingRejected = true;
+      }
+    });
     try {
-      _approved = await admin.fetch(status: 'approved');
-    } catch (_) {
-      // swallow; we show snack on action errors only
+      final res = await Supabase.instance.client
+          .from('users')
+          .select(
+            'id, name, role, verified_role, phone, verification_status, updated_at',
+          )
+          .eq('verification_status', status)
+          .order('updated_at', ascending: false);
+      setState(() {
+        if (status == 'approved') {
+          _approved = List<Map<String, dynamic>>.from(res);
+        } else {
+          _rejected = List<Map<String, dynamic>>.from(res);
+        }
+      });
     } finally {
-      if (mounted) setState(() => _loadingApproved = false);
+      if (mounted) {
+        setState(() {
+          if (status == 'approved') {
+            _loadingApproved = false;
+          } else {
+            _loadingRejected = false;
+          }
+        });
+      }
     }
   }
 
-  Future<void> _loadRejected() async {
-    setState(() => _loadingRejected = true);
-    try {
-      _rejected = await admin.fetch(status: 'rejected');
-    } catch (_) {
-      // swallow
-    } finally {
-      if (mounted) setState(() => _loadingRejected = false);
-    }
+  List<Map<String, dynamic>> _filter(List<Map<String, dynamic>> rows) {
+    return rows.where((r) {
+      final role = (r['role'] ?? '').toString().toLowerCase();
+      final matchesRole = _roleFilter == 'all' || _roleFilter == role;
+      if (!matchesRole) return false;
+      if (_query.isEmpty) return true;
+      final text = '${r['id']} ${r['name']} ${r['phone']}'.toLowerCase();
+      return text.contains(_query);
+    }).toList();
   }
 
-  Future<void> _handleApprove(Map<String, dynamic> row) async {
-    final id = row['id'].toString();
-    final confirm = await _confirm(
-      title: 'Approve verification?',
-      message:
-          'This will mark the user as verified for the requested role. Continue?',
-      confirmText: 'Approve',
+  String _fmt(dynamic v) {
+    final d = v == null ? null : DateTime.tryParse(v.toString());
+    return d == null ? '—' : _tsFmt.format(d.toLocal());
+  }
+
+  Color _roleColor(String r) =>
+      {'driver': Colors.orange.shade600, 'passenger': Colors.blue.shade600}[r
+          .toLowerCase()] ??
+      Colors.grey.shade600;
+
+  Future<void> _approve(Map r) async {
+    final ok = await _confirm(
+      'Approve verification?',
+      'Mark this user as verified?',
     );
-    if (confirm != true) return;
-
+    if (ok != true) return;
+    final id = r['id'].toString();
     setState(() => _busyIds.add(id));
     try {
       await admin.approve(id);
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Approved ✔')));
-      // pending stream auto-removes item; refresh approved tab
-      _loadApproved();
+      _loadHistory('approved');
+      if (mounted) _toast('Approved ✔');
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Approve failed: $e')));
+      _toast('Approve failed: $e');
     } finally {
-      if (mounted) setState(() => _busyIds.remove(id));
+      setState(() => _busyIds.remove(id));
     }
   }
 
-  Future<void> _handleReject(Map<String, dynamic> row) async {
-    final id = row['id'].toString();
-
-    String? notes;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder:
-          (_) => _ReasonDialog(
-            title: 'Reject verification?',
-            onSubmit: (s) => notes = s,
-          ),
+  Future<void> _reject(Map r) async {
+    final notes = await _inputDialog(
+      'Reject verification?',
+      'Reason (optional)',
     );
-    if (ok != true) return;
-
+    if (notes == null) return;
+    final id = r['id'].toString();
     setState(() => _busyIds.add(id));
     try {
-      await admin.reject(
-        id,
-        notes: notes?.trim().isEmpty == true ? null : notes,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Rejected ✖')));
-      // pending stream auto-removes item; refresh rejected tab
-      _loadRejected();
+      await admin.reject(id, notes: notes);
+      _loadHistory('rejected');
+      if (mounted) _toast('Rejected ✖');
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Reject failed: $e')));
+      _toast('Reject failed: $e');
     } finally {
-      if (mounted) setState(() => _busyIds.remove(id));
+      setState(() => _busyIds.remove(id));
     }
   }
 
-  Future<bool?> _confirm({
-    required String title,
-    required String message,
-    String confirmText = 'Confirm',
-  }) {
-    return showDialog<bool>(
+  void _toast(String msg) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+
+  Future<bool?> _confirm(String title, String msg) => showDialog<bool>(
+    context: context,
+    builder:
+        (_) => AlertDialog(
+          title: Text(title),
+          content: Text(msg),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Approve'),
+            ),
+          ],
+        ),
+  );
+
+  Future<String?> _inputDialog(String title, String hint) async {
+    final ctrl = TextEditingController();
+    return showDialog<String>(
       context: context,
       builder:
           (_) => AlertDialog(
             title: Text(title),
-            content: Text(message),
+            content: TextField(
+              controller: ctrl,
+              decoration: InputDecoration(hintText: hint),
+            ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context, false),
+                onPressed: () => Navigator.pop(context),
                 child: const Text('Cancel'),
               ),
               FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: Text(confirmText),
+                onPressed: () => Navigator.pop(context, ctrl.text),
+                child: const Text('Reject'),
               ),
             ],
           ),
@@ -145,277 +181,284 @@ class _AdminVerificationPageState extends State<AdminVerificationPage>
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Verification Review'),
-        bottom: TabBar(
-          controller: _tabs,
-          tabs: const [
-            Tab(text: 'Pending'),
-            Tab(text: 'Approved'),
-            Tab(text: 'Rejected'),
-          ],
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: _bg,
+    appBar: AppBar(
+      title: const Text('Verification Review'),
+      centerTitle: true,
+      backgroundColor: _purple,
+      foregroundColor: Colors.white,
+      flexibleSpace: const DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [_purple, _purpleDark],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
         ),
       ),
-      body: TabBarView(
+      bottom: TabBar(
         controller: _tabs,
-        children: [
-          // PENDING — realtime
-          StreamBuilder<List<Map<String, dynamic>>>(
-            stream: admin.watchPending(), // ensure service adds .select('*')
-            builder: (context, snap) {
-              final items = snap.data ?? const [];
-              if (snap.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (items.isEmpty) {
-                return const _EmptyState(
-                  icon: Icons.verified_user_outlined,
-                  text: 'No pending requests',
-                );
-              }
-              return RefreshIndicator(
-                onRefresh: () async {}, // stream will refresh automatically
-                child: ListView.separated(
-                  itemCount: items.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder:
-                      (_, i) => _RequestTile(
-                        row: items[i],
-                        busy: _busyIds.contains(items[i]['id'].toString()),
-                        onOpen: () => _openPreview(items[i]),
-                        onApprove: () => _handleApprove(items[i]),
-                        onReject: () => _handleReject(items[i]),
-                      ),
-                ),
-              );
-            },
-          ),
-
-          // APPROVED — pull to refresh
-          _ListWithRefresh(
-            loading: _loadingApproved,
-            items: _approved,
-            onRefresh: _loadApproved,
-            emptyIcon: Icons.verified,
-            emptyText: 'No approved requests yet',
-            buildTile: (r) => _HistoryTile(row: r, color: Colors.green),
-            onOpen: _openPreview,
-          ),
-
-          // REJECTED — pull to refresh
-          _ListWithRefresh(
-            loading: _loadingRejected,
-            items: _rejected,
-            onRefresh: _loadRejected,
-            emptyIcon: Icons.block,
-            emptyText: 'No rejected requests',
-            buildTile: (r) => _HistoryTile(row: r, color: Colors.red),
-            onOpen: _openPreview,
-          ),
+        indicatorColor: Colors.white,
+        labelColor: Colors.white,
+        unselectedLabelColor: Colors.white70,
+        tabs: const [
+          Tab(text: 'Pending'),
+          Tab(text: 'Approved'),
+          Tab(text: 'Rejected'),
         ],
       ),
-    );
-  }
-
-  void _openPreview(Map<String, dynamic> r) {
-    showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (_) => _PreviewSheet(row: r),
-    );
-  }
-}
-
-/* ---------- Widgets ---------- */
-
-class _RequestTile extends StatelessWidget {
-  final Map<String, dynamic> row;
-  final bool busy;
-  final VoidCallback onOpen;
-  final VoidCallback onApprove;
-  final VoidCallback onReject;
-
-  const _RequestTile({
-    required this.row,
-    required this.busy,
-    required this.onOpen,
-    required this.onApprove,
-    required this.onReject,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final id = row['id'].toString();
-    final userId = row['user_id']?.toString() ?? '—';
-    final role = (row['role'] ?? '—').toString();
-    final createdAt = DateTime.tryParse('${row['created_at']}')?.toLocal();
-
-    return ListTile(
-      title: Text('$role – ${userId.substring(0, 8)}'),
-      subtitle: Text(createdAt == null ? 'Submitted' : 'Submitted $createdAt'),
-      onTap: onOpen,
-      trailing:
-          busy
-              ? const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-              : Wrap(
-                spacing: 6,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.red),
-                    tooltip: 'Reject',
-                    onPressed: onReject,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.check, color: Colors.green),
-                    tooltip: 'Approve',
-                    onPressed: onApprove,
-                  ),
-                ],
+    ),
+    body: Column(
+      children: [
+        _FilterPanel(
+          controller: _searchCtrl,
+          roleFilter: _roleFilter,
+          onRoleChanged: (r) => setState(() => _roleFilter = r),
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabs,
+            children: [
+              _VerificationTab(
+                stream: admin.watchPending(),
+                busyIds: _busyIds,
+                label: 'Pending',
+                onApprove: _approve,
+                onReject: _reject,
+                roleColor: _roleColor,
+                format: _fmt,
+                displayName: (r) => r['name'] ?? 'Unknown',
+                filter: _filter,
               ),
-    );
-  }
+              _VerificationTab.static(
+                loading: _loadingApproved,
+                data: _filter(_approved),
+                label: 'Approved',
+                color: Colors.green.shade600,
+                onRefresh: () => _loadHistory('approved'),
+                format: _fmt,
+                roleColor: _roleColor,
+                displayName: (r) => r['name'] ?? 'Unknown',
+              ),
+              _VerificationTab.static(
+                loading: _loadingRejected,
+                data: _filter(_rejected),
+                label: 'Rejected',
+                color: Colors.red.shade600,
+                onRefresh: () => _loadHistory('rejected'),
+                format: _fmt,
+                roleColor: _roleColor,
+                displayName: (r) => r['name'] ?? 'Unknown',
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
-class _HistoryTile extends StatelessWidget {
-  final Map<String, dynamic> row;
-  final Color color;
-  const _HistoryTile({required this.row, required this.color});
+/* ---------- Reusable Widgets ---------- */
 
-  @override
-  Widget build(BuildContext context) {
-    final userId = row['user_id']?.toString() ?? '—';
-    final role = (row['role'] ?? '—').toString();
-    final reviewedAt = DateTime.tryParse('${row['reviewed_at']}')?.toLocal();
-    final status = (row['status'] ?? '').toString().toUpperCase();
-
-    return ListTile(
-      leading: Icon(
-        status == 'APPROVED' ? Icons.verified : Icons.block,
-        color: color,
-      ),
-      title: Text('$role – ${userId.substring(0, 8)}'),
-      subtitle: Text(reviewedAt == null ? status : '$status on $reviewedAt'),
-    );
-  }
-}
-
-class _ListWithRefresh extends StatelessWidget {
-  final bool loading;
-  final List<Map<String, dynamic>> items;
-  final Future<void> Function() onRefresh;
-  final IconData emptyIcon;
-  final String emptyText;
-  final Widget Function(Map<String, dynamic>) buildTile;
-  final void Function(Map<String, dynamic>) onOpen;
-
-  const _ListWithRefresh({
-    required this.loading,
-    required this.items,
-    required this.onRefresh,
-    required this.emptyIcon,
-    required this.emptyText,
-    required this.buildTile,
-    required this.onOpen,
+class _VerificationTab extends StatelessWidget {
+  const _VerificationTab({
+    this.stream,
+    this.data,
+    this.loading = false,
+    required this.label,
+    this.color,
+    this.onApprove,
+    this.onReject,
+    this.onRefresh,
+    required this.roleColor,
+    required this.format,
+    required this.displayName,
+    this.busyIds = const {},
+    this.filter,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    if (loading) return const Center(child: CircularProgressIndicator());
-    if (items.isEmpty) {
-      return _EmptyState(icon: emptyIcon, text: emptyText);
-    }
-    return RefreshIndicator(
-      onRefresh: onRefresh,
-      child: ListView.separated(
-        itemCount: items.length,
-        separatorBuilder: (_, __) => const Divider(height: 1),
-        itemBuilder:
-            (_, i) => InkWell(
-              onTap: () => onOpen(items[i]),
-              child: buildTile(items[i]),
-            ),
-      ),
-    );
-  }
-}
+  final Stream<List<Map<String, dynamic>>>? stream;
+  final List<Map<String, dynamic>>? data;
+  final bool loading;
+  final String label;
+  final Color? color;
+  final Future<void> Function()? onRefresh;
+  final void Function(Map<String, dynamic>)? onApprove, onReject;
+  final Color Function(String) roleColor;
+  final String Function(dynamic) format;
+  final String Function(Map<String, dynamic>) displayName;
+  final Set<String> busyIds;
+  final List<Map<String, dynamic>> Function(List<Map<String, dynamic>>)? filter;
 
-class _EmptyState extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  const _EmptyState({required this.icon, required this.text});
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 42, color: Colors.black26),
-          const SizedBox(height: 8),
-          Text(text, style: const TextStyle(color: Colors.black54)),
-        ],
-      ),
-    );
-  }
-}
-
-class _PreviewSheet extends StatelessWidget {
-  const _PreviewSheet({required this.row});
-  final Map<String, dynamic> row;
-
-  String? _key(Map r, String k) =>
-      (r[k] as String?)?.isNotEmpty == true ? r[k] as String : null;
+  factory _VerificationTab.static({
+    required bool loading,
+    required List<Map<String, dynamic>> data,
+    required String label,
+    required Color color,
+    required Future<void> Function() onRefresh,
+    required String Function(dynamic) format,
+    required Color Function(String) roleColor,
+    required String Function(Map<String, dynamic>) displayName,
+  }) => _VerificationTab(
+    data: data,
+    loading: loading,
+    label: label,
+    color: color,
+    onRefresh: onRefresh,
+    roleColor: roleColor,
+    format: format,
+    displayName: displayName,
+  );
 
   @override
   Widget build(BuildContext context) {
-    final sb = Supabase.instance.client;
-    String? urlOf(String? key) =>
-        key == null ? null : sb.storage.from('verifications').getPublicUrl(key);
-
-    final idFront = _key(row, 'id_front_key');
-    final idBack = _key(row, 'id_back_key');
-    final selfie = _key(row, 'selfie_key');
-    final dl = _key(row, 'driver_license_key');
-    final orcr = _key(row, 'orcr_key');
-
-    Widget section(String title, String? key) {
-      if (key == null) return const SizedBox.shrink();
-      final url = urlOf(key);
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Image.network(url!, height: 160, fit: BoxFit.cover),
-          ),
-          const SizedBox(height: 12),
-        ],
+    if (stream != null) {
+      return StreamBuilder<List<Map<String, dynamic>>>(
+        stream: stream,
+        builder: (context, snap) {
+          if (snap.hasError) {
+            return _StateMessage(
+              icon: Icons.error,
+              text: 'Error loading data.',
+            );
+          }
+          if (snap.connectionState == ConnectionState.waiting &&
+              !snap.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final rows = filter!(snap.data ?? []);
+          return _list(rows);
+        },
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      child: SingleChildScrollView(
+    if (loading) return const Center(child: CircularProgressIndicator());
+    if (data!.isEmpty) {
+      return _StateMessage(
+        icon: Icons.inbox_outlined,
+        text: 'No $label records found.',
+      );
+    }
+    return RefreshIndicator(onRefresh: onRefresh!, child: _list(data!));
+  }
+
+  Widget _list(List<Map<String, dynamic>> rows) => ListView.builder(
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+    itemCount: rows.length,
+    itemBuilder: (_, i) {
+      final r = rows[i];
+      return _VerificationCard(
+        row: r,
+        roleColor: roleColor,
+        format: format,
+        displayName: displayName,
+        color: color,
+        busy: busyIds.contains(r['id'].toString()),
+        onApprove: onApprove != null ? () => onApprove!(r) : null,
+        onReject: onReject != null ? () => onReject!(r) : null,
+      );
+    },
+  );
+}
+
+class _VerificationCard extends StatelessWidget {
+  const _VerificationCard({
+    required this.row,
+    required this.roleColor,
+    required this.format,
+    required this.displayName,
+    this.color,
+    this.busy = false,
+    this.onApprove,
+    this.onReject,
+  });
+  final Map<String, dynamic> row;
+  final Color Function(String) roleColor;
+  final String Function(dynamic) format;
+  final String Function(Map<String, dynamic>) displayName;
+  final Color? color;
+  final bool busy;
+  final VoidCallback? onApprove, onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = displayName(row);
+    final role = (row['role'] ?? '—').toString();
+    final reviewed = format(
+      row['verification_reviewed_at'] ?? row['updated_at'],
+    );
+    final notes = (row['verification_notes'] ?? '').toString().trim();
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('User: ${row['user_id']}'),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    name,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                _Tag(role.toUpperCase(), roleColor(role)),
+                if (color != null) ...[
+                  const SizedBox(width: 6),
+                  _Tag(row['verification_status'] ?? '', color!),
+                ],
+              ],
+            ),
             const SizedBox(height: 6),
-            Text('Role: ${row['role']}'),
-            const Divider(height: 20),
-            section('ID Front', idFront),
-            section('ID Back', idBack),
-            section('Selfie', selfie),
-            section('Driver License', dl),
-            section('OR/CR', orcr),
+            Text(
+              'Reviewed: $reviewed',
+              style: const TextStyle(fontSize: 12.5, color: Colors.black54),
+            ),
+            if (notes.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  notes,
+                  style: const TextStyle(fontSize: 12.5, color: Colors.black87),
+                ),
+              ),
+            if (onApprove != null || onReject != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Row(
+                  children: [
+                    if (busy)
+                      const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else ...[
+                      OutlinedButton.icon(
+                        onPressed: onReject,
+                        icon: const Icon(Icons.close, color: Colors.red),
+                        label: const Text('Reject'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton.icon(
+                        onPressed: onApprove,
+                        icon: const Icon(Icons.check_circle_outline),
+                        label: const Text('Approve'),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
           ],
         ),
       ),
@@ -423,61 +466,113 @@ class _PreviewSheet extends StatelessWidget {
   }
 }
 
-class _ReasonDialog extends StatefulWidget {
-  final String title;
-  final void Function(String notes) onSubmit;
-  const _ReasonDialog({required this.title, required this.onSubmit});
-
+class _Tag extends StatelessWidget {
+  const _Tag(this.text, this.color);
+  final String text;
+  final Color color;
   @override
-  State<_ReasonDialog> createState() => _ReasonDialogState();
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+    decoration: BoxDecoration(
+      color: color.withOpacity(.12),
+      borderRadius: BorderRadius.circular(99),
+    ),
+    child: Text(
+      text,
+      style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700),
+    ),
+  );
 }
 
-class _ReasonDialogState extends State<_ReasonDialog> {
-  final _ctrl = TextEditingController();
-  bool _sending = false;
+class _FilterPanel extends StatelessWidget {
+  const _FilterPanel({
+    required this.controller,
+    required this.roleFilter,
+    required this.onRoleChanged,
+  });
+  final TextEditingController controller;
+  final String roleFilter;
+  final ValueChanged<String> onRoleChanged;
 
   @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.title),
-      content: TextField(
-        controller: _ctrl,
-        decoration: const InputDecoration(
-          labelText: 'Notes (optional)',
-          hintText: 'Tell the user why this was rejected',
+  Widget build(BuildContext context) => Container(
+    color: const Color(0xFFF7F7FB),
+    padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: controller,
+          decoration: InputDecoration(
+            hintText: 'Search name, email or ID...',
+            prefixIcon: const Icon(Icons.search),
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+          ),
         ),
-        maxLines: 3,
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed:
-              _sending
-                  ? null
-                  : () async {
-                    setState(() => _sending = true);
-                    widget.onSubmit(_ctrl.text);
-                    if (mounted) Navigator.pop(context, true);
-                  },
-          child:
-              _sending
-                  ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                  : const Text('Reject'),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          children: [
+            for (final r in [
+              ('all', Icons.groups_outlined),
+              ('passenger', Icons.person_outline),
+              ('driver', Icons.directions_car),
+            ])
+              ChoiceChip(
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(r.$2, size: 16),
+                    Text(' ${r.$1.capitalize()}'),
+                  ],
+                ),
+                selected: roleFilter == r.$1,
+                onSelected: (_) => onRoleChanged(r.$1),
+                selectedColor: const Color(0xFF6A27F7).withOpacity(.18),
+                labelStyle: TextStyle(
+                  color:
+                      roleFilter == r.$1
+                          ? const Color(0xFF4B18C9)
+                          : Colors.black87,
+                ),
+              ),
+          ],
         ),
       ],
-    );
-  }
+    ),
+  );
+}
+
+class _StateMessage extends StatelessWidget {
+  const _StateMessage({required this.icon, required this.text});
+  final IconData icon;
+  final String text;
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 46, color: Colors.black26),
+          const SizedBox(height: 12),
+          Text(
+            text,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.black54, fontSize: 13),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+extension on String {
+  String capitalize() =>
+      isEmpty ? this : '${this[0].toUpperCase()}${substring(1)}';
 }
