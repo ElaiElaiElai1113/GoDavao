@@ -84,19 +84,25 @@ class _ChatPageState extends State<ChatPage>
   }
 
   Future<void> _fetchHistory() async {
+  try {
+    print('Fetching messages for matchId: ${widget.matchId}');
     final rows = await _supabase
         .from('ride_messages')
-        .select('id, sender_id, content, created_at, seen_at')
+        .select('id, sender_id, content, created_at, seen_at, ride_match_id')
         .eq('ride_match_id', widget.matchId)
         .order('created_at', ascending: true);
+
+    print('Fetched rows: $rows'); // 👈 Add this
     setState(() {
-      _messages =
-          (rows as List)
-              .map((m) => ChatMessage.fromMap(m as Map<String, dynamic>))
-              .toList();
+      _messages = (rows as List)
+          .map((m) => ChatMessage.fromMap(m as Map<String, dynamic>))
+          .toList();
     });
     _scrollToBottom();
+  } catch (e, st) {
+    print('Error fetching chat history: $e\n$st');
   }
+}
 
   void _listenPostgres() {
     _pgChannel =
@@ -167,14 +173,15 @@ Future<void> _fetchRideStatus() async {
 
 void _listenRideStatus() {
   _supabase
-      .from('ride_matches:id=eq.${widget.matchId}')
-      .stream(primaryKey: ['id'])
+      .from('ride_matches')                 
+      .stream(primaryKey: ['id'])           
+      .eq('id', widget.matchId)             
       .listen((rows) {
-    if (rows.isNotEmpty) {
-      final s = rows.first['status'] as String?;
-      if (mounted) setState(() => _rideStatus = s);
-    }
-  });
+        if (rows.isNotEmpty) {
+          final s = rows.first['status'] as String?;
+          if (mounted) setState(() => _rideStatus = s);
+        }
+      });
 }
 
   Future<void> _sendMessage() async {
