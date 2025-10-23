@@ -84,19 +84,25 @@ class _ChatPageState extends State<ChatPage>
   }
 
   Future<void> _fetchHistory() async {
+  try {
+    print('Fetching messages for matchId: ${widget.matchId}');
     final rows = await _supabase
         .from('ride_messages')
-        .select('id, sender_id, content, created_at, seen_at')
+        .select('id, sender_id, content, created_at, seen_at, ride_match_id')
         .eq('ride_match_id', widget.matchId)
         .order('created_at', ascending: true);
+
+    print('Fetched rows: $rows'); // 👈 Add this
     setState(() {
-      _messages =
-          (rows as List)
-              .map((m) => ChatMessage.fromMap(m as Map<String, dynamic>))
-              .toList();
+      _messages = (rows as List)
+          .map((m) => ChatMessage.fromMap(m as Map<String, dynamic>))
+          .toList();
     });
     _scrollToBottom();
+  } catch (e, st) {
+    print('Error fetching chat history: $e\n$st');
   }
+}
 
   void _listenPostgres() {
     _pgChannel =
@@ -112,10 +118,30 @@ class _ChatPageState extends State<ChatPage>
                 value: widget.matchId,
               ),
               callback: (p) {
-                final msg = ChatMessage.fromMap(Map.from(p.newRecord));
-                setState(() => _messages.add(msg));
-                _scrollToBottom();
-              },
+  final incoming = ChatMessage.fromMap(Map.from(p.newRecord));
+  final me = _supabase.auth.currentUser?.id;
+
+  setState(() {
+    // 1) If a message with this DB id already exists, update/ignore
+    final iById = _messages.indexWhere((m) => m.id == incoming.id);
+    if (iById != -1) {
+      _messages[iById] = incoming;
+      return;
+    }
+    // 2) If we have a local "sending" temp from the same sender & same content, replace it
+    final iTmp = _messages.lastIndexWhere((m) =>
+        m.status == MessageStatus.sending &&
+        m.senderId == incoming.senderId &&
+        m.content == incoming.content);
+
+    if (iTmp != -1) {
+      _messages[iTmp] = incoming; // replace temp with the server row
+    } else {
+      _messages.add(incoming); // brand-new message (from other user or another device)
+    }
+  });
+  _scrollToBottom();
+},
             )
             .subscribe();
   }
@@ -167,14 +193,15 @@ Future<void> _fetchRideStatus() async {
 
 void _listenRideStatus() {
   _supabase
-      .from('ride_matches:id=eq.${widget.matchId}')
-      .stream(primaryKey: ['id'])
+      .from('ride_matches')                 
+      .stream(primaryKey: ['id'])           
+      .eq('id', widget.matchId)             
       .listen((rows) {
-    if (rows.isNotEmpty) {
-      final s = rows.first['status'] as String?;
-      if (mounted) setState(() => _rideStatus = s);
-    }
-  });
+        if (rows.isNotEmpty) {
+          final s = rows.first['status'] as String?;
+          if (mounted) setState(() => _rideStatus = s);
+        }
+      });
 }
 
   Future<void> _sendMessage() async {
@@ -207,23 +234,18 @@ void _listenRideStatus() {
   _textCtrl.clear();
 
   try {
-    final ins = await _supabase
-        .from('ride_messages')
-        .insert({
-          'ride_match_id': widget.matchId,
-          'sender_id': user.id,
-          'content': txt,
-        })
-        .select('id, sender_id, content, created_at')
-        .maybeSingle();
+    await _supabase
+    .from('ride_messages')
+    .insert({
+      'ride_match_id': widget.matchId,
+      'sender_id': user.id,
+      'content': txt,
+    });
 
-    if (ins != null) {
-      setState(() {
-        temp.status = MessageStatus.sent;
-        final idx = _messages.indexWhere((m) => m.id == temp.id);
-        if (idx != -1) _messages[idx] = ChatMessage.fromMap(Map.from(ins));
-      });
-    }
+setState(() {
+  // keep temp for now; realtime insert will replace it
+  temp.status = MessageStatus.sending;
+});
   } on PostgrestException catch (e) {
     if (e.code == '45000' ||
         (e.message ?? '').toLowerCase().contains('cannot send messages')) {
@@ -439,9 +461,10 @@ class ChatMessage {
     id: m['id'].toString(),
     senderId: m['sender_id'] as String,
     content: m['content'] as String,
-    createdAt: DateTime.parse(m['created_at'] as String),
-    status: MessageStatus.sent,
-    seenAt:
-        m['seen_at'] != null ? DateTime.parse(m['seen_at'] as String) : null,
+    createdAt: DateTime.parse(m['created_at'] as String).toLocal(),
+  status: MessageStatus.sent,
+  seenAt: m['seen_at'] != null
+      ? DateTime.parse(m['seen_at'] as String).toLocal()
+      : null,
   );
 }
