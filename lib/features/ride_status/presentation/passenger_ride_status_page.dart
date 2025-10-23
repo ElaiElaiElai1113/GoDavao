@@ -1,6 +1,7 @@
 // lib/features/ride_status/presentation/passenger_ride_status_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -12,6 +13,7 @@ import 'package:godavao/features/ratings/presentation/user_rating.dart';
 import 'package:godavao/features/ratings/presentation/rate_user.dart';
 import 'package:godavao/features/ratings/data/ratings_service.dart';
 import 'package:godavao/features/payments/presentation/payment_status_chip.dart';
+import 'package:godavao/features/safety/presentation/sos_sheet.dart'; // <-- Safety
 
 // Live tracking
 import 'package:godavao/features/live_tracking/data/live_publisher.dart';
@@ -53,12 +55,10 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
 
   // IDs / booking facts
   String? _matchId;
-  int _seatsBilled =
-      1; // <- authoritative seats for THIS booking (ride_matches.seats_allocated)
+  int _seatsBilled = 1; // ride_matches.seats_allocated for THIS booking
 
   // Carpool snapshot across the route
-  int _activeBookings =
-      1; // unique active ride requests (pending/accepted/en_route)
+  int _activeBookings = 1; // unique active ride requests
   int _activeSeatsTotal = 1; // sum of seats across those bookings
 
   // Fare
@@ -404,12 +404,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     final d = _dropoff;
     if (p == null || d == null) return;
 
-    // PRICE WITH THE SEATS YOU ACTUALLY BOOKED
-    final seats = _seatsBilled;
-
-    // Carpool discount = number of riders (unique bookings), not seats
-    final carpoolPassengers = _activeBookings;
-
+    final seats = _seatsBilled; // seats you actually booked
+    final carpoolPassengers = _activeBookings; // unique bookings
     final surge = (_ride?['surge_multiplier'] as num?)?.toDouble() ?? 1.0;
 
     setState(() => _estimatingFare = true);
@@ -531,6 +527,17 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     );
   }
 
+  // ───────────────────────── Safety ─────────────────────────
+
+  void _openSos() {
+    HapticFeedback.selectionClick();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => SosSheet(rideId: widget.rideId),
+    );
+  }
+
   // ───────────────────────── UI ─────────────────────────
 
   @override
@@ -587,6 +594,12 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
         iconTheme: const IconThemeData(color: Colors.white),
         actionsIconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          // Quick SOS access from AppBar
+          IconButton(
+            tooltip: 'SOS',
+            icon: const Icon(Icons.emergency_share),
+            onPressed: _openSos,
+          ),
           if (driverId != null) VerifiedBadge(userId: driverId, size: 22),
           if (driverId != null && _matchId != null)
             IconButton(
@@ -864,15 +877,14 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                           bx: _fareBx!,
                           peso: _peso,
                           estimating: _estimatingFare,
-                          seatsBilledOverride:
-                              _seatsBilled, // <- show correct seats
+                          seatsBilledOverride: _seatsBilled,
                         ),
                       )
                     else if (fare != null)
                       _SectionCard(
                         child: _FareBreakdownSimple(
                           total: fare,
-                          seats: _seatsBilled, // <- show correct seats
+                          seats: _seatsBilled,
                           bookingType: bookingType,
                           peso: _peso,
                         ),
@@ -970,7 +982,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                 ),
                 onPressed: () {
                   if (_status == 'en_route') {
-                    _showSosDialog();
+                    _openSos(); // <-- Safety sheet
                   } else if (isCancelable) {
                     _cancelRide();
                   } else {
@@ -1045,35 +1057,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
           ),
         ),
       ],
-    );
-  }
-
-  void _showSosDialog() {
-    showDialog<void>(
-      context: context,
-      builder:
-          (_) => AlertDialog(
-            title: const Text('Emergency'),
-            content: const Text(
-              'Do you want to trigger SOS and share your live location with your emergency contacts?',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Close'),
-              ),
-              FilledButton.icon(
-                icon: const Icon(Icons.emergency_share),
-                label: const Text('Trigger SOS'),
-                onPressed: () {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('SOS triggered')),
-                  );
-                },
-              ),
-            ],
-          ),
     );
   }
 }
@@ -1193,7 +1176,7 @@ class _FareBreakdownPro extends StatelessWidget {
   final FareBreakdown bx;
   final String Function(num?) peso;
   final bool estimating;
-  final int? seatsBilledOverride; // NEW – force UI to show allocated seats
+  final int? seatsBilledOverride; // show allocated seats
 
   const _FareBreakdownPro({
     required this.bx,

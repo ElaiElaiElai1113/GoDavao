@@ -12,8 +12,10 @@ import 'package:godavao/features/maps/passenger_map_page.dart';
 import 'package:godavao/features/routes/presentation/pages/driver_route_page.dart';
 import 'package:godavao/features/ride_status/presentation/driver_rides_page.dart';
 import 'package:godavao/features/verify/data/verification_service.dart';
-// 👇 Add Vehicles import
+// Vehicles
 import 'package:godavao/features/vehicles/presentation/vehicles_page.dart';
+// ✅ Trusted Contacts (new)
+import 'package:godavao/features/safety/presentation/trusted_contacts_page.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -35,6 +37,9 @@ class _DashboardPageState extends State<DashboardPage> {
   int? _driverPendingRequests;
   int? _passengerUpcoming;
   int? _passengerHistory;
+
+  // ✅ Safety: trusted contacts count
+  int? _trustedCount;
 
   // Verification realtime
   final _verifSvc = VerificationService(Supabase.instance.client);
@@ -171,6 +176,17 @@ class _DashboardPageState extends State<DashboardPage> {
           _passengerHistory = (history as List).length;
         });
       }
+
+      // ✅ Also load trusted contacts count for Safety banner + stat
+      try {
+        final tcs = await _sb
+            .from('trusted_contacts')
+            .select('id')
+            .eq('user_id', uid);
+        if (mounted) setState(() => _trustedCount = (tcs as List).length);
+      } catch (_) {
+        // non-fatal
+      }
     } catch (_) {
       // non-fatal
     } finally {
@@ -290,6 +306,56 @@ class _DashboardPageState extends State<DashboardPage> {
                         ),
                       ),
 
+                    // ✅ Safety banner when no trusted contacts yet
+                    if ((_trustedCount ?? 0) == 0)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.indigo.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.indigo.shade200),
+                          ),
+                          padding: const EdgeInsets.all(14),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.person,
+                                color: Colors.indigo,
+                                size: 28,
+                              ),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Text(
+                                  'Set up trusted contacts so we can notify family or friends during SOS.',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              ElevatedButton(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder:
+                                          (_) => const TrustedContactsPage(),
+                                    ),
+                                  ).then((_) => _loadOverview());
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.indigo,
+                                  foregroundColor: Colors.white,
+                                ),
+                                child: const Text('Set up'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
                     const SizedBox(height: 16),
 
                     // QUICK ACTIONS
@@ -309,7 +375,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       child:
                           isDriver
                               ? (
-                              // DRIVER: Vehicles is always visible; other actions require verification
+                              // DRIVER
                               isVerified
                                   ? _ActionGrid(
                                     items: [
@@ -357,7 +423,6 @@ class _DashboardPageState extends State<DashboardPage> {
                                           );
                                         },
                                       ),
-
                                       _ActionItem(
                                         title: 'Ride Matches',
                                         subtitle: 'Requests & trips',
@@ -371,6 +436,22 @@ class _DashboardPageState extends State<DashboardPage> {
                                                         const DriverRidesPage(),
                                               ),
                                             ),
+                                      ),
+                                      // ✅ Trusted Contacts (driver verified)
+                                      _ActionItem(
+                                        title: 'Trusted Contacts',
+                                        subtitle: 'Safety settings',
+                                        icon: Icons.person,
+                                        onTap: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder:
+                                                  (_) =>
+                                                      const TrustedContactsPage(),
+                                            ),
+                                          ).then((_) => _loadOverview());
+                                        },
                                       ),
                                     ],
                                   )
@@ -391,9 +472,26 @@ class _DashboardPageState extends State<DashboardPage> {
                                               ),
                                             ),
                                       ),
+                                      // ✅ Trusted Contacts (driver unverified)
+                                      _ActionItem(
+                                        title: 'Trusted Contacts',
+                                        subtitle: 'Safety settings',
+                                        icon: Icons.person,
+                                        onTap: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder:
+                                                  (_) =>
+                                                      const TrustedContactsPage(),
+                                            ),
+                                          ).then((_) => _loadOverview());
+                                        },
+                                      ),
                                     ],
                                   ))
                               : _ActionGrid(
+                                // PASSENGER
                                 items: [
                                   _ActionItem(
                                     title: 'Book a Ride',
@@ -433,6 +531,22 @@ class _DashboardPageState extends State<DashboardPage> {
                                             builder: (_) => const ProfilePage(),
                                           ),
                                         ),
+                                  ),
+                                  // ✅ Trusted Contacts (passenger)
+                                  _ActionItem(
+                                    title: 'Trusted Contacts',
+                                    subtitle: 'Safety settings',
+                                    icon: Icons.person,
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder:
+                                              (_) =>
+                                                  const TrustedContactsPage(),
+                                        ),
+                                      ).then((_) => _loadOverview());
+                                    },
                                   ),
                                 ],
                               ),
@@ -474,6 +588,17 @@ class _DashboardPageState extends State<DashboardPage> {
                               ),
                             ),
                           ],
+                        ),
+                      ),
+                      // (Optional) show safety stat below
+                      const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: _StatCard(
+                          label: 'Trusted Contacts',
+                          value:
+                              _loadingOverview ? '—' : _fmtCount(_trustedCount),
+                          icon: Icons.person,
                         ),
                       ),
                     ],
@@ -682,7 +807,7 @@ class BottomCard extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 🔹 Grab handle
+              // Grab handle
               Container(
                 width: 32,
                 height: 4,
@@ -692,7 +817,7 @@ class BottomCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              child, // 👈 custom content per screen
+              child,
             ],
           ),
         ),

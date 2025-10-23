@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:godavao/features/profile/presentation/profile_page.dart';
+import 'package:godavao/features/safety/presentation/trusted_contacts_page.dart';
 import 'package:godavao/features/vehicles/presentation/vehicles_page.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -44,11 +45,11 @@ Future<void> main() async {
   await localNotify.initialize(
     const InitializationSettings(android: androidInit, iOS: iosInit),
   );
-  // Set transparent status bar globally
+
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent, // fully transparent
-      statusBarIconBrightness: Brightness.light, // white icons
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
     ),
   );
 
@@ -88,6 +89,7 @@ class GoDavaoApp extends StatelessWidget {
         '/passenger_rides': (_) => const PassengerMyRidesPage(),
         '/passenger_map': (_) => const PassengerMapPage(),
         '/driver_route': (_) => const DriverRoutePage(),
+        '/trusted-contacts': (_) => const TrustedContactsPage(),
         '/profile': (_) => const ProfilePage(),
         '/vehicles': (_) => const VehiclesPage(),
       },

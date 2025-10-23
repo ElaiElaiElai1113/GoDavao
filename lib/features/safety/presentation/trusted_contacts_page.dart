@@ -49,9 +49,14 @@ class _TrustedContactsPageState extends State<TrustedContactsPage> {
             title: Text(
               existing == null ? 'Add Trusted Contact' : 'Edit Trusted Contact',
             ),
+
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                Text(
+                  'Tip: Only add people you personally trust. We’ll notify them if you trigger an SOS.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
                 TextField(
                   controller: nameCtrl,
                   decoration: const InputDecoration(labelText: 'Name'),

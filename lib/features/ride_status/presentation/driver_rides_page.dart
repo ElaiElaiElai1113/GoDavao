@@ -41,7 +41,7 @@ class MatchCard {
   final String? driverRouteId;
   final String status;
   final DateTime createdAt;
-
+  final String? driverRouteName;
   final String passengerName;
   final String? passengerId;
   final String pickupAddress;
@@ -56,6 +56,7 @@ class MatchCard {
   final double? destLng;
 
   const MatchCard({
+    this.driverRouteName,
     required this.matchId,
     required this.rideRequestId,
     required this.driverRouteId,
@@ -84,7 +85,7 @@ class MatchCard {
 }
 
 class RouteGroup {
-  final String routeId; // "unassigned" for nulls
+  final String routeId;
   int? capacityTotal;
   int? capacityAvailable;
   final List<MatchCard> items;
@@ -296,7 +297,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
 
     try {
       final sel = '''
-        id, ride_request_id, status, created_at, driver_id, driver_route_id, seats_allocated,
+        id, ride_request_id, status, created_at, driver_id, driver_route_id, seats_allocated, driver_routes ( id, name ),
         ride_requests (
           id, pickup_lat, pickup_lng, destination_lat, destination_lng,
           passenger_id, fare, requested_seats, users ( id, name )
@@ -323,6 +324,8 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       for (final row in (raw as List)) {
         final m = (row as Map).cast<String, dynamic>();
         final req = (m['ride_requests'] as Map?)?.cast<String, dynamic>();
+        final routeRel = (m['driver_routes'] as Map?)?.cast<String, dynamic>();
+        final routeName = routeRel?['name']?.toString();
 
         // passenger
         String passengerName = 'Passenger';
@@ -382,6 +385,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         } catch (_) {}
 
         final card = MatchCard(
+          driverRouteName: routeName,
           matchId: m['id'],
           rideRequestId: m['ride_request_id'],
           driverRouteId: m['driver_route_id']?.toString(),
@@ -398,7 +402,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           destLat: (req?['destination_lat'] as num?)?.toDouble(),
           destLng: (req?['destination_lng'] as num?)?.toDouble(),
         );
-
         all.add(card);
         if (card.driverRouteId != null) routeIds.add(card.driverRouteId!);
         rideIds.add(card.rideRequestId);
@@ -1099,6 +1102,13 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       ];
     }
 
+    final routeTitle =
+        g.routeId == 'unassigned'
+            ? 'Unassigned route'
+            : (g.items.isNotEmpty && g.items.first.driverRouteName != null
+                ? g.items.first.driverRouteName!
+                : 'Route ${g.routeId.substring(0, 8)}');
+
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
@@ -1127,9 +1137,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           backgroundColor: Colors.white.withOpacity(0.9),
           leading: const Icon(Icons.alt_route, color: Color(0xFF6A27F7)),
           title: Text(
-            g.routeId == 'unassigned'
-                ? 'Unassigned route'
-                : 'Route ${g.routeId.substring(0, 8)}',
+            routeTitle,
             style: const TextStyle(
               fontWeight: FontWeight.w800,
               color: Color(0xFF4B18C9),

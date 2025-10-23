@@ -136,7 +136,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
   }
 
   Future<void> _resubscribeAll() async {
-    // Clean + resubscribe silently
     _rideChannel._kill(sb);
     _driverLiveChan._kill(sb);
     _passengerLiveChan._kill(sb);
@@ -218,7 +217,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     final s = row['value']?.toString();
     if (s == null) return null;
     return double.tryParse(s);
-    // Done
   }
 
   // ===================== LOAD ALL =====================
@@ -339,7 +337,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
   }
 
   void _subscribeLive(String actor) {
-    // Reset if existing
     if (actor == 'driver') {
       _driverLiveChan?._kill(sb);
     } else {
@@ -453,7 +450,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     setState(() => _driverInterp = p);
 
     if (_followDriver && status == 'en_route') {
-      // Gentle clamp to avoid zoom jumps
       final z = _mapReady ? _map.camera.zoom : 15.0;
       _safeMove(p, z.clamp(14, 16));
     }
@@ -503,6 +499,16 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     await _fetchPassengerAggregate();
   }
 
+  // ===================== Safety =====================
+  void _openSos() {
+    HapticFeedback.selectionClick();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => SosSheet(rideId: widget.rideId),
+    );
+  }
+
   // ===================== helpers/getters =====================
 
   LatLng get _pickup => LatLng(
@@ -529,8 +535,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
   Duration? get _roughEta {
     final from = _driverNext ?? _driverInterp ?? _pickup;
     final meters = _dist.as(LengthUnit.Meter, from, _dest);
-    // ~28.8 km/h average ⇒ 8 m/s. Tune or replace with server ETA later.
-    const mps = 8.0;
+    const mps = 8.0; // ~28.8 km/h
     if (meters <= 0) return null;
     return Duration(seconds: (meters / mps).round());
   }
@@ -593,7 +598,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
         _safeMove(b.center, 13);
       }
     } catch (_) {
-      // fallback
       _safeMove(_pickup, 13);
     }
   }
@@ -645,6 +649,13 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
           ),
           iconTheme: const IconThemeData(color: Colors.white),
           actionsIconTheme: const IconThemeData(color: Colors.white),
+          actions: [
+            IconButton(
+              tooltip: 'SOS',
+              icon: const Icon(Icons.emergency_share),
+              onPressed: _openSos,
+            ),
+          ],
         ),
         body: Center(
           child: Padding(
@@ -748,20 +759,18 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
             },
             icon: const Icon(Icons.fullscreen),
           ),
+          IconButton(
+            tooltip: 'SOS',
+            onPressed: _openSos,
+            icon: const Icon(Icons.emergency_share),
+          ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: Colors.red.shade700,
         icon: const Icon(Icons.emergency_share),
         label: const Text('SOS'),
-        onPressed: () {
-          HapticFeedback.selectionClick();
-          showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            builder: (_) => SosSheet(rideId: widget.rideId),
-          );
-        },
+        onPressed: _openSos,
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: Stack(
@@ -795,7 +804,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                 TileLayer(
                   urlTemplate:
                       'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  subdomains: const ['a', 'b', 'c'],
+                  subdomains: ['a', 'b', 'c'],
                   userAgentPackageName: 'com.godavao.app',
                 ),
                 PolylineLayer(
@@ -819,8 +828,8 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                         label: 'Your location',
                         child: DriverMarker(
                           size: 36,
-                          headingDeg: _driverHeading,
-                          active: status == 'en_route' || status == 'accepted',
+                          headingDeg: 0,
+                          active: true,
                         ),
                       ),
                     ),
@@ -1092,7 +1101,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
   }
 }
 
-// ----- Small widget: Earnings card (perf: avoids rebuilding big tree) -----
+// ----- Small widget: Earnings card -----
 class _EarningsCard extends StatelessWidget {
   const _EarningsCard({
     required this.fare,

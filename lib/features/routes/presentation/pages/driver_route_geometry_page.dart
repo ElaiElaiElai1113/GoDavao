@@ -80,7 +80,7 @@ class _DriverRouteGeometryPageState extends State<DriverRouteGeometryPage> {
               .select('''
             route_mode, route_polyline, manual_polyline,
             start_lat, start_lng, end_lat, end_lng,
-            start_address, end_address
+       
           ''')
               .eq('id', widget.routeId)
               .single();
@@ -397,21 +397,22 @@ class _DriverRouteGeometryPageState extends State<DriverRouteGeometryPage> {
             _start!.latitude,
             _start!.longitude,
           );
-          if (mounted)
+          if (mounted) {
             setState(
               () =>
                   _startAddress =
-                      (s?.isNotEmpty ?? false) ? s : _coordShort(_start),
+                      (s.isNotEmpty ?? false) ? s : _coordShort(_start),
             );
+          }
         }
         if (_end != null) {
           final e = await reverseGeocodeText(_end!.latitude, _end!.longitude);
-          if (mounted)
+          if (mounted) {
             setState(
               () =>
-                  _endAddress =
-                      (e?.isNotEmpty ?? false) ? e : _coordShort(_end),
+                  _endAddress = (e.isNotEmpty ?? false) ? e : _coordShort(_end),
             );
+          }
         }
       } catch (_) {
         if (!mounted) return;
@@ -463,14 +464,10 @@ class _DriverRouteGeometryPageState extends State<DriverRouteGeometryPage> {
       String? startAddr = _startAddress;
       String? endAddr = _endAddress;
       try {
-        if ((startAddr == null || startAddr.isEmpty) &&
-            sLat != null &&
-            sLng != null) {
+        if ((startAddr == null || startAddr.isEmpty)) {
           startAddr = await reverseGeocodeText(sLat, sLng);
         }
-        if ((endAddr == null || endAddr.isEmpty) &&
-            eLat != null &&
-            eLng != null) {
+        if ((endAddr == null || endAddr.isEmpty)) {
           endAddr = await reverseGeocodeText(eLat, eLng);
         }
       } catch (_) {
