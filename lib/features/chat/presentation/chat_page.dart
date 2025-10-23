@@ -461,9 +461,10 @@ class ChatMessage {
     id: m['id'].toString(),
     senderId: m['sender_id'] as String,
     content: m['content'] as String,
-    createdAt: DateTime.parse(m['created_at'] as String),
-    status: MessageStatus.sent,
-    seenAt:
-        m['seen_at'] != null ? DateTime.parse(m['seen_at'] as String) : null,
+    createdAt: DateTime.parse(m['created_at'] as String).toLocal(),
+  status: MessageStatus.sent,
+  seenAt: m['seen_at'] != null
+      ? DateTime.parse(m['seen_at'] as String).toLocal()
+      : null,
   );
 }
