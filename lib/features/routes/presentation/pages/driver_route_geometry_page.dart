@@ -80,7 +80,7 @@ class _DriverRouteGeometryPageState extends State<DriverRouteGeometryPage> {
               .select('''
             route_mode, route_polyline, manual_polyline,
             start_lat, start_lng, end_lat, end_lng,
-       
+            start_address, end_address
           ''')
               .eq('id', widget.routeId)
               .single();
