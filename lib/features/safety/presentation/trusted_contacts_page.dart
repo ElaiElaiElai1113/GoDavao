@@ -1,51 +1,136 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../data/safety_service.dart';
+import '../data/trusted_contacts_service.dart';
+import '../models/trusted_contact.dart';
 
 class TrustedContactsPage extends StatefulWidget {
   const TrustedContactsPage({super.key});
-
   @override
   State<TrustedContactsPage> createState() => _TrustedContactsPageState();
 }
 
 class _TrustedContactsPageState extends State<TrustedContactsPage> {
-  final supabase = Supabase.instance.client;
-  List<Map<String, dynamic>> _rows = [];
+  late final TrustedContactsService _svc;
+  List<TrustedContact> _items = [];
   bool _loading = true;
-
-  final _name = TextEditingController();
-  final _phone = TextEditingController();
-  bool _sms = true;
 
   @override
   void initState() {
     super.initState();
+    _svc = TrustedContactsService(Supabase.instance.client);
     _load();
   }
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    _rows = await SafetyService(supabase).listContacts();
-    if (mounted) setState(() => _loading = false);
+    try {
+      final data = await _svc.listMine();
+      if (mounted) setState(() => _items = data);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to load contacts: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
-  Future<void> _add() async {
-    if (_name.text.trim().isEmpty) return;
-    await SafetyService(supabase).addContact(
-      name: _name.text.trim(),
-      phone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
-      sms: _sms,
+  Future<void> _openForm({TrustedContact? existing}) async {
+    final nameCtrl = TextEditingController(text: existing?.name ?? '');
+    final phoneCtrl = TextEditingController(text: existing?.phone ?? '');
+    final emailCtrl = TextEditingController(text: existing?.email ?? '');
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder:
+          (_) => AlertDialog(
+            title: Text(
+              existing == null ? 'Add Trusted Contact' : 'Edit Trusted Contact',
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(labelText: 'Name'),
+                ),
+                TextField(
+                  controller: phoneCtrl,
+                  decoration: const InputDecoration(labelText: 'Phone'),
+                ),
+                TextField(
+                  controller: emailCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Email (optional)',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Save'),
+              ),
+            ],
+          ),
     );
-    _name.clear();
-    _phone.clear();
-    _sms = true;
-    await _load();
+
+    if (ok != true) return;
+
+    try {
+      if (existing == null) {
+        await _svc.add(
+          name: nameCtrl.text.trim(),
+          phone: phoneCtrl.text.trim(),
+          email: emailCtrl.text.trim().isEmpty ? null : emailCtrl.text.trim(),
+        );
+      } else {
+        await _svc.update(
+          existing.id,
+          name: nameCtrl.text.trim(),
+          phone: phoneCtrl.text.trim(),
+          email: emailCtrl.text.trim().isEmpty ? null : emailCtrl.text.trim(),
+        );
+      }
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
+      }
+    }
   }
 
-  Future<void> _delete(String id) async {
-    await SafetyService(supabase).deleteContact(id);
-    await _load();
+  Future<void> _delete(TrustedContact c) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder:
+          (_) => AlertDialog(
+            title: const Text('Remove contact?'),
+            content: Text('Remove ${c.name} from your trusted contacts?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Remove'),
+              ),
+            ],
+          ),
+    );
+    if (ok == true) {
+      await _svc.remove(c.id);
+      await _load();
+    }
   }
 
   @override
@@ -55,70 +140,45 @@ class _TrustedContactsPageState extends State<TrustedContactsPage> {
       body:
           _loading
               ? const Center(child: CircularProgressIndicator())
-              : Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
+              : _items.isEmpty
+              ? const Center(
+                child: Text(
+                  'No trusted contacts yet.\nAdd one to share your location during emergencies.',
+                  textAlign: TextAlign.center,
+                ),
+              )
+              : ListView.separated(
+                itemCount: _items.length,
+                separatorBuilder: (_, __) => const Divider(height: 0),
+                itemBuilder: (_, i) {
+                  final c = _items[i];
+                  return ListTile(
+                    leading: const CircleAvatar(child: Icon(Icons.person)),
+                    title: Text(c.name),
+                    subtitle: Text(
+                      [c.phone, if (c.email != null) c.email!].join(' · '),
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _name,
-                            decoration: const InputDecoration(
-                              labelText: 'Name',
-                            ),
-                          ),
+                        IconButton(
+                          icon: const Icon(Icons.edit),
+                          onPressed: () => _openForm(existing: c),
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            controller: _phone,
-                            decoration: const InputDecoration(
-                              labelText: 'Phone (SMS)',
-                            ),
-                          ),
+                        IconButton(
+                          icon: const Icon(Icons.delete),
+                          onPressed: () => _delete(c),
                         ),
                       ],
                     ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Row(
-                      children: [
-                        Checkbox(
-                          value: _sms,
-                          onChanged: (v) => setState(() => _sms = v ?? true),
-                        ),
-                        const Text('Notify by SMS'),
-                        const Spacer(),
-                        ElevatedButton.icon(
-                          onPressed: _add,
-                          icon: const Icon(Icons.add),
-                          label: const Text('Add'),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Divider(),
-                  Expanded(
-                    child: ListView.separated(
-                      itemCount: _rows.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (_, i) {
-                        final r = _rows[i];
-                        return ListTile(
-                          title: Text(r['name'] ?? ''),
-                          subtitle: Text(r['phone'] ?? ''),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () => _delete(r['id']),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
+                  );
+                },
               ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _openForm(),
+        icon: const Icon(Icons.person_add),
+        label: const Text('Add Contact'),
+      ),
     );
   }
 }
