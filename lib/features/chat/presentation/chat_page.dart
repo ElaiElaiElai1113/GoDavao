@@ -28,6 +28,14 @@ class _ChatPageState extends State<ChatPage>
   Timer? _typingTimer;
 
   bool _didSubscribeRoute = false;
+  String? _rideStatus; // will hold ride status like accepted, cancelled, completed
+    // OLD:
+    // bool get _isChatLocked =>
+    //     _rideStatus == 'cancelled' || _rideStatus == 'completed';
+
+    // NEW:
+    bool get _isChatLocked =>
+      const {'cancelled','canceled','declined','completed'}.contains(_rideStatus);
 
   @override
   bool get wantKeepAlive => true;
@@ -40,6 +48,9 @@ class _ChatPageState extends State<ChatPage>
     _listenPostgres();
     _listenBroadcast();
     _markSeen();
+    _fetchRideStatus();
+    _listenRideStatus();
+    
   }
 
   @override
@@ -139,46 +150,98 @@ class _ChatPageState extends State<ChatPage>
         .eq('ride_match_id', widget.matchId)
         .neq('sender_id', user.id);
   }
+Future<void> _fetchRideStatus() async {
+  try {
+    final res = await _supabase
+        .from('ride_matches')
+        .select('status')
+        .eq('id', widget.matchId)
+        .maybeSingle();
+    if (mounted) {
+      setState(() => _rideStatus = res?['status']);
+    }
+  } catch (e) {
+    print('Failed to fetch ride status: $e');
+  }
+}
+
+void _listenRideStatus() {
+  _supabase
+      .from('ride_matches:id=eq.${widget.matchId}')
+      .stream(primaryKey: ['id'])
+      .listen((rows) {
+    if (rows.isNotEmpty) {
+      final s = rows.first['status'] as String?;
+      if (mounted) setState(() => _rideStatus = s);
+    }
+  });
+}
 
   Future<void> _sendMessage() async {
-    final txt = _textCtrl.text.trim();
-    if (txt.isEmpty) return;
-    final user = _supabase.auth.currentUser;
-    if (user == null) return;
-
-    final temp = ChatMessage(
-      id: UniqueKey().toString(),
-      senderId: user.id,
-      content: txt,
-      createdAt: DateTime.now(),
-      status: MessageStatus.sending,
+  if (_isChatLocked) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Chat is locked because the ride has been cancelled, declined, or completed.',
+        ),
+      ),
     );
+    return;
+  }
 
-    _scrollToBottom();
-    _textCtrl.clear();
+  final txt = _textCtrl.text.trim();
+  if (txt.isEmpty) return;
+  final user = _supabase.auth.currentUser;
+  if (user == null) return;
 
-    try {
-      final ins =
-          await _supabase
-              .from('ride_messages')
-              .insert({
-                'ride_match_id': widget.matchId,
-                'sender_id': user.id,
-                'content': txt,
-              })
-              .select('id, sender_id, content, created_at')
-              .maybeSingle();
-      if (ins != null) {
-        setState(() {
-          temp.status = MessageStatus.sent;
-          final idx = _messages.indexWhere((m) => m.id == temp.id);
-          if (idx != -1) _messages[idx] = ChatMessage.fromMap(Map.from(ins));
-        });
-      }
-    } catch (_) {
+  final temp = ChatMessage(
+    id: UniqueKey().toString(),
+    senderId: user.id,
+    content: txt,
+    createdAt: DateTime.now(),
+    status: MessageStatus.sending,
+  );
+
+  setState(() => _messages.add(temp));
+  _scrollToBottom();
+  _textCtrl.clear();
+
+  try {
+    final ins = await _supabase
+        .from('ride_messages')
+        .insert({
+          'ride_match_id': widget.matchId,
+          'sender_id': user.id,
+          'content': txt,
+        })
+        .select('id, sender_id, content, created_at')
+        .maybeSingle();
+
+    if (ins != null) {
+      setState(() {
+        temp.status = MessageStatus.sent;
+        final idx = _messages.indexWhere((m) => m.id == temp.id);
+        if (idx != -1) _messages[idx] = ChatMessage.fromMap(Map.from(ins));
+      });
+    }
+  } on PostgrestException catch (e) {
+    if (e.code == '45000' ||
+        (e.message ?? '').toLowerCase().contains('cannot send messages')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Chat is locked because the ride has been cancelled or completed.',
+          ),
+        ),
+      );
+      setState(() => _rideStatus = 'cancelled');
+    } else {
       setState(() => temp.status = MessageStatus.failed);
     }
+  } catch (_) {
+    setState(() => temp.status = MessageStatus.failed);
   }
+}
 
   void _onTyping(String _) {
     final me = _supabase.auth.currentUser?.id;
@@ -218,6 +281,21 @@ class _ChatPageState extends State<ChatPage>
       appBar: AppBar(title: const Text('Chat')),
       body: Column(
         children: [
+          if (_isChatLocked)
+  Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(10),
+    margin: const EdgeInsets.only(top: 6),
+    decoration: BoxDecoration(
+      color: Colors.amber.shade50,
+      border: Border.all(color: Colors.amber.shade200),
+    ),
+    child: const Text(
+      'This conversation is read-only because the ride was cancelled, declined, or completed.',
+      textAlign: TextAlign.center,
+      style: TextStyle(fontSize: 12),
+    ),
+  ),
           Expanded(
             child: ListView(
               controller: _scrollCtrl,
@@ -250,28 +328,39 @@ class _ChatPageState extends State<ChatPage>
             ),
           ),
           const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _textCtrl,
-                    onChanged: _onTyping,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: const InputDecoration.collapsed(
-                      hintText: 'Type a message',
-                    ),
-                    onSubmitted: (_) => _sendMessage(),
-                  ),
+          _isChatLocked
+    ? Container(
+        padding: const EdgeInsets.all(16),
+        color: Colors.grey.shade100,
+        width: double.infinity,
+        child: const Text(
+          'Chat unavailable — this ride has been cancelled, declined, or completed.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.black54),
+        ),
+      )
+    : Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _textCtrl,
+                onChanged: _onTyping,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration.collapsed(
+                  hintText: 'Type a message',
                 ),
-                IconButton(
-                  icon: const Icon(Icons.send),
-                  onPressed: _sendMessage,
-                ),
-              ],
+                onSubmitted: (_) => _sendMessage(),
+              ),
             ),
-          ),
+            IconButton(
+              icon: const Icon(Icons.send),
+              onPressed: _sendMessage,
+            ),
+          ],
+        ),
+      ),
         ],
       ),
     );
