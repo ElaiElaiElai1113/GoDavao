@@ -4,6 +4,9 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
+
 class SosSheet extends StatefulWidget {
   final String? rideId;
   const SosSheet({super.key, this.rideId});
@@ -50,35 +53,55 @@ class _SosSheetState extends State<SosSheet> {
     }
 
     setState(() => _sending = true);
-
     try {
-      // 1️⃣ Get location
+      // 1) Get location
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
-
       final mapsLink =
           'https://maps.google.com/?q=${pos.latitude},${pos.longitude}';
       final message =
           '🚨 SOS ALERT: I may be in danger. Please check my location: $mapsLink';
 
-      // 2️⃣ Open system SMS composer
-      final separator = Platform.isIOS ? ',' : ';';
-      final recipients = _numbers.join(separator);
-      final uri = Uri(
-        scheme: 'sms',
-        path: recipients,
-        queryParameters: {'body': message},
-      );
+      // Platform-specific recipient separator
+      final sep = Platform.isIOS ? ',' : ';';
+      final recipients = _numbers.join(sep);
 
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
+      // 2) Try sms: (most devices)
+      final smsUri = Uri.parse(
+        'sms:$recipients?body=${Uri.encodeComponent(message)}',
+      );
+      if (await canLaunchUrl(smsUri)) {
+        await launchUrl(smsUri, mode: LaunchMode.externalApplication);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Opening SMS composer...')),
         );
-      } else {
-        throw Exception('Could not open SMS composer');
+        return;
       }
+
+      // 3) Try smsto: (fallback for some OEMs)
+      final smstoUri = Uri.parse(
+        'smsto:$recipients?body=${Uri.encodeComponent(message)}',
+      );
+      if (await canLaunchUrl(smstoUri)) {
+        await launchUrl(smstoUri, mode: LaunchMode.externalApplication);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Opening SMS composer...')),
+        );
+        return;
+      }
+
+      // 4) Final fallback: share sheet (Messenger/WhatsApp/Email, etc.)
+      await Share.share(message, subject: 'SOS Alert');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No SMS app found — opened share options instead.'),
+        ),
+      );
+    } on PlatformException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to send SOS: ${e.message}')),
+      );
     } catch (e) {
       ScaffoldMessenger.of(
         context,

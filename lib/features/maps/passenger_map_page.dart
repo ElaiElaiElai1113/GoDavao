@@ -10,6 +10,20 @@ import 'package:geolocator/geolocator.dart';
 import 'package:godavao/core/osrm_service.dart';
 import 'package:godavao/features/rides/presentation/confirm_ride_page.dart';
 
+/// ---------- Top-level helpers ----------
+
+/// Result of snapping a point onto a polyline, with a monotonic progress value
+/// (segmentIndex + t) so we can enforce forward-only movement along the route.
+class _SnapResult {
+  final LatLng point;
+
+  /// segmentIndex + t (0..poly.length-1). Larger means further along route.
+  final double progress;
+  const _SnapResult(this.point, this.progress);
+}
+
+/// ---------- Models ----------
+
 class DriverRoute {
   final String id;
   final String driverId;
@@ -26,6 +40,8 @@ class DriverRoute {
       routePolyline = (m['route_polyline'] as String?),
       manualPolyline = (m['manual_polyline'] as String?);
 }
+
+/// ---------- Page ----------
 
 class PassengerMapPage extends StatefulWidget {
   const PassengerMapPage({super.key});
@@ -67,8 +83,8 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
   List<LatLng> _selectedRoutePoints = [];
 
   // Passenger-chosen points (snapped to selected route)
-  LatLng? _pickup;
-  LatLng? _dropoff;
+  _SnapResult? _pickup; // snapped point + progress
+  _SnapResult? _dropoff; // snapped point + progress
 
   // Computed OSRM segment from pickup → dropoff
   Polyline? _osrmSegment;
@@ -78,6 +94,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
 
   // Config
   static const double _matchRadiusMeters = 600;
+  static const double _progressEps = 1e-6; // tiny epsilon for comparisons
 
   // Live user location
   StreamSubscription<Position>? _posSub;
@@ -125,9 +142,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
       await _refreshCandidates();
       if (mounted) setState(() {});
     } catch (e) {
-      if (mounted) {
-        setState(() => _error = 'Failed to load routes: $e');
-      }
+      if (mounted) setState(() => _error = 'Failed to load routes: $e');
     }
   }
 
@@ -159,20 +174,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
   }
 
   double _meters(LatLng a, LatLng b) => _distance.as(LengthUnit.Meter, a, b);
-
-  bool _isPointNearPolyline(LatLng p, List<LatLng> polyline, double maxMeters) {
-    if (polyline.length < 2) return false;
-    double best = double.infinity;
-
-    for (var i = 0; i < polyline.length - 1; i++) {
-      final a = polyline[i];
-      final b = polyline[i + 1];
-      final d = _distancePointToSegmentMeters(p, a, b);
-      if (d < best) best = d;
-      if (best <= maxMeters) return true;
-    }
-    return best <= maxMeters;
-  }
 
   double _distancePointToSegmentMeters(LatLng p, LatLng a, LatLng b) {
     final ax = a.longitude, ay = a.latitude;
@@ -211,21 +212,65 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     return LatLng(ay + t * vy, ax + t * vx);
   }
 
-  LatLng _snapToPolyline(LatLng p, List<LatLng> polyline) {
-    late LatLng best;
+  _SnapResult _snapWithProgress(LatLng p, List<LatLng> poly) {
+    // Find closest projection & compute progress = segIndex + t (0..n-1)
     double bestD = double.infinity;
+    LatLng bestPoint = poly.first;
+    double bestProgress = 0.0;
 
-    for (var i = 0; i < polyline.length - 1; i++) {
-      final a = polyline[i];
-      final b = polyline[i + 1];
-      final proj = _projectOnSegment(p, a, b);
+    for (var i = 0; i < poly.length - 1; i++) {
+      final a = poly[i];
+      final b = poly[i + 1];
+
+      // project
+      final ax = a.longitude, ay = a.latitude;
+      final bx = b.longitude, by = b.latitude;
+      final px = p.longitude, py = p.latitude;
+
+      final vx = bx - ax, vy = by - ay;
+      final wx = px - ax, wy = py - ay;
+
+      final c1 = vx * wx + vy * wy;
+      final c2 = vx * vx + vy * vy;
+
+      double t;
+      if (c2 == 0) {
+        t = 0.0;
+      } else if (c1 <= 0) {
+        t = 0.0;
+      } else if (c2 <= c1) {
+        t = 1.0;
+      } else {
+        t = c1 / c2;
+      }
+
+      final proj = LatLng(ay + t * vy, ax + t * vx);
       final d = _meters(proj, p);
       if (d < bestD) {
         bestD = d;
-        best = proj;
+        bestPoint = proj;
+        bestProgress = i + t;
       }
     }
-    return best;
+    return _SnapResult(bestPoint, bestProgress);
+  }
+
+  bool _isPointNearPolyline(LatLng p, List<LatLng> polyline, double maxMeters) {
+    if (polyline.length < 2) return false;
+    double best = double.infinity;
+    for (var i = 0; i < polyline.length - 1; i++) {
+      final a = polyline[i];
+      final b = polyline[i + 1];
+      final d = _distancePointToSegmentMeters(p, a, b);
+      if (d < best) best = d;
+      if (best <= maxMeters) return true;
+    }
+    return best <= maxMeters;
+  }
+
+  _SnapResult? _safeSnap(LatLng? p, List<LatLng> poly) {
+    if (p == null || poly.length < 2) return null;
+    return _snapWithProgress(p, poly);
   }
 
   /* ===================== Live Location ===================== */
@@ -417,25 +462,35 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     final pts = _decodeEffectivePolyline(r);
 
     // Use searched pickup/destination to suggest initial snapped points
-    final snappedPickup =
-        (_searchedPickup != null && pts.length >= 2)
-            ? _snapToPolyline(_searchedPickup!, pts)
-            : null;
+    final sp =
+        _safeSnap(_searchedPickup, pts) ?? _safeSnap(_pickup?.point, pts);
+    final sd =
+        _safeSnap(_searchedDestination, pts) ?? _safeSnap(_dropoff?.point, pts);
 
-    final snappedDrop =
-        (_searchedDestination != null && pts.length >= 2)
-            ? _snapToPolyline(_searchedDestination!, pts)
-            : null;
+    _SnapResult? picked;
+    _SnapResult? dropped;
+
+    // Enforce forward order when both are available
+    if (sp != null && sd != null) {
+      if (sp.progress + _progressEps < sd.progress) {
+        picked = sp;
+        dropped = sd;
+      } else {
+        // If destination is before pickup, choose pickup only; user will set dropoff later.
+        picked = sp;
+        dropped = null;
+        _showToast('Pick a drop-off further along the route.');
+      }
+    } else {
+      picked = sp;
+      dropped = sd;
+    }
 
     setState(() {
       _selectedRoute = r;
       _selectedRoutePoints = pts;
-      _pickup =
-          snappedPickup ??
-          ((_pickup != null && pts.length >= 2)
-              ? _snapToPolyline(_pickup!, pts)
-              : null);
-      _dropoff = snappedDrop;
+      _pickup = picked;
+      _dropoff = dropped;
       _osrmSegment = null;
       _editTarget = 'auto';
     });
@@ -447,22 +502,40 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
   void _onMapTap(TapPosition _, LatLng tap) {
     if (_selectedRoutePoints.isEmpty) return;
 
-    final snapped = _snapToPolyline(tap, _selectedRoutePoints);
+    final snapped = _snapWithProgress(tap, _selectedRoutePoints);
 
     setState(() {
+      // Determine which endpoint we’re editing
       if (_pickup == null) {
         _pickup = snapped;
+        _dropoff = null;
         _editTarget = 'dropoff';
       } else if (_dropoff == null) {
-        _dropoff = snapped;
-        _editTarget = 'auto';
+        // Enforce forward-only: dropoff must be AFTER pickup
+        if (snapped.progress > _pickup!.progress + _progressEps) {
+          _dropoff = snapped;
+          _editTarget = 'auto';
+        } else {
+          _showToast('Drop-off must be after pickup along the route.');
+        }
       } else if (_editTarget == 'pickup') {
-        _pickup = snapped;
-        _editTarget = 'dropoff';
+        // Ensure pickup stays BEFORE dropoff
+        if (snapped.progress + _progressEps < _dropoff!.progress) {
+          _pickup = snapped;
+          _editTarget = 'dropoff';
+        } else {
+          _showToast('Pickup must be before the drop-off.');
+        }
       } else if (_editTarget == 'dropoff') {
-        _dropoff = snapped;
-        _editTarget = 'pickup';
+        // Ensure dropoff stays AFTER pickup
+        if (snapped.progress > _pickup!.progress + _progressEps) {
+          _dropoff = snapped;
+          _editTarget = 'pickup';
+        } else {
+          _showToast('Drop-off must be after the pickup.');
+        }
       } else {
+        // auto: reset with new pickup, force user to pick a later dropoff
         _pickup = snapped;
         _dropoff = null;
         _editTarget = 'dropoff';
@@ -475,15 +548,23 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
 
   Future<void> _rebuildOsrmIfReady() async {
     if (_pickup == null || _dropoff == null) return;
+
+    // Final guard for forward-only (should already be enforced)
+    if (!(_pickup!.progress + _progressEps < _dropoff!.progress)) {
+      _showToast('Drop-off must be after pickup along the route.');
+      return;
+    }
+
     try {
-      final seg = await fetchOsrmRoute(start: _pickup!, end: _dropoff!);
+      final seg = await fetchOsrmRoute(
+        start: _pickup!.point,
+        end: _dropoff!.point,
+      );
       if (!mounted) return;
       setState(() => _osrmSegment = seg);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Routing failed: $e')));
+      _showToast('Routing failed: $e');
     }
   }
 
@@ -494,13 +575,17 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
       MaterialPageRoute(
         builder:
             (_) => ConfirmRidePage(
-              pickup: _pickup!,
-              destination: _dropoff!,
+              pickup: _pickup!.point,
+              destination: _dropoff!.point,
               routeId: _selectedRoute!.id,
               driverId: _selectedRoute!.driverId,
             ),
       ),
     );
+  }
+
+  void _showToast(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   /* ===================== Build ===================== */
@@ -547,7 +632,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
             fontSize: 18,
           ),
         ),
-
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(160),
           child: Padding(
@@ -619,7 +703,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
           ),
         ),
       ),
-
       body: Stack(
         children: [
           Positioned.fill(
@@ -757,7 +840,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                   MarkerLayer(
                     markers: [
                       Marker(
-                        point: _pickup!,
+                        point: _pickup!.point,
                         width: 36,
                         height: 36,
                         child: const Icon(
@@ -774,7 +857,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                   MarkerLayer(
                     markers: [
                       Marker(
-                        point: _dropoff!,
+                        point: _dropoff!.point,
                         width: 34,
                         height: 34,
                         child: const Icon(
