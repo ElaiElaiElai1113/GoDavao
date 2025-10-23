@@ -118,10 +118,30 @@ class _ChatPageState extends State<ChatPage>
                 value: widget.matchId,
               ),
               callback: (p) {
-                final msg = ChatMessage.fromMap(Map.from(p.newRecord));
-                setState(() => _messages.add(msg));
-                _scrollToBottom();
-              },
+  final incoming = ChatMessage.fromMap(Map.from(p.newRecord));
+  final me = _supabase.auth.currentUser?.id;
+
+  setState(() {
+    // 1) If a message with this DB id already exists, update/ignore
+    final iById = _messages.indexWhere((m) => m.id == incoming.id);
+    if (iById != -1) {
+      _messages[iById] = incoming;
+      return;
+    }
+    // 2) If we have a local "sending" temp from the same sender & same content, replace it
+    final iTmp = _messages.lastIndexWhere((m) =>
+        m.status == MessageStatus.sending &&
+        m.senderId == incoming.senderId &&
+        m.content == incoming.content);
+
+    if (iTmp != -1) {
+      _messages[iTmp] = incoming; // replace temp with the server row
+    } else {
+      _messages.add(incoming); // brand-new message (from other user or another device)
+    }
+  });
+  _scrollToBottom();
+},
             )
             .subscribe();
   }
@@ -214,23 +234,18 @@ void _listenRideStatus() {
   _textCtrl.clear();
 
   try {
-    final ins = await _supabase
-        .from('ride_messages')
-        .insert({
-          'ride_match_id': widget.matchId,
-          'sender_id': user.id,
-          'content': txt,
-        })
-        .select('id, sender_id, content, created_at')
-        .maybeSingle();
+    await _supabase
+    .from('ride_messages')
+    .insert({
+      'ride_match_id': widget.matchId,
+      'sender_id': user.id,
+      'content': txt,
+    });
 
-    if (ins != null) {
-      setState(() {
-        temp.status = MessageStatus.sent;
-        final idx = _messages.indexWhere((m) => m.id == temp.id);
-        if (idx != -1) _messages[idx] = ChatMessage.fromMap(Map.from(ins));
-      });
-    }
+setState(() {
+  // keep temp for now; realtime insert will replace it
+  temp.status = MessageStatus.sending;
+});
   } on PostgrestException catch (e) {
     if (e.code == '45000' ||
         (e.message ?? '').toLowerCase().contains('cannot send messages')) {
