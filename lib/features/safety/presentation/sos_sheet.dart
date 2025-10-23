@@ -1,8 +1,8 @@
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import '../data/sos_service.dart';
 
 class SosSheet extends StatefulWidget {
   final String? rideId;
@@ -13,57 +13,79 @@ class SosSheet extends StatefulWidget {
 }
 
 class _SosSheetState extends State<SosSheet> {
-  late final SosService _sos;
+  final _sb = Supabase.instance.client;
   bool _sending = false;
-  final _fln = FlutterLocalNotificationsPlugin();
+  List<String> _numbers = [];
 
   @override
   void initState() {
     super.initState();
-    _sos = SosService(Supabase.instance.client);
-    _fln.initialize(
-      const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-        iOS: DarwinInitializationSettings(),
-      ),
-    );
+    _loadTrustedContacts();
   }
 
-  Future<void> _confirmNotif() async {
-    await _fln.show(
-      1001,
-      'SOS Sent',
-      'We notified your trusted contacts with your live location.',
-      const NotificationDetails(
-        android: AndroidNotificationDetails('safety', 'Safety'),
-        iOS: DarwinNotificationDetails(),
-      ),
-    );
+  Future<void> _loadTrustedContacts() async {
+    try {
+      final userId = _sb.auth.currentUser?.id;
+      final rows = await _sb
+          .from('trusted_contacts')
+          .select('phone')
+          .eq('user_id', userId as Object);
+
+      setState(() {
+        _numbers = rows.map<String>((r) => r['phone'].toString()).toList();
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to load contacts: $e')));
+    }
   }
 
   Future<void> _sendSOS() async {
-    setState(() => _sending = true);
-    try {
-      await _sos.triggerSOS(rideId: widget.rideId, notifyContacts: true);
-      await _confirmNotif();
-      if (!mounted) return;
+    if (_numbers.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('SOS sent. Stay safe—we’re on it.')),
+        const SnackBar(content: Text('No trusted contacts found.')),
       );
-      Navigator.of(context).maybePop();
+      return;
+    }
+
+    setState(() => _sending = true);
+
+    try {
+      // 1️⃣ Get location
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      final mapsLink =
+          'https://maps.google.com/?q=${pos.latitude},${pos.longitude}';
+      final message =
+          '🚨 SOS ALERT: I may be in danger. Please check my location: $mapsLink';
+
+      // 2️⃣ Open system SMS composer
+      final separator = Platform.isIOS ? ',' : ';';
+      final recipients = _numbers.join(separator);
+      final uri = Uri(
+        scheme: 'sms',
+        path: recipients,
+        queryParameters: {'body': message},
+      );
+
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Opening SMS composer...')),
+        );
+      } else {
+        throw Exception('Could not open SMS composer');
+      }
     } catch (e) {
-      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Failed to send SOS: $e')));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
-  }
-
-  Future<void> _callHotline(String number) async {
-    final uri = Uri.parse('tel:$number');
-    if (await canLaunchUrl(uri)) await launchUrl(uri);
   }
 
   @override
@@ -89,7 +111,8 @@ class _SosSheetState extends State<SosSheet> {
             ),
             const SizedBox(height: 12),
             const Text(
-              'Share your live location with trusted contacts or call local emergency services.',
+              'Send your live location to trusted contacts via SMS.',
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
             ElevatedButton.icon(
@@ -99,20 +122,9 @@ class _SosSheetState extends State<SosSheet> {
                 backgroundColor: Colors.red,
                 minimumSize: const Size.fromHeight(48),
               ),
-              label: Text(
-                _sending ? 'Sending SOS…' : 'Send SOS to Trusted Contacts',
-              ),
+              label: Text(_sending ? 'Preparing SOS…' : 'Send SOS via SMS'),
             ),
             const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () => _callHotline('911'),
-              icon: const Icon(Icons.call),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size.fromHeight(48),
-              ),
-              label: const Text('Call 911'),
-            ),
-            const SizedBox(height: 8),
             TextButton(
               onPressed:
                   () => Navigator.of(context).pushNamed('/trusted-contacts'),
