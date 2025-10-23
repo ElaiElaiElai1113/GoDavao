@@ -39,7 +39,7 @@ class MatchCard {
   final String matchId;
   final String rideRequestId;
   final String? driverRouteId;
-  final String status; // pending | accepted | en_route | declined | completed
+  final String status;
   final DateTime createdAt;
 
   final String passengerName;
@@ -296,10 +296,10 @@ class _DriverRidesPageState extends State<DriverRidesPage>
 
     try {
       final sel = '''
-        id, ride_request_id, status, created_at, driver_id, driver_route_id,
+        id, ride_request_id, status, created_at, driver_id, driver_route_id, seats_allocated,
         ride_requests (
           id, pickup_lat, pickup_lng, destination_lat, destination_lng,
-          passenger_id, fare, seats, users ( id, name )
+          passenger_id, fare, requested_seats, users ( id, name )
         )
       ''';
 
@@ -340,11 +340,13 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         }
         passengerId ??= req?['passenger_id']?.toString();
 
+        final seatsAllocated = (m['seats_allocated'] as num?)?.toInt();
         // seats requested
-        final pax =
+        final reqSeats =
             (req?['seats'] as num?)?.toInt() ??
-            (req?['passenger_count'] as num?)?.toInt() ??
-            1;
+            (req?['requested_seats'] as num?)?.toInt();
+
+        final pax = (seatsAllocated ?? reqSeats ?? 1);
 
         // reverse geocode best-effort
         String pickupAddr = 'Pickup';
@@ -406,7 +408,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       await _loadRouteCapacities(routeIds.toList());
 
       // Group
-      final updatedGroups = LinkedHashMap<String, RouteGroup>();
+      final updatedGroups = <String, RouteGroup>{};
       for (final card in all) {
         final key = card.driverRouteId ?? 'unassigned';
         updatedGroups.putIfAbsent(
@@ -916,7 +918,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             ? 'Seats: ${g.capacityAvailable} / ${g.capacityTotal}'
             : 'Seats: n/a';
 
-    List<Widget> _listFor(
+    List<Widget> listFor(
       String label,
       List<MatchCard> list, {
       bool selectable = false,
@@ -1256,9 +1258,9 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             ),
             const Divider(height: 12, thickness: 0.5),
             const SizedBox(height: 4),
-            ..._listFor('Pending', pending, selectable: true),
-            ..._listFor('Accepted', accepted, selectable: false),
-            ..._listFor('En route', enRoute, selectable: false),
+            ...listFor('Pending', pending, selectable: true),
+            ...listFor('Accepted', accepted, selectable: false),
+            ...listFor('En route', enRoute, selectable: false),
             const SizedBox(height: 10),
           ],
         ),
@@ -1717,8 +1719,8 @@ class _MapThumb extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bounds = LatLngBounds.fromPoints([pickup, destination]);
-    const _purple = Color(0xFF6A27F7);
-    const _purpleDark = Color(0xFF4B18C9);
+    const purple = Color(0xFF6A27F7);
+    const purpleDark = Color(0xFF4B18C9);
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: DecoratedBox(
@@ -1757,7 +1759,7 @@ class _MapThumb extends StatelessWidget {
                       Polyline(
                         points: [pickup, destination],
                         strokeWidth: 3,
-                        color: _purpleDark.withOpacity(.9),
+                        color: purpleDark.withOpacity(.9),
                       ),
                     ],
                   ),
@@ -1769,7 +1771,7 @@ class _MapThumb extends StatelessWidget {
                         height: 24,
                         child: const Icon(
                           Icons.location_pin,
-                          color: _purple,
+                          color: purple,
                           size: 24,
                         ),
                       ),
