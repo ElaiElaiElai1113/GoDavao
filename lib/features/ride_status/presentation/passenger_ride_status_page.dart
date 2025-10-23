@@ -36,6 +36,10 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   // Core
   final _sb = Supabase.instance.client;
   final _map = MapController();
+  bool get _isChatLocked {
+  final s = _status.toLowerCase();
+  return s == 'cancelled' || s == 'canceled' || s == 'declined' || s == 'completed';
+}
 
   // Data
   Map<String, dynamic>? _ride; // passenger_ride_by_id composite
@@ -602,18 +606,28 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
           ),
           if (driverId != null) VerifiedBadge(userId: driverId, size: 22),
           if (driverId != null && _matchId != null)
-            IconButton(
-              tooltip: 'Chat with driver',
-              icon: const Icon(Icons.message_outlined),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ChatPage(matchId: _matchId!),
-                  ),
-                );
-              },
-            ),
+  IconButton(
+    tooltip: 'Chat with driver',
+    icon: const Icon(Icons.message_outlined),
+    onPressed: _isChatLocked
+        ? () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Chat unavailable — this ride was cancelled, declined, or completed.',
+                ),
+              ),
+            );
+          }
+        : () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ChatPage(matchId: _matchId!),
+              ),
+            );
+          },
+  ),
         ],
       ),
       body:
@@ -660,6 +674,22 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                           ],
                         ),
                       ),
+                      if (_isChatLocked)
+  Container(
+    padding: const EdgeInsets.all(10),
+    margin: const EdgeInsets.only(top: 6),
+    decoration: BoxDecoration(
+      color: Colors.amber.shade50,
+      border: Border.all(color: Colors.amber.shade200),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: const Text(
+      'Chat is disabled for this ride because it was cancelled, declined, or completed.',
+      textAlign: TextAlign.center,
+      style: TextStyle(fontSize: 12),
+    ),
+  ),
+
                     if (isCanceled) const SizedBox(height: 12),
 
                     // Chips (status, pay, riders/seats)

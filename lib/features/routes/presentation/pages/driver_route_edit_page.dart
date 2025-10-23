@@ -133,6 +133,96 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
     return leave == true;
   }
 
+  // A small banner shown when this route has accepted/ongoing rides
+Widget _blockedBanner() {
+  return Container(
+    margin: const EdgeInsets.only(bottom: 10),
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: const Color(0xFFFFF8E1), // soft amber
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: const Color(0xFFFFECB3)),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: const [
+        Icon(Icons.lock_clock, color: Color(0xFFF57C00)),
+        SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            'This route has an accepted or ongoing ride. '
+            'You can’t deactivate it until the ride is completed or cancelled.',
+            style: TextStyle(color: Color(0xFF5D4037)),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+// Friendly bottom sheet to explain the block
+void _showBlockedSheet() {
+  showModalBottomSheet(
+    context: context,
+    showDragHandle: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (_) => Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.lock, size: 36),
+          const SizedBox(height: 10),
+          const Text(
+            'Route is in use',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'You can’t deactivate this route because at least one passenger '
+            'has already accepted the ride. Finish or cancel the active ride first.',
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Got it'),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+// Turn Postgres errors into friendly copy
+String _niceError(Object e) {
+  if (e is PostgrestException) {
+    final msg = (e.message ?? '').toString().toLowerCase();
+    final details = (e.details ?? '').toString().toLowerCase();
+
+    // Trigger error from our DB guard
+    if (e.code == '45000' || msg.contains('cannot deactivate route')) {
+      return 'You can’t deactivate this route while there’s an accepted or ongoing ride.';
+    }
+
+    // Capacity constraint from your table (chk_capacity_bounds)
+    if (details.contains('chk_capacity_bounds') || msg.contains('chk_capacity_bounds')) {
+      return 'You can’t deactivate this route while there’s an accepted or ongoing ride.';
+    }
+
+    // Other PG messages
+    return e.message ?? 'Save failed.';
+  }
+  return 'Save failed. Please try again.';
+}
+
+
   Future<void> _save() async {
   if (!_form.currentState!.validate()) return;
 
@@ -154,8 +244,8 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
           'capacity_available': fixedAvail,
         })
         .eq('id', widget.routeId)
-        .select() // return row so errors throw here
-        .single();
+        .select()
+        .single(); // surface errors here
 
     if (!mounted) return;
     _dirty = false;
@@ -164,24 +254,22 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
     );
     Navigator.pop(context, true);
   } on PostgrestException catch (e) {
-    // Friendly message for the trigger block
-    final msg = (e.code == '45000' ||
-            (e.message != null &&
-                e.message!.toLowerCase().contains('cannot deactivate route')))
-        ? 'Cannot deactivate route while you have an accepted/active ride.'
-        : (e.message ?? 'Save failed.');
-    if (!mounted) return;
-    // If we tried to turn it off but are blocked, revert the toggle in UI
-    if (_isActive == false && (e.code == '45000')) {
-      setState(() {
-        _isActive = true;
-      });
+    final msg = _niceError(e);
+
+    // If DB blocked deactivation, show nicer UI + revert toggle
+    if (e.code == '45000' ||
+        (e.message ?? '').toLowerCase().contains('cannot deactivate route')) {
+      if (!mounted) return;
+      setState(() => _isActive = true);
+      _showBlockedSheet(); // pretty explanation
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     }
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   } catch (e) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Save failed. Please try again.')),
+      SnackBar(content: Text(_niceError(e))),
     );
   } finally {
     if (mounted) setState(() => _saving = false);
@@ -253,24 +341,30 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
                             ),
                             maxLines: 3,
                           ),
-                          SwitchListTile.adaptive(
-  contentPadding: EdgeInsets.zero,
-  title: const Text('Active'),
-  subtitle: _hasActiveRide
-      ? const Text(
-          'You have an accepted or ongoing ride. Complete or cancel it before deactivating this route.',
-          style: TextStyle(fontSize: 12),
-        )
-      : null,
-  value: _isActive,
-  onChanged: (_hasActiveRide && _isActive)
-      ? null // disable turning OFF when blocked
-      : (v) {
-          setState(() {
-            _isActive = v;
-            _dirty = true;
-          });
-        },
+                          // Wrap to allow onTap when switch is disabled
+GestureDetector(
+  onTap: (_hasActiveRide && _isActive) ? _showBlockedSheet : null,
+  child: AbsorbPointer(
+    absorbing: (_hasActiveRide && _isActive), // so the disabled switch won't toggle
+    child: SwitchListTile.adaptive(
+      contentPadding: EdgeInsets.zero,
+      title: const Text('Active'),
+      subtitle: _hasActiveRide
+          ? const Text(
+              'This route has an accepted or ongoing ride. '
+              'You can’t deactivate it until the ride is completed or cancelled.',
+              style: TextStyle(fontSize: 12),
+            )
+          : null,
+      value: _isActive,
+      onChanged: (v) {
+        setState(() {
+          _isActive = v;
+          _dirty = true;
+        });
+      },
+    ),
+  ),
 ),
                         ]),
                         const SizedBox(height: 10),
