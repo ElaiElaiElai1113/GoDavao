@@ -401,14 +401,28 @@ class _VerificationCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: Text(
-                    name,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (row['phone'] != null && row['phone'] != '—')
+                        Text(
+                          row['phone'],
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Colors.black54,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
+
                 _Tag(role.toUpperCase(), roleColor(role)),
                 if (color != null) ...[
                   const SizedBox(width: 6),
