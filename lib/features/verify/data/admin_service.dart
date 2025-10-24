@@ -13,11 +13,43 @@ class AdminVerificationService {
 
   // -------------------- Streams --------------------
 
-  Stream<List<Map<String, dynamic>>> watchPending() {
-    return client
+  Stream<List<Map<String, dynamic>>> watchPending() async* {
+    final stream = client
         .from('verification_requests')
-        .stream(primaryKey: ['id']) // older SDK: no `columns` param
+        .stream(primaryKey: ['id'])
         .eq('status', VerificationStatus.pending);
+
+    final nameCache = <String, String>{};
+
+    await for (final rows in stream) {
+      final result = <Map<String, dynamic>>[];
+
+      for (final row in rows) {
+        final data = Map<String, dynamic>.from(row);
+        final userId = data['user_id']?.toString();
+
+        if (userId != null) {
+          // Get from cache or fetch from users table
+          nameCache[userId] ??= (await _fetchName(userId))!;
+          data['name'] = nameCache[userId];
+        }
+
+        result.add(data);
+      }
+
+      yield result;
+    }
+  }
+
+  // Helper function
+  Future<String?> _fetchName(String userId) async {
+    final user =
+        await client
+            .from('users')
+            .select('name')
+            .eq('id', userId)
+            .maybeSingle();
+    return user?['name'] as String?;
   }
 
   Stream<List<Map<String, dynamic>>> watchApproved() {
