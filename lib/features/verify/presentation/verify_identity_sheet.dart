@@ -160,7 +160,6 @@ class _VerifyIdentitySheetState extends State<VerifyIdentitySheet> {
       return 'Please add the back photo of your ${_selected!.label}.';
     }
     if (_selfie == null) return 'Please add a selfie while holding your ID.';
-    // Driver-specific: only require separate license if chosen ID is NOT Driver’s License
     final isDriver = widget.role == 'driver';
     if (isDriver && !(_selected?.isDriversLicense ?? false)) {
       if (_driverLicense == null) return 'Please add your Driver’s License.';
@@ -179,23 +178,27 @@ class _VerifyIdentitySheetState extends State<VerifyIdentitySheet> {
     try {
       await _service.submitOrUpdate(
         role: widget.role,
-        idType: _selected!.label, // <-- tell backend which ID type was chosen
+        idType: _selected!.label,
         idFront: _idFront,
         idBack: _selected!.requiresBack ? _idBack : null,
         selfie: _selfie,
-        // If user selected Driver’s License as gov’t ID, no need to upload license twice.
+
         driverLicense:
             widget.role == 'driver' && !(_selected?.isDriversLicense ?? false)
                 ? _driverLicense
                 : null,
-        // orcr: null, // add here if you want to keep OR/CR later
       );
 
       if (!mounted) return;
       Navigator.pop(context, true);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Submitted for review')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Your verification documents have been submitted.\nPlease wait 1–3 business days for admin review before you can continue using all features.',
+          ),
+          duration: Duration(seconds: 5),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
