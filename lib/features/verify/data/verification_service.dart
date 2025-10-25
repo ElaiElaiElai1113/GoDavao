@@ -69,17 +69,25 @@ class VerificationService {
   /// - Uploads any provided files (id/selfie/license/orcr)
   /// - Sets users.verification_status = 'pending'
   /// - Upserts into verification_requests (one row per user via onConflict: 'user_id')
+  /// Creates or updates the user's verification request.
+  /// - Uploads any provided files (id/selfie/license/orcr)
+  /// - Sets users.verification_status = 'pending'
+  /// - Upserts into verification_requests (one row per user via onConflict: 'user_id')
   Future<void> submitOrUpdate({
     required String role, // 'driver' | 'passenger'
+    required String idType, // <-- NEW: e.g. "Driver’s License", "PhilSys"
     File? idFront,
     File? idBack,
     File? selfie,
     File? driverLicense,
     File? orcr,
   }) async {
-    // 1) Upload files (only when present)
-    final idFrontKey = await _uploadFile('id_front.jpg', idFront);
-    final idBackKey = await _uploadFile('id_back.jpg', idBack);
+    // Optional: make filenames nicer by including an idType slug.
+    final typeSlug = _slug(idType); // e.g., "drivers-license", "philsys"
+
+    // 1) Upload files only when present (avoid clobbering existing keys)
+    final idFrontKey = await _uploadFile('id_${typeSlug}_front.jpg', idFront);
+    final idBackKey = await _uploadFile('id_${typeSlug}_back.jpg', idBack);
     final selfieKey = await _uploadFile('selfie.jpg', selfie);
     final licenseKey =
         role == 'driver' ? await _uploadFile('license.jpg', driverLicense) : '';
@@ -95,18 +103,50 @@ class VerificationService {
         })
         .eq('id', _userId);
 
-    // 3) Upsert verification request row
-    await _sb.from('verification_requests').upsert({
+    // 3) Fetch existing request so we can preserve file keys that weren’t re-uploaded
+    final existing =
+        await _sb
+            .from('verification_requests')
+            .select(
+              'id, id_front_key, id_back_key, selfie_key, driver_license_key, orcr_key',
+            )
+            .eq('user_id', _userId)
+            .maybeSingle();
+
+    String keepOr(String newKey, String? oldKey) =>
+        (newKey.isNotEmpty) ? newKey : (oldKey ?? '');
+
+    // 4) Upsert verification request row
+    final payload = {
       'user_id': _userId,
       'role': role,
       'status': 'pending',
-      'id_front_key': idFrontKey.isEmpty ? null : idFrontKey,
-      'id_back_key': idBackKey.isEmpty ? null : idBackKey,
-      'selfie_key': selfieKey.isEmpty ? null : selfieKey,
-      'driver_license_key': licenseKey.isEmpty ? null : licenseKey,
-      'orcr_key': orcrKey.isEmpty ? null : orcrKey,
+      'id_type': idType, // <-- store human-readable choice for admin filters
+      'id_front_key': keepOr(idFrontKey, existing?['id_front_key']),
+      'id_back_key': keepOr(idBackKey, existing?['id_back_key']),
+      'selfie_key': keepOr(selfieKey, existing?['selfie_key']),
+      // Only keep/require license for drivers (UI already hides if ID type is Driver’s License)
+      'driver_license_key':
+          role == 'driver'
+              ? keepOr(licenseKey, existing?['driver_license_key'])
+              : null,
+      'orcr_key':
+          role == 'driver' ? keepOr(orcrKey, existing?['orcr_key']) : null,
       'created_at': DateTime.now().toIso8601String(),
-    }, onConflict: 'user_id');
+    };
+
+    await _sb
+        .from('verification_requests')
+        .upsert(payload, onConflict: 'user_id');
+  }
+
+  // Helper: quick slug for filenames
+  String _slug(String s) {
+    return s
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'-+'), '-')
+        .replaceAll(RegExp(r'^-|-$'), '');
   }
 
   // ---------- Status read APIs (persist across sessions) ----------

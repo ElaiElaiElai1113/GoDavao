@@ -148,7 +148,11 @@ class _AuthPageState extends State<AuthPage> {
 
   Future<bool> _isAdmin(String userId) async {
     final row =
-        await _sb.from('users').select('is_admin').eq('id', userId).maybeSingle();
+        await _sb
+            .from('users')
+            .select('is_admin')
+            .eq('id', userId)
+            .maybeSingle();
     return (row?['is_admin'] as bool?) ?? false;
   }
 

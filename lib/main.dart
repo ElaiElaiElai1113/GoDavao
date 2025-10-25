@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:godavao/features/onboarding/presentation/privacy_disclaimer_page.dart';
 import 'package:godavao/features/profile/presentation/profile_page.dart';
 import 'package:godavao/features/safety/presentation/trusted_contacts_page.dart';
 import 'package:godavao/features/vehicles/presentation/vehicles_page.dart';
@@ -14,10 +15,10 @@ import 'features/ride_status/presentation/driver_rides_page.dart';
 import 'features/ride_status/presentation/passenger_myrides_page.dart';
 import 'features/routes/presentation/pages/driver_route_page.dart';
 import 'features/verify/presentation/admin_panel_page.dart';
-
+import 'package:shared_preferences/shared_preferences.dart';
 import 'features/chat/data/chat_subscription_service.dart';
 import 'features/chat/data/chat_messages_service.dart';
-import 'package:flutter/services.dart'; // <-- add this import
+import 'package:flutter/services.dart';
 
 // Global local notifications plugin
 final FlutterLocalNotificationsPlugin localNotify =
@@ -38,6 +39,10 @@ Future<void> main() async {
     url: dotenv.env['SUPABASE_URL']!,
     anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
   );
+
+  // Disclaimer
+  final prefs = await SharedPreferences.getInstance();
+  final showDisclaimer = !(prefs.getBool('accepted_terms') ?? false);
 
   // init local notifications
   const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -63,13 +68,14 @@ Future<void> main() async {
         ChangeNotifierProvider.value(value: subService),
         ChangeNotifierProvider.value(value: msgService),
       ],
-      child: const GoDavaoApp(),
+      child: GoDavaoApp(showDisclaimer: showDisclaimer),
     ),
   );
 }
 
 class GoDavaoApp extends StatelessWidget {
-  const GoDavaoApp({super.key});
+  final bool showDisclaimer;
+  const GoDavaoApp({super.key, required this.showDisclaimer});
 
   @override
   Widget build(BuildContext context) {
@@ -82,11 +88,12 @@ class GoDavaoApp extends StatelessWidget {
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.purple),
       ),
-      initialRoute: '/',
+      initialRoute: showDisclaimer ? '/disclaimer' : '/',
       routes: {
         '/dashboard': (_) => const DashboardPage(),
         '/driver_rides': (_) => const DriverRidesPage(),
         '/passenger_rides': (_) => const PassengerMyRidesPage(),
+        '/disclaimer': (_) => const PrivacyDisclaimerPage(),
         '/passenger_map': (_) => const PassengerMapPage(),
         '/driver_route': (_) => const DriverRoutePage(),
         '/trusted-contacts': (_) => const TrustedContactsPage(),
