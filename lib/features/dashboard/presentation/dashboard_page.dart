@@ -1,4 +1,3 @@
-// lib/features/dashboard/presentation/dashboard_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -17,6 +16,7 @@ import 'package:godavao/features/ride_status/presentation/driver_rides_page.dart
 import 'package:godavao/features/vehicles/presentation/vehicles_page.dart';
 import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
 import 'package:godavao/features/verify/data/verification_service.dart';
+import 'package:godavao/features/verify/presentation/pending_banner.dart'; // ✅ NEW
 
 import 'package:godavao/features/safety/presentation/trusted_contacts_page.dart';
 
@@ -48,10 +48,11 @@ class _DashboardPageState extends State<DashboardPage> {
   // ✅ Safety: trusted contacts count
   int? _trustedCount;
 
-  // Verification realtime
+  // ✅ Verification realtime + submitted timestamp (for banner)
   final _verifSvc = VerificationService(Supabase.instance.client);
   VerificationStatus _verifStatus = VerificationStatus.unknown;
   StreamSubscription<VerificationStatus>? _verifSub;
+  DateTime? _verifSubmittedAt; // ✅ NEW: last submission time
 
   // Theme
   static const _bg = Color(0xFFF7F7FB);
@@ -128,6 +129,29 @@ class _DashboardPageState extends State<DashboardPage> {
 
         _loading = false;
       });
+
+      // ✅ Fetch the latest verification submission time for banner context
+      try {
+        final req =
+            await _sb
+                .from('verification_requests')
+                .select('created_at')
+                .eq('user_id', u.id)
+                .order('created_at', ascending: false)
+                .limit(1)
+                .maybeSingle();
+
+        if (mounted) {
+          setState(() {
+            _verifSubmittedAt =
+                (req?['created_at'] != null)
+                    ? DateTime.tryParse(req!['created_at'].toString())
+                    : null;
+          });
+        }
+      } catch (_) {
+        // non-fatal
+      }
 
       // realtime watcher
       _verifSub?.cancel();
@@ -281,8 +305,7 @@ class _DashboardPageState extends State<DashboardPage> {
         CoachStep(
           key: _qaTrustedKey,
           title: 'Safety: Trusted Contacts',
-          description:
-              'Set up a trusted contact to boost your safety while on trips.',
+          description: 'Set up a trusted contact to boost your safety.',
         ),
       ]);
     } else {
@@ -378,8 +401,28 @@ class _DashboardPageState extends State<DashboardPage> {
                         ),
                         const SizedBox(height: 16),
 
-                        // Verification Banner (shows unless verified)
-                        if (!isVerified)
+                        // ✅ Verification banners
+                        if (_verifStatus == VerificationStatus.pending)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            child: PendingVerificationBanner(
+                              role: role,
+                              submittedAt: _verifSubmittedAt,
+                              onReviewTap: () {
+                                showModalBottomSheet(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  useSafeArea: true,
+                                  builder:
+                                      (_) => VerifyIdentitySheet(role: role),
+                                );
+                              },
+                            ),
+                          )
+                        else if (!isVerified)
                           Padding(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 16,

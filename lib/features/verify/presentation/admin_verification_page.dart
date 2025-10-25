@@ -1,3 +1,4 @@
+// lib/features/verify/presentation/admin_verification_page.dart
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -50,7 +51,7 @@ class _AdminVerificationPageState extends State<AdminVerificationPage>
       final res = await Supabase.instance.client
           .from('users')
           .select(
-            'id, name, role, verified_role, phone, verification_status, updated_at',
+            'id, name, role, verified_role, phone, verification_status, updated_at, verification_notes, verification_reviewed_at',
           )
           .eq('verification_status', status)
           .order('updated_at', ascending: false);
@@ -131,6 +132,45 @@ class _AdminVerificationPageState extends State<AdminVerificationPage>
     } finally {
       setState(() => _busyIds.remove(id));
     }
+  }
+
+  Future<void> _openSubmission(Map<String, dynamic> row) async {
+    final userId = row['id'].toString();
+
+    // Small loader while fetching URLs
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    List<Map<String, dynamic>> docs = const [];
+    try {
+      // Requires: AdminVerificationService.fetchSubmissionDocsForUser
+      docs = await admin.fetchSubmissionDocsForUser(userId);
+    } catch (_) {
+      // ignore or toast
+    } finally {
+      if (mounted) Navigator.pop(context);
+    }
+
+    if (!mounted) return;
+    final isBusy = _busyIds.contains(userId);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder:
+          (_) => _VerificationSubmissionSheet(
+            userRow: row,
+            docs: docs,
+            busy: isBusy,
+            onApprove: () => _approve(row),
+            onReject: () => _reject(row),
+          ),
+    );
   }
 
   void _toast(String msg) =>
@@ -226,6 +266,7 @@ class _AdminVerificationPageState extends State<AdminVerificationPage>
                 label: 'Pending',
                 onApprove: _approve,
                 onReject: _reject,
+                onViewSubmission: _openSubmission, // NEW
                 roleColor: _roleColor,
                 format: _fmt,
                 displayName: (r) => r['name'] ?? 'Unknown',
@@ -240,6 +281,7 @@ class _AdminVerificationPageState extends State<AdminVerificationPage>
                 format: _fmt,
                 roleColor: _roleColor,
                 displayName: (r) => r['name'] ?? 'Unknown',
+                onViewSubmission: _openSubmission, // NEW
               ),
               _VerificationTab.static(
                 loading: _loadingRejected,
@@ -250,6 +292,7 @@ class _AdminVerificationPageState extends State<AdminVerificationPage>
                 format: _fmt,
                 roleColor: _roleColor,
                 displayName: (r) => r['name'] ?? 'Unknown',
+                onViewSubmission: _openSubmission, // NEW
               ),
             ],
           ),
@@ -276,6 +319,7 @@ class _VerificationTab extends StatelessWidget {
     required this.displayName,
     this.busyIds = const {},
     this.filter,
+    this.onViewSubmission,
   });
 
   final Stream<List<Map<String, dynamic>>>? stream;
@@ -284,7 +328,9 @@ class _VerificationTab extends StatelessWidget {
   final String label;
   final Color? color;
   final Future<void> Function()? onRefresh;
-  final void Function(Map<String, dynamic>)? onApprove, onReject;
+  final void Function(Map<String, dynamic>)? onApprove,
+      onReject,
+      onViewSubmission;
   final Color Function(String) roleColor;
   final String Function(dynamic) format;
   final String Function(Map<String, dynamic>) displayName;
@@ -300,6 +346,7 @@ class _VerificationTab extends StatelessWidget {
     required String Function(dynamic) format,
     required Color Function(String) roleColor,
     required String Function(Map<String, dynamic>) displayName,
+    void Function(Map<String, dynamic>)? onViewSubmission,
   }) => _VerificationTab(
     data: data,
     loading: loading,
@@ -309,6 +356,7 @@ class _VerificationTab extends StatelessWidget {
     roleColor: roleColor,
     format: format,
     displayName: displayName,
+    onViewSubmission: onViewSubmission,
   );
 
   @override
@@ -318,7 +366,7 @@ class _VerificationTab extends StatelessWidget {
         stream: stream,
         builder: (context, snap) {
           if (snap.hasError) {
-            return _StateMessage(
+            return const _StateMessage(
               icon: Icons.error,
               text: 'Error loading data.',
             );
@@ -357,6 +405,8 @@ class _VerificationTab extends StatelessWidget {
         busy: busyIds.contains(r['id'].toString()),
         onApprove: onApprove != null ? () => onApprove!(r) : null,
         onReject: onReject != null ? () => onReject!(r) : null,
+        onViewSubmission:
+            onViewSubmission != null ? () => onViewSubmission!(r) : null,
       );
     },
   );
@@ -372,6 +422,7 @@ class _VerificationCard extends StatelessWidget {
     this.busy = false,
     this.onApprove,
     this.onReject,
+    this.onViewSubmission,
   });
   final Map<String, dynamic> row;
   final Color Function(String) roleColor;
@@ -379,7 +430,7 @@ class _VerificationCard extends StatelessWidget {
   final String Function(Map<String, dynamic>) displayName;
   final Color? color;
   final bool busy;
-  final VoidCallback? onApprove, onReject;
+  final VoidCallback? onApprove, onReject, onViewSubmission;
 
   @override
   Widget build(BuildContext context) {
@@ -422,7 +473,6 @@ class _VerificationCard extends StatelessWidget {
                     ],
                   ),
                 ),
-
                 _Tag(role.toUpperCase(), roleColor(role)),
                 if (color != null) ...[
                   const SizedBox(width: 6),
@@ -443,11 +493,21 @@ class _VerificationCard extends StatelessWidget {
                   style: const TextStyle(fontSize: 12.5, color: Colors.black87),
                 ),
               ),
-            if (onApprove != null || onReject != null)
+            if (onViewSubmission != null ||
+                onApprove != null ||
+                onReject != null)
               Padding(
                 padding: const EdgeInsets.only(top: 12),
-                child: Row(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
+                    if (onViewSubmission != null)
+                      TextButton.icon(
+                        onPressed: onViewSubmission,
+                        icon: const Icon(Icons.visibility_outlined),
+                        label: const Text('View submission'),
+                      ),
                     if (busy)
                       const SizedBox(
                         width: 22,
@@ -455,20 +515,21 @@ class _VerificationCard extends StatelessWidget {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     else ...[
-                      OutlinedButton.icon(
-                        onPressed: onReject,
-                        icon: const Icon(Icons.close, color: Colors.red),
-                        label: const Text('Reject'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.red,
+                      if (onReject != null)
+                        OutlinedButton.icon(
+                          onPressed: onReject,
+                          icon: const Icon(Icons.close, color: Colors.red),
+                          label: const Text('Reject'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton.icon(
-                        onPressed: onApprove,
-                        icon: const Icon(Icons.check_circle_outline),
-                        label: const Text('Approve'),
-                      ),
+                      if (onApprove != null)
+                        FilledButton.icon(
+                          onPressed: onApprove,
+                          icon: const Icon(Icons.check_circle_outline),
+                          label: const Text('Approve'),
+                        ),
                     ],
                   ],
                 ),
@@ -589,4 +650,421 @@ class _StateMessage extends StatelessWidget {
 extension on String {
   String capitalize() =>
       isEmpty ? this : '${this[0].toUpperCase()}${substring(1)}';
+}
+
+/* ------------------ SUBMISSION SHEET + GALLERY (self-contained) ------------------ */
+
+class _VerificationSubmissionSheet extends StatelessWidget {
+  const _VerificationSubmissionSheet({
+    required this.userRow,
+    required this.docs,
+    this.onApprove,
+    this.onReject,
+    this.busy = false,
+  });
+
+  final Map<String, dynamic> userRow;
+  final List<Map<String, dynamic>> docs;
+  final VoidCallback? onApprove;
+  final VoidCallback? onReject;
+  final bool busy;
+
+  static const _purpleDark = Color(0xFF4B18C9);
+
+  bool _isImage(Map d) {
+    final mime = (d['mime'] ?? '').toString().toLowerCase();
+    final url = (d['url'] ?? '').toString().toLowerCase();
+    return mime.startsWith('image/') ||
+        url.endsWith('.jpg') ||
+        url.endsWith('.jpeg') ||
+        url.endsWith('.png') ||
+        url.endsWith('.webp');
+  }
+
+  static String _prettyType(String t) {
+    switch (t) {
+      case 'id_front':
+        return 'ID — Front';
+      case 'id_back':
+        return 'ID — Back';
+      case 'selfie':
+        return 'Selfie with ID';
+      case 'license':
+        return 'Driver’s License';
+      case 'vehicle_orcr':
+        return 'Vehicle OR/CR';
+      default:
+        return t.isEmpty ? 'Document' : t;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final name = (userRow['name'] ?? 'Unknown').toString();
+    final role = (userRow['role'] ?? '—').toString();
+    final status = (userRow['verification_status'] ?? '').toString();
+
+    final imageDocs = docs.where(_isImage).toList();
+    final fileDocs = docs.where((d) => !_isImage(d)).toList();
+
+    return SafeArea(
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.86,
+        minChildSize: 0.6,
+        maxChildSize: 0.96,
+        builder:
+            (_, ctrl) => Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 8),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.black26,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Header w/ actions
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 22,
+                          backgroundColor: const Color(0xFFF2EEFF),
+                          child: Text(
+                            name.isNotEmpty ? name[0].toUpperCase() : '?',
+                            style: const TextStyle(
+                              color: _purpleDark,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Wrap(
+                                spacing: 6,
+                                children: [
+                                  _chip(role.toUpperCase(), Colors.indigo),
+                                  _chip(
+                                    status.isEmpty ? 'pending' : status,
+                                    status == 'approved'
+                                        ? Colors.green
+                                        : status == 'rejected'
+                                        ? Colors.red
+                                        : Colors.orange,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        if (onReject != null || onApprove != null)
+                          Row(
+                            children: [
+                              if (onReject != null)
+                                OutlinedButton.icon(
+                                  onPressed: busy ? null : onReject,
+                                  icon: const Icon(
+                                    Icons.close,
+                                    color: Colors.red,
+                                  ),
+                                  label: const Text('Reject'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.red,
+                                  ),
+                                ),
+                              const SizedBox(width: 8),
+                              if (onApprove != null)
+                                FilledButton.icon(
+                                  onPressed: busy ? null : onApprove,
+                                  icon: const Icon(Icons.check_circle_outline),
+                                  label:
+                                      busy
+                                          ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Colors.white,
+                                            ),
+                                          )
+                                          : const Text('Approve'),
+                                ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+
+                  Expanded(
+                    child: ListView(
+                      controller: ctrl,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      children: [
+                        if (imageDocs.isNotEmpty) ...[
+                          const Text(
+                            'Photos',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          _ImageGrid(
+                            docs: imageDocs,
+                            onOpenViewer: (index) {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder:
+                                      (_) => _ImageGalleryPage(
+                                        images: imageDocs,
+                                        initialIndex: index,
+                                      ),
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+
+                        if (fileDocs.isNotEmpty) ...[
+                          const Text(
+                            'Other Files',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Column(
+                            children:
+                                fileDocs.map((d) {
+                                  final type = (d['type'] ?? '').toString();
+                                  final url = (d['url'] ?? '').toString();
+                                  final mime = (d['mime'] ?? '').toString();
+                                  return Card(
+                                    margin: const EdgeInsets.symmetric(
+                                      vertical: 6,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    child: ListTile(
+                                      leading: const CircleAvatar(
+                                        backgroundColor: Color(0xFFF2EEFF),
+                                        child: Icon(
+                                          Icons.insert_drive_file,
+                                          color: _purpleDark,
+                                        ),
+                                      ),
+                                      title: Text(_prettyType(type)),
+                                      subtitle: Text(
+                                        mime.isEmpty ? url : mime,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      trailing: const Text('Open'),
+                                      onTap: () {
+                                        showDialog(
+                                          context: context,
+                                          builder:
+                                              (_) => AlertDialog(
+                                                title: const Text('Open file'),
+                                                content: SelectableText(url),
+                                                actions: [
+                                                  TextButton(
+                                                    onPressed:
+                                                        () => Navigator.pop(
+                                                          context,
+                                                        ),
+                                                    child: const Text('Close'),
+                                                  ),
+                                                ],
+                                              ),
+                                        );
+                                      },
+                                    ),
+                                  );
+                                }).toList(),
+                          ),
+                        ],
+
+                        if (imageDocs.isEmpty && fileDocs.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: Text(
+                              'No documents found for this submission.',
+                              style: TextStyle(color: Color(0xFF667085)),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+      ),
+    );
+  }
+
+  static Widget _chip(String text, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+    decoration: BoxDecoration(
+      color: color.withOpacity(.12),
+      borderRadius: BorderRadius.circular(99),
+    ),
+    child: Text(
+      text,
+      style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700),
+    ),
+  );
+}
+
+class _ImageGrid extends StatelessWidget {
+  const _ImageGrid({required this.docs, required this.onOpenViewer});
+  final List<Map<String, dynamic>> docs;
+  final void Function(int) onOpenViewer;
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      itemCount: docs.length,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 1,
+      ),
+      itemBuilder: (_, i) {
+        final d = docs[i];
+        final url = (d['url'] ?? '').toString();
+        final type = (d['type'] ?? '').toString();
+        return GestureDetector(
+          onTap: () => onOpenViewer(i),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.network(url, fit: BoxFit.cover),
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 4,
+                    ),
+                    decoration: const BoxDecoration(
+                      color: Color(0xCC000000),
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(8),
+                      ),
+                    ),
+                    child: Text(
+                      _VerificationSubmissionSheet._prettyType(type),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10.5,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ImageGalleryPage extends StatefulWidget {
+  const _ImageGalleryPage({
+    required this.images,
+    this.initialIndex = 0,
+    super.key,
+  });
+  final List<Map<String, dynamic>> images;
+  final int initialIndex;
+
+  @override
+  State<_ImageGalleryPage> createState() => _ImageGalleryPageState();
+}
+
+class _ImageGalleryPageState extends State<_ImageGalleryPage> {
+  late final PageController _pc = PageController(
+    initialPage: widget.initialIndex,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        foregroundColor: Colors.white,
+        backgroundColor: Colors.black,
+        title: const Text('Submission Photos'),
+      ),
+      body: PageView.builder(
+        controller: _pc,
+        itemCount: widget.images.length,
+        itemBuilder: (_, i) {
+          final url = (widget.images[i]['url'] ?? '').toString();
+          final type = (widget.images[i]['type'] ?? '').toString();
+          return Center(
+            child: InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Expanded(child: Image.network(url, fit: BoxFit.contain)),
+                  const SizedBox(height: 8),
+                  Text(
+                    _VerificationSubmissionSheet._prettyType(type),
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
