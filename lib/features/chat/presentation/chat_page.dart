@@ -105,46 +105,88 @@ class _ChatPageState extends State<ChatPage>
 }
 
   void _listenPostgres() {
-    _pgChannel =
-        _supabase
-            .channel('messages:${widget.matchId}')
-            .onPostgresChanges(
-              schema: 'public',
-              table: 'ride_messages',
-              event: PostgresChangeEvent.insert,
-              filter: PostgresChangeFilter(
-                type: PostgresChangeFilterType.eq,
-                column: 'ride_match_id',
-                value: widget.matchId,
-              ),
-              callback: (p) {
+  _pgChannel = _supabase
+      .channel('messages:${widget.matchId}')
+      // INSERT: new messages
+      .onPostgresChanges(
+        schema: 'public',
+        table: 'ride_messages',
+        event: PostgresChangeEvent.insert,
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'ride_match_id',
+          value: widget.matchId,
+        ),
+        callback: (p) async {
   final incoming = ChatMessage.fromMap(Map.from(p.newRecord));
   final me = _supabase.auth.currentUser?.id;
 
   setState(() {
-    // 1) If a message with this DB id already exists, update/ignore
     final iById = _messages.indexWhere((m) => m.id == incoming.id);
     if (iById != -1) {
       _messages[iById] = incoming;
-      return;
-    }
-    // 2) If we have a local "sending" temp from the same sender & same content, replace it
-    final iTmp = _messages.lastIndexWhere((m) =>
-        m.status == MessageStatus.sending &&
-        m.senderId == incoming.senderId &&
-        m.content == incoming.content);
-
-    if (iTmp != -1) {
-      _messages[iTmp] = incoming; // replace temp with the server row
     } else {
-      _messages.add(incoming); // brand-new message (from other user or another device)
+      final iTmp = _messages.lastIndexWhere((m) =>
+          m.status == MessageStatus.sending &&
+          m.senderId == incoming.senderId &&
+          m.content == incoming.content);
+      if (iTmp != -1) {
+        _messages[iTmp] = incoming;
+      } else {
+        _messages.add(incoming);
+      }
     }
   });
   _scrollToBottom();
-},
-            )
-            .subscribe();
+
+  // mark seen when the other party's message arrives and user is signed in
+  if (me != null && incoming.senderId != me) {
+    await _supabase
+        .from('ride_messages')
+        .update({'seen_at': DateTime.now().toIso8601String()})
+        .eq('ride_match_id', widget.matchId)
+        .neq('sender_id', me); // <-- now non-null
   }
+},
+      )
+      // UPDATE: seen_at changes (and any other updates)
+      .onPostgresChanges(
+        schema: 'public',
+        table: 'ride_messages',
+        event: PostgresChangeEvent.update,
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'ride_match_id',
+          value: widget.matchId,
+        ),
+        callback: (p) {
+          final rec = Map<String, dynamic>.from(p.newRecord);
+          final id = rec['id']?.toString();
+          if (id == null) return;
+
+          final seenRaw = rec['seen_at'];
+          final seenAt = seenRaw == null
+              ? null
+              : DateTime.tryParse(seenRaw.toString())?.toLocal();
+
+          final i = _messages.indexWhere((m) => m.id == id);
+          if (i != -1) {
+            setState(() {
+              _messages[i] = ChatMessage(
+                id: _messages[i].id,
+                senderId: _messages[i].senderId,
+                content: _messages[i].content,
+                createdAt: _messages[i].createdAt,
+                status: _messages[i].status, // 'sent' means delivered
+                seenAt: seenAt,              // <-- flip to "seen" when not null
+              );
+            });
+          }
+        },
+      )
+      .subscribe();
+}
+
 
   void _listenBroadcast() {
     _bcChannel =
@@ -423,14 +465,18 @@ setState(() {
                 Padding(
                   padding: const EdgeInsets.only(left: 4),
                   child: Icon(
-                    msg.status == MessageStatus.sent
-                        ? Icons.check
-                        : msg.status == MessageStatus.failed
-                        ? Icons.error_outline
-                        : Icons.access_time,
-                    size: 12,
-                    color: Colors.grey,
-                  ),
+  // Seen? show double-check; otherwise show single-check when delivered (sent),
+  // or clock while sending; error stays the same.
+  msg.status == MessageStatus.failed
+      ? Icons.error_outline
+      : (msg.seenAt != null
+          ? Icons.done_all       // SEEN
+          : (msg.status == MessageStatus.sending
+              ? Icons.access_time // SENDING
+              : Icons.check)),    // DELIVERED (your 'sent' state)
+  size: 12,
+  color: msg.seenAt != null ? const Color(0xFF1B74E4) : Colors.grey,
+),
                 ),
             ],
           ),
