@@ -181,7 +181,7 @@ class _RateUserSheetState extends State<RateUserSheet> {
                 controller: _comment,
                 maxLines: 3,
                 decoration: const InputDecoration(
-                  labelText: 'Optional comment',
+                  labelText: 'Additional comment',
                   hintText: 'Share more details…',
                   border: OutlineInputBorder(),
                 ),
