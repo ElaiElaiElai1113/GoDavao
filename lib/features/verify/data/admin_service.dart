@@ -10,8 +10,6 @@ class AdminVerificationService {
   AdminVerificationService(this.client);
   final SupabaseClient client;
 
-  static const _bucket = 'verifications';
-
   // -------------------- Streams --------------------
 
   Stream<List<Map<String, dynamic>>> watchPending() async* {
@@ -35,6 +33,7 @@ class AdminVerificationService {
             final user = await _fetchUserDetails(userId);
             if (user != null) userCache[userId] = user;
           }
+
           final cached = userCache[userId];
           data['name'] = cached?['name'] ?? 'Unknown';
           data['phone'] = cached?['phone'] ?? '—';
@@ -50,6 +49,23 @@ class AdminVerificationService {
     }
   }
 
+  // Helper to fetch both name and phone
+  Future<Map<String, String>?> _fetchUserDetails(String userId) async {
+    final user =
+        await client
+            .from('users')
+            .select('name, phone')
+            .eq('id', userId)
+            .maybeSingle();
+
+    if (user == null) return null;
+
+    return {
+      'name': (user['name'] ?? '').toString(),
+      'phone': (user['phone'] ?? '').toString(),
+    };
+  }
+
   Stream<List<Map<String, dynamic>>> watchApproved() {
     return client
         .from('verification_requests')
@@ -62,6 +78,25 @@ class AdminVerificationService {
         .from('verification_requests')
         .stream(primaryKey: ['id'])
         .eq('status', VerificationStatus.rejected);
+  }
+
+  // -------------------- Fetch Verification Files --------------------
+
+  Future<Map<String, dynamic>?> fetchVerificationFiles(String requestId) async {
+    final result =
+        await client
+            .from('verification_requests')
+            .select('id_front_key, id_back_key, selfie_key')
+            .eq('id', requestId)
+            .maybeSingle();
+
+    if (result == null) return null;
+
+    return {
+      'id_front_key': result['id_front_key'],
+      'id_back_key': result['id_back_key'],
+      'selfie_key': result['selfie_key'],
+    };
   }
 
   // -------------------- Queries --------------------
@@ -88,103 +123,6 @@ class AdminVerificationService {
         .select('*, users:users(id, role, verification_status)')
         .eq('id', requestId)
         .maybeSingle();
-  }
-
-  // -------------------- Documents --------------------
-
-  /// Signed URL with fallback to public URL (if bucket/object is public or policy allows).
-  Future<String> _signedOrPublicUrl(
-    String bucket,
-    String key, {
-    Duration ttl = const Duration(minutes: 30),
-  }) async {
-    if (key.isEmpty) return '';
-    try {
-      final signed = await client.storage
-          .from(bucket)
-          .createSignedUrl(key, ttl.inSeconds);
-      return signed;
-    } catch (_) {
-      return client.storage.from(bucket).getPublicUrl(key);
-    }
-  }
-
-  String _detectMime(String key) {
-    final lower = key.toLowerCase();
-    if (lower.endsWith('.jpg') ||
-        lower.endsWith('.jpeg') ||
-        lower.endsWith('.png') ||
-        lower.endsWith('.webp')) {
-      return 'image/*';
-    }
-    if (lower.endsWith('.pdf')) return 'application/pdf';
-    return 'application/octet-stream';
-  }
-
-  /// Fetch the latest submission docs for a given user.
-  /// Returns a list of {type, url, key, mime}.
-  Future<List<Map<String, dynamic>>> fetchSubmissionDocsForUser(
-    String userId,
-  ) async {
-    final req =
-        await client
-            .from('verification_requests')
-            .select(
-              'id, id_type, id_front_key, id_back_key, selfie_key, driver_license_key, orcr_key, updated_at',
-            )
-            .eq('user_id', userId)
-            .order('updated_at', ascending: false)
-            .limit(1)
-            .maybeSingle();
-
-    return _mapRequestToDocs(req);
-  }
-
-  /// Optional: fetch by request id (useful on a details screen).
-  Future<List<Map<String, dynamic>>> fetchSubmissionDocsByRequestId(
-    String requestId,
-  ) async {
-    final req =
-        await client
-            .from('verification_requests')
-            .select(
-              'id, id_type, id_front_key, id_back_key, selfie_key, driver_license_key, orcr_key, updated_at',
-            )
-            .eq('id', requestId)
-            .maybeSingle();
-
-    return _mapRequestToDocs(req);
-  }
-
-  List<Map<String, dynamic>> _mapRequestToDocs(Map<String, dynamic>? req) {
-    if (req == null) return const [];
-
-    final mapKeyToType = <String, String>{
-      'id_front_key': 'id_front',
-      'id_back_key': 'id_back',
-      'selfie_key': 'selfie',
-      'driver_license_key': 'license',
-      'orcr_key': 'vehicle_orcr',
-    };
-
-    final out = <Map<String, dynamic>>[];
-
-    for (final entry in mapKeyToType.entries) {
-      final key = (req[entry.key] ?? '').toString();
-      if (key.isEmpty) continue;
-
-      final mime = _detectMime(key);
-
-      out.add({
-        'type': entry.value,
-        'key': key,
-        'mime': mime,
-        // lazily fetch a signed/public URL when needed
-        'urlProvider': () => _signedOrPublicUrl(_bucket, key),
-      });
-    }
-
-    return out;
   }
 
   // -------------------- Actions (via RPC) --------------------
@@ -217,22 +155,4 @@ class AdminVerificationService {
     actionEnum: VerificationStatus.rejected,
     notes: notes,
   );
-
-  // -------------------- Helpers --------------------
-
-  Future<Map<String, String>?> _fetchUserDetails(String userId) async {
-    final user =
-        await client
-            .from('users')
-            .select('name, phone')
-            .eq('id', userId)
-            .maybeSingle();
-
-    if (user == null) return null;
-
-    return {
-      'name': (user['name'] ?? '').toString(),
-      'phone': (user['phone'] ?? '').toString(),
-    };
-  }
 }
