@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:godavao/features/verify/presentation/AdminFeedbackPage.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -203,6 +204,20 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
                 );
               },
             ),
+            _AdminTile(
+              icon: Icons.reviews_outlined,
+              title: 'User Feedback & Ratings',
+              badgeLabel: 'View All',
+              description:
+                  'See feedback and scores given by passengers or drivers across the platform.',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AdminFeedbackPage()),
+                );
+              },
+            ),
+
             const SizedBox(height: 28),
             _SectionHeader(
               title: 'Account',
