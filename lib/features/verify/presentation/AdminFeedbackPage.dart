@@ -1,5 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart';
+
+String formatWhen(dynamic isoString) {
+  if (isoString == null) return '';
+  final dt = DateTime.parse(isoString.toString()).toLocal();
+  return DateFormat('MMM d, y • h:mm a').format(dt);
+}
 
 class AdminFeedbackPage extends StatefulWidget {
   const AdminFeedbackPage({super.key});
@@ -30,8 +37,8 @@ class _AdminFeedbackPageState extends State<AdminFeedbackPage> {
       // Step 1: Fetch all ratings
       final ratingsResponse = await _sb
           .from('ratings')
-          .select('score, comment, ratee_user_id')
-          .order('score', ascending: false);
+          .select('score, comment, ratee_user_id, created_at')
+          .order('created_at', ascending: false);
 
       // Step 2: Enrich each rating with the user name
       List<Map<String, dynamic>> enriched = [];
@@ -91,6 +98,7 @@ class _AdminFeedbackPageState extends State<AdminFeedbackPage> {
                     final userName = rating['user_name'] ?? 'Unknown User';
                     final score = (rating['score'] ?? 0).toInt();
                     final comment = rating['comment'] ?? '';
+                    final when = rating['created_at'];
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
@@ -125,20 +133,29 @@ class _AdminFeedbackPageState extends State<AdminFeedbackPage> {
                                   ),
                                 ),
                               ),
-                              Row(
-                                children: List.generate(
-                                  5,
-                                  (index) => Icon(
-                                    index < score
-                                        ? Icons.star
-                                        : Icons.star_border,
-                                    color: Colors.amber,
-                                    size: 18,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                              Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(
+            5,
+            (index) => Icon(
+              index < score ? Icons.star : Icons.star_border,
+              color: Colors.amber,
+              size: 18,
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          formatWhen(when),                // ⬅️ formatted timestamp
+          style: const TextStyle(fontSize: 11, color: Colors.black54),
+        ),
+      ],
+    ),
+  ],
+),
                           const SizedBox(height: 8),
                           Text(
                             comment.isNotEmpty
