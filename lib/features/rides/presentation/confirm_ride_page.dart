@@ -74,6 +74,8 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   bool _expandFare = true;
   Timer? _seatDebounce;
 
+  final _noteCtrl = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -83,6 +85,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   @override
   void dispose() {
     _seatDebounce?.cancel();
+    _noteCtrl.dispose();
     super.dispose();
   }
 
@@ -297,6 +300,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 'requested_seats': seatsToReserve,
                 'payment_method': 'gcash',
                 'is_pakyaw': _pakyaw,
+                'passenger_note': _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
               }, onConflict: 'client_token')
               .select('id')
               .single();
@@ -536,6 +540,10 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                   ],
                   const SizedBox(height: 10),
                   _pickupDestinationBubbles(),
+
+                  const SizedBox(height: 10),
+                  _buildCard(child: _noteCard()),
+
                   const SizedBox(height: 10),
                   _buildCard(child: _fareCard(fareTotal, perSeat)),
                   if (!_pakyaw) ...[
@@ -813,6 +821,30 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       ),
     );
   }
+
+  Widget _noteCard() {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const _CardTitle(
+        icon: Icons.sticky_note_2_outlined,
+        text: 'Note to driver',
+      ),
+      const SizedBox(height: 6),
+      TextField(
+        controller: _noteCtrl,
+        maxLines: 3,
+        maxLength: 500, // keep in sync with DB cap
+        textInputAction: TextInputAction.newline,
+        decoration: const InputDecoration(
+          hintText: 'Landmarks, gate code, special assistance, etc.',
+          border: OutlineInputBorder(),
+          isDense: true,
+        ),
+      ),
+    ],
+  );
+}
 
   Widget _pickupDestinationBubbles() {
     return Container(

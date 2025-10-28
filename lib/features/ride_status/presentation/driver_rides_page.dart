@@ -74,6 +74,7 @@ class MatchCard {
   final String destinationAddress;
   final double? fare;
   final int pax;
+  final String? passengerNote;
 
   // Map coords
   final double? pickupLat;
@@ -98,6 +99,7 @@ class MatchCard {
     this.pickupLng,
     this.destLat,
     this.destLng,
+    this.passengerNote,
   });
 
   bool get hasCoords =>
@@ -365,12 +367,12 @@ class _DriverRidesPageState extends State<DriverRidesPage>
 
     try {
       final sel = '''
-        id, ride_request_id, status, created_at, driver_id, driver_route_id, seats_allocated, driver_routes ( id, name ),
-        ride_requests (
-          id, pickup_lat, pickup_lng, destination_lat, destination_lng,
-          passenger_id, fare, requested_seats, users ( id, name )
-        )
-      ''';
+  id, ride_request_id, status, created_at, driver_id, driver_route_id, seats_allocated, driver_routes ( id, name ),
+  ride_requests (
+    id, pickup_lat, pickup_lng, destination_lat, destination_lng,
+    passenger_id, fare, requested_seats, passenger_note, users ( id, name )
+  )
+''';
 
       final uid = user.id;
       final hasRoutes = _myRouteIds.isNotEmpty;
@@ -469,6 +471,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           pickupLng: (req?['pickup_lng'] as num?)?.toDouble(),
           destLat: (req?['destination_lat'] as num?)?.toDouble(),
           destLng: (req?['destination_lng'] as num?)?.toDouble(),
+          passengerNote: (req?['passenger_note'] as String?),
         );
         all.add(card);
         if (card.driverRouteId != null) routeIds.add(card.driverRouteId!);
@@ -915,6 +918,25 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                   ),
               ],
             ),
+            if ((m.passengerNote ?? '').trim().isNotEmpty) ...[
+  const SizedBox(height: 8),
+  Container(
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: Colors.amber.shade50,
+      border: Border.all(color: Colors.amber.shade200),
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.sticky_note_2_outlined, size: 18),
+        const SizedBox(width: 8),
+        Expanded(child: Text(m.passengerNote!.trim())),
+      ],
+    ),
+  ),
+],
             const Divider(height: 18),
             Wrap(
               spacing: 8,
@@ -1091,6 +1113,25 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                       ),
                     ],
                   ),
+                  if ((m.passengerNote ?? '').trim().isNotEmpty) ...[
+      const SizedBox(height: 8),
+      Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.amber.shade50,
+          border: Border.all(color: Colors.amber.shade200),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.sticky_note_2_outlined, size: 18),
+            const SizedBox(width: 8),
+            Expanded(child: Text(m.passengerNote!.trim())),
+          ],
+        ),
+      ),
+    ],
                   if (m.hasCoords)
                     Padding(
                       padding: const EdgeInsets.only(top: 6, left: 4, right: 4),

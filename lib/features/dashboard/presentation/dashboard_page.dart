@@ -20,6 +20,9 @@ import 'package:godavao/features/verify/presentation/pending_banner.dart'; // �
 
 import 'package:godavao/features/safety/presentation/trusted_contacts_page.dart';
 
+import 'package:postgrest/postgrest.dart' show PostgrestException, CountOption;
+
+
 // 🟣 Coach marks
 import 'package:godavao/common/tutorial/coach_overlay.dart';
 import 'package:godavao/common/tutorial/tutorial_service.dart';
@@ -88,161 +91,201 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<void> _fetch() async {
+  setState(() {
+    _loading = true;
+    _error = null;
+  });
+
+  final u = _sb.auth.currentUser;
+  if (u == null) {
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const AuthPage()),
+      (_) => false,
+    );
+    return;
+  }
+
+  try {
+    // tolerant profile fetch
+    final res = await _sb
+        .from('users')
+        .select('id, name, role, verification_status')
+        .eq('id', u.id)
+        .maybeSingle();
+
+    if (!mounted) return;
+
+    final row = (res as Map<String, dynamic>?) ??
+        {
+          'id': u.id,
+          'name': (u.userMetadata?['full_name'] ??
+                   u.userMetadata?['name'] ??
+                   u.email ??
+                   'GoDavao user'),
+          'role': 'passenger',
+          'verification_status': 'unknown',
+        };
+
     setState(() {
-      _loading = true;
-      _error = null;
+      _user = row;
+      final vs = (row['verification_status'] ?? '').toString().toLowerCase();
+      _verifStatus = (vs == 'verified' || vs == 'approved')
+          ? VerificationStatus.verified
+          : (vs == 'pending')
+              ? VerificationStatus.pending
+              : (vs == 'rejected')
+                  ? VerificationStatus.rejected
+                  : VerificationStatus.unknown;
+      _loading = false;
     });
 
-    final u = _sb.auth.currentUser;
-    if (u == null) {
-      if (!mounted) return;
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const AuthPage()),
-        (_) => false,
-      );
-      return;
-    }
-
+    // latest verification submission (best effort)
     try {
-      final res =
-          await _sb
-              .from('users')
-              .select('id, name, role, verification_status')
-              .eq('id', u.id)
-              .single();
+      final req = await _sb
+          .from('verification_requests')
+          .select('created_at')
+          .eq('user_id', u.id)
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
 
-      if (!mounted) return;
-      setState(() {
-        _user = res;
-
-        final vs = (res['verification_status'] ?? '').toString().toLowerCase();
-        if (vs == 'verified' || vs == 'approved') {
-          _verifStatus = VerificationStatus.verified;
-        } else if (vs == 'pending') {
-          _verifStatus = VerificationStatus.pending;
-        } else if (vs == 'rejected') {
-          _verifStatus = VerificationStatus.rejected;
-        } else {
-          _verifStatus = VerificationStatus.unknown;
-        }
-
-        _loading = false;
-      });
-
-      // ✅ Fetch the latest verification submission time for banner context
-      try {
-        final req =
-            await _sb
-                .from('verification_requests')
-                .select('created_at')
-                .eq('user_id', u.id)
-                .order('created_at', ascending: false)
-                .limit(1)
-                .maybeSingle();
-
-        if (mounted) {
-          setState(() {
-            _verifSubmittedAt =
-                (req?['created_at'] != null)
-                    ? DateTime.tryParse(req!['created_at'].toString())
-                    : null;
-          });
-        }
-      } catch (_) {
-        // non-fatal
+      if (mounted) {
+        setState(() {
+          _verifSubmittedAt = (req?['created_at'] != null)
+              ? DateTime.tryParse(req!['created_at'].toString())
+              : null;
+        });
       }
+    } catch (_) {/* ignore */}
 
-      // realtime watcher
-      _verifSub?.cancel();
-      _verifSub = _verifSvc.watchStatus(userId: u.id).listen((s) {
-        if (!mounted) return;
-        setState(() => _verifStatus = s);
-      });
-
-      await _loadOverview();
-
-      // After UI is ready, decide if we show tutorial
-      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowTutorial());
-    } catch (_) {
+    // realtime watcher
+    _verifSub?.cancel();
+    _verifSub = _verifSvc.watchStatus(userId: u.id).listen((s) {
       if (!mounted) return;
-      setState(() {
-        _error = 'Failed to load profile.';
-        _loading = false;
-        _loadingOverview = false;
-      });
-    }
+      setState(() => _verifStatus = s);
+    });
+
+  } on PostgrestException catch (e) {
+    if (!mounted) return;
+    setState(() {
+      _error = 'Profile query failed: ${e.message}';
+      _loading = false;
+      _loadingOverview = false;
+    });
+    return;
+  } catch (e) {
+    if (!mounted) return;
+    setState(() {
+      _error = 'Failed to load profile: $e';
+      _loading = false;
+      _loadingOverview = false;
+    });
+    return;
   }
+
+  // Run overview separately so errors here don’t show as “profile failed”
+  await _loadOverview();
+
+  // Decide if we show tutorial (after first frame)
+  WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowTutorial());
+}
+
 
   Future<void> _loadOverview() async {
-    setState(() => _loadingOverview = true);
-    final uid = _sb.auth.currentUser?.id;
-    if (uid == null) {
-      setState(() => _loadingOverview = false);
-      return;
-    }
+  setState(() => _loadingOverview = true);
+
+  final uid = _sb.auth.currentUser?.id;
+  if (uid == null) {
+    if (mounted) setState(() => _loadingOverview = false);
+    return;
+  }
+
+  int _len(dynamic res) => (res is List) ? res.length : 0;
+
+  try {
     final role = (_user?['role'] as String?) ?? 'passenger';
 
-    try {
-      if (role == 'driver') {
-        final activeRoutes = await _sb
-            .from('driver_routes')
-            .select('id')
-            .eq('driver_id', uid)
-            .eq('is_active', true);
+    if (role == 'driver') {
+      final activeRoutes = await _sb
+          .from('driver_routes')
+          .select('id')
+          .eq('driver_id', uid)
+          .eq('is_active', true);
 
-        final pendingMatches = await _sb
-            .from('ride_matches')
-            .select('id')
-            .eq('driver_id', uid)
-            .eq('status', 'pending');
+      final pendingReqs = await _sb
+          .from('ride_matches')
+          .select('id')
+          .eq('driver_id', uid)
+          .eq('status', 'pending');
 
-        if (!mounted) return;
-        setState(() {
-          _driverActiveRoutes = (activeRoutes as List).length;
-          _driverPendingRequests = (pendingMatches as List).length;
-        });
-      } else {
-        final upcoming = await _sb
-            .from('ride_requests')
-            .select('id')
-            .eq('passenger_id', uid)
-            .inFilter('status', ['pending', 'accepted', 'en_route']);
+      if (!mounted) return;
+      setState(() {
+        _driverActiveRoutes = _len(activeRoutes);
+        _driverPendingRequests = _len(pendingReqs);
+      });
+    } else {
+  // PASSENGER
+  const up = ['pending', 'accepted', 'en_route'];
+  const hist = ['completed', 'declined', 'canceled', 'cancelled'];
 
-        final history = await _sb
-            .from('ride_requests')
-            .select('id')
-            .eq('passenger_id', uid)
-            .inFilter('status', [
-              'completed',
-              'declined',
-              'cancelled',
-              'canceled',
-            ]);
+  int upcomingCount = 0;
+  int pastCount = 0;
 
-        if (!mounted) return;
-        setState(() {
-          _passengerUpcoming = (upcoming as List).length;
-          _passengerHistory = (history as List).length;
-        });
+  try {
+    // Pull current-user rides exactly like PassengerMyRidesPage
+    final rows = await _sb
+        .rpc('passenger_rides_for_user')
+        .select('id, effective_status');
+
+    final list = (rows as List).cast<Map>();
+    for (final r in list) {
+      final s = (r['effective_status']?.toString() ?? '').toLowerCase();
+      if (up.contains(s)) {
+        upcomingCount++;
+      } else if (hist.contains(s)) {
+        pastCount++;
       }
-
-      // ✅ Also load trusted contacts count for Safety banner + stat
-      try {
-        final tcs = await _sb
-            .from('trusted_contacts')
-            .select('id')
-            .eq('user_id', uid);
-        if (mounted) setState(() => _trustedCount = (tcs as List).length);
-      } catch (_) {
-        // non-fatal
-      }
-    } catch (_) {
-      // non-fatal
-    } finally {
-      if (mounted) setState(() => _loadingOverview = false);
     }
+  } catch (e) {
+    // OPTIONAL: tiny fallback (still less accurate than RPC)
+    final upRows = await _sb
+        .from('ride_requests')
+        .select('id')
+        .eq('passenger_id', _sb.auth.currentUser!.id)
+        .inFilter('status', up);
+    final hiRows = await _sb
+        .from('ride_requests')
+        .select('id')
+        .eq('passenger_id', _sb.auth.currentUser!.id)
+        .inFilter('status', hist);
+    upcomingCount = (upRows is List) ? upRows.length : 0;
+    pastCount     = (hiRows is List) ? hiRows.length : 0;
   }
+
+  if (!mounted) return;
+  setState(() {
+    _passengerUpcoming = upcomingCount;
+    _passengerHistory  = pastCount;
+  });
+}
+
+    // Trusted contacts (best effort)
+    try {
+      final tcs = await _sb
+          .from('trusted_contacts')
+          .select('id')
+          .eq('user_id', uid);
+      if (mounted) setState(() => _trustedCount = _len(tcs));
+    } catch (_) {/* ignore */}
+
+  } catch (_) {
+    // swallow overview errors; UI will just show "—"
+  } finally {
+    if (mounted) setState(() => _loadingOverview = false);
+  }
+}
 
   // =========================
   // Tutorial logic
