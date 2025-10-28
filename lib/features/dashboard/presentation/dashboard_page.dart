@@ -1,21 +1,28 @@
-// lib/features/dashboard/presentation/dashboard_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:godavao/features/profile/presentation/profile_page.dart';
-import 'package:godavao/features/ride_status/presentation/passenger_myrides_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:godavao/features/routes/presentation/pages/driver_routes_list_tab.dart';
-import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
-import 'package:godavao/features/profile/presentation/app_drawer.dart';
+
 import 'package:godavao/features/auth/presentation/auth_page.dart';
+import 'package:godavao/features/profile/presentation/profile_page.dart';
+import 'package:godavao/features/profile/presentation/app_drawer.dart';
+
 import 'package:godavao/features/maps/passenger_map_page.dart';
+import 'package:godavao/features/ride_status/presentation/passenger_myrides_page.dart';
+
 import 'package:godavao/features/routes/presentation/pages/driver_route_page.dart';
+import 'package:godavao/features/routes/presentation/pages/driver_routes_list_tab.dart';
 import 'package:godavao/features/ride_status/presentation/driver_rides_page.dart';
-import 'package:godavao/features/verify/data/verification_service.dart';
-// Vehicles
+
 import 'package:godavao/features/vehicles/presentation/vehicles_page.dart';
-// ✅ Trusted Contacts (new)
+import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
+import 'package:godavao/features/verify/data/verification_service.dart';
+import 'package:godavao/features/verify/presentation/pending_banner.dart'; // ✅ NEW
+
 import 'package:godavao/features/safety/presentation/trusted_contacts_page.dart';
+
+// 🟣 Coach marks
+import 'package:godavao/common/tutorial/coach_overlay.dart';
+import 'package:godavao/common/tutorial/tutorial_service.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -41,15 +48,32 @@ class _DashboardPageState extends State<DashboardPage> {
   // ✅ Safety: trusted contacts count
   int? _trustedCount;
 
-  // Verification realtime
+  // ✅ Verification realtime + submitted timestamp (for banner)
   final _verifSvc = VerificationService(Supabase.instance.client);
   VerificationStatus _verifStatus = VerificationStatus.unknown;
   StreamSubscription<VerificationStatus>? _verifSub;
+  DateTime? _verifSubmittedAt; // ✅ NEW: last submission time
 
   // Theme
   static const _bg = Color(0xFFF7F7FB);
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
+
+  // =========================
+  // Coach overlay wiring
+  // =========================
+  bool _showTutorial = false;
+  final _verifyBtnKey = GlobalKey();
+  // Passenger keys
+  final _qaBookRideKey = GlobalKey();
+  final _qaMyRidesKey = GlobalKey();
+  final _qaTrustedKey = GlobalKey();
+  // Driver keys
+  final _qaVehiclesKey = GlobalKey();
+  final _qaSetRouteKey = GlobalKey();
+  final _qaRideMatchesKey = GlobalKey();
+
+  List<CoachStep> _tutorialSteps = const [];
 
   @override
   void initState() {
@@ -106,6 +130,29 @@ class _DashboardPageState extends State<DashboardPage> {
         _loading = false;
       });
 
+      // ✅ Fetch the latest verification submission time for banner context
+      try {
+        final req =
+            await _sb
+                .from('verification_requests')
+                .select('created_at')
+                .eq('user_id', u.id)
+                .order('created_at', ascending: false)
+                .limit(1)
+                .maybeSingle();
+
+        if (mounted) {
+          setState(() {
+            _verifSubmittedAt =
+                (req?['created_at'] != null)
+                    ? DateTime.tryParse(req!['created_at'].toString())
+                    : null;
+          });
+        }
+      } catch (_) {
+        // non-fatal
+      }
+
       // realtime watcher
       _verifSub?.cancel();
       _verifSub = _verifSvc.watchStatus(userId: u.id).listen((s) {
@@ -114,6 +161,9 @@ class _DashboardPageState extends State<DashboardPage> {
       });
 
       await _loadOverview();
+
+      // After UI is ready, decide if we show tutorial
+      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowTutorial());
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -194,6 +244,107 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
+  // =========================
+  // Tutorial logic
+  // =========================
+  Future<void> _maybeShowTutorial() async {
+    final seen = await TutorialService.getDashboardSeen();
+    if (seen) return;
+
+    final role = (_user?['role'] as String?) ?? 'passenger';
+    final isDriver = role == 'driver';
+    final isVerified = _verifStatus == VerificationStatus.verified;
+
+    final steps = <CoachStep>[];
+
+    // If not verified, highlight the verify CTA.
+    if (!isVerified) {
+      steps.add(
+        CoachStep(
+          key: _verifyBtnKey,
+          title: 'Verify your account',
+          description:
+              isDriver
+                  ? 'Before you can accept rides as a driver, please complete verification.'
+                  : 'Verification helps keep our community safe. It also improves your match success.',
+        ),
+      );
+    }
+
+    if (!isDriver) {
+      // Passenger flow
+      steps.addAll([
+        CoachStep(
+          key: _qaBookRideKey,
+          title: 'Book a Ride',
+          description:
+              'Tap here to choose pickup and destination, preview your route, and request a ride.',
+        ),
+        CoachStep(
+          key: _qaMyRidesKey,
+          title: 'Track Your Rides',
+          description:
+              'All your pending, ongoing, and past trips live here. You can check status anytime.',
+        ),
+        CoachStep(
+          key: _qaTrustedKey,
+          title: 'Safety: Trusted Contacts',
+          description:
+              'Add a trusted contact so we can notify family or friends during an SOS.',
+        ),
+      ]);
+    } else if (isDriver && !isVerified) {
+      // Driver (unverified)
+      steps.addAll([
+        CoachStep(
+          key: _qaVehiclesKey,
+          title: 'Add Your Vehicle',
+          description:
+              'Upload and verify your car to get ready for accepting ride matches.',
+        ),
+        CoachStep(
+          key: _qaTrustedKey,
+          title: 'Safety: Trusted Contacts',
+          description: 'Set up a trusted contact to boost your safety.',
+        ),
+      ]);
+    } else {
+      // Driver (verified)
+      steps.addAll([
+        CoachStep(
+          key: _qaSetRouteKey,
+          title: 'Set Driver Route',
+          description:
+              'Go online by setting your route. We’ll start matching you with nearby passengers.',
+        ),
+        CoachStep(
+          key: _qaRideMatchesKey,
+          title: 'Ride Matches',
+          description:
+              'See and manage ride requests that match your route. Accept to start the trip.',
+        ),
+        CoachStep(
+          key: _qaTrustedKey,
+          title: 'Safety: Trusted Contacts',
+          description:
+              'Add a trusted contact so someone gets notified in case of emergency.',
+        ),
+      ]);
+    }
+
+    if (steps.isEmpty) return;
+
+    setState(() {
+      _tutorialSteps = steps;
+      _showTutorial = true;
+    });
+  }
+
+  void _finishTutorial() async {
+    await TutorialService.setDashboardSeen();
+    if (mounted) setState(() => _showTutorial = false);
+  }
+
   Future<void> _logout() async {
     await _sb.auth.signOut();
     if (!mounted) return;
@@ -225,319 +376,148 @@ class _DashboardPageState extends State<DashboardPage> {
     return Scaffold(
       backgroundColor: _bg,
       drawer: const AppDrawer(),
-      body: RefreshIndicator(
-        onRefresh: _fetch,
-        child:
-            _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                ? _ErrorState(onRetry: _fetch, message: _error!)
-                : ListView(
-                  padding: EdgeInsets.zero,
-                  children: [
-                    Builder(
-                      builder:
-                          (ctx) => _HeroHeader(
-                            name: name,
-                            role: role,
-                            purple: _purple,
-                            purpleDark: _purpleDark,
-                            onMenu: () => Scaffold.of(ctx).openDrawer(),
-                            onLogout: _logout,
-                          ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Verification Banner (shows unless verified)
-                    if (!isVerified)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.orange.shade100,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.orange.shade300),
-                          ),
-                          padding: const EdgeInsets.all(14),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.warning,
-                                color: Colors.orange,
-                                size: 28,
+      body: Stack(
+        children: [
+          RefreshIndicator(
+            onRefresh: _fetch,
+            child:
+                _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _error != null
+                    ? _ErrorState(onRetry: _fetch, message: _error!)
+                    : ListView(
+                      padding: EdgeInsets.zero,
+                      children: [
+                        Builder(
+                          builder:
+                              (ctx) => _HeroHeader(
+                                name: name,
+                                role: role,
+                                purple: _purple,
+                                purpleDark: _purpleDark,
+                                onMenu: () => Scaffold.of(ctx).openDrawer(),
+                                onLogout: _logout,
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  _statusText(_verifStatus, role),
-                                  maxLines: 3,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
+                        ),
+                        const SizedBox(height: 16),
+
+                        // ✅ Verification banners
+                        if (_verifStatus == VerificationStatus.pending)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            child: PendingVerificationBanner(
+                              role: role,
+                              submittedAt: _verifSubmittedAt,
+                              onReviewTap: () {
+                                showModalBottomSheet(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  useSafeArea: true,
+                                  builder:
+                                      (_) => VerifyIdentitySheet(role: role),
+                                );
+                              },
+                            ),
+                          )
+                        else if (!isVerified)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade100,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.orange.shade300,
+                                ),
+                              ),
+                              padding: const EdgeInsets.all(14),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.warning,
+                                    color: Colors.orange,
+                                    size: 28,
                                   ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              ElevatedButton(
-                                onPressed: () {
-                                  showModalBottomSheet(
-                                    context: context,
-                                    isScrollControlled: true,
-                                    useSafeArea: true,
-                                    builder:
-                                        (_) => VerifyIdentitySheet(role: role),
-                                  );
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.orange,
-                                  foregroundColor: Colors.white,
-                                ),
-                                child: const Text(
-                                  'Verify',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                    // ✅ Safety banner when no trusted contacts yet
-                    if ((_trustedCount ?? 0) == 0)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.indigo.shade50,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.indigo.shade200),
-                          ),
-                          padding: const EdgeInsets.all(14),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.person,
-                                color: Colors.indigo,
-                                size: 28,
-                              ),
-                              const SizedBox(width: 12),
-                              const Expanded(
-                                child: Text(
-                                  'Set up trusted contacts so we can notify family or friends during SOS.',
-                                  style: TextStyle(fontWeight: FontWeight.w600),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              ElevatedButton(
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder:
-                                          (_) => const TrustedContactsPage(),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      _statusText(_verifStatus, role),
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
-                                  ).then((_) => _loadOverview());
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.indigo,
-                                  foregroundColor: Colors.white,
-                                ),
-                                child: const Text('Set up'),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  ElevatedButton(
+                                    key: _verifyBtnKey, // tutorial target
+                                    onPressed: () {
+                                      showModalBottomSheet(
+                                        context: context,
+                                        isScrollControlled: true,
+                                        useSafeArea: true,
+                                        builder:
+                                            (_) =>
+                                                VerifyIdentitySheet(role: role),
+                                      );
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.orange,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    child: const Text(
+                                      'Verify',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
+                            ),
                           ),
-                        ),
-                      ),
 
-                    const SizedBox(height: 16),
-
-                    // QUICK ACTIONS
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        'Quick Actions',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child:
-                          isDriver
-                              ? (
-                              // DRIVER
-                              isVerified
-                                  ? _ActionGrid(
-                                    items: [
-                                      _ActionItem(
-                                        title: 'Vehicles',
-                                        subtitle: 'Add & verify car',
-                                        icon:
-                                            Icons
-                                                .directions_car_filled_outlined,
-                                        onTap:
-                                            () => Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder:
-                                                    (_) => const VehiclesPage(),
-                                              ),
-                                            ),
-                                      ),
-                                      _ActionItem(
-                                        title: 'Set Driver Route',
-                                        subtitle: 'Go online',
-                                        icon: Icons.alt_route,
-                                        onTap:
-                                            () => Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder:
-                                                    (_) =>
-                                                        const DriverRoutePage(),
-                                              ),
-                                            ),
-                                      ),
-                                      _ActionItem(
-                                        title: 'My Routes',
-                                        subtitle: 'View & manage',
-                                        icon: Icons.route_outlined,
-                                        onTap: () {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder:
-                                                  (_) =>
-                                                      const DriverRoutesListTab(),
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                      _ActionItem(
-                                        title: 'Ride Matches',
-                                        subtitle: 'Requests & trips',
-                                        icon: Icons.groups_2,
-                                        onTap:
-                                            () => Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder:
-                                                    (_) =>
-                                                        const DriverRidesPage(),
-                                              ),
-                                            ),
-                                      ),
-                                      // ✅ Trusted Contacts (driver verified)
-                                      _ActionItem(
-                                        title: 'Trusted Contacts',
-                                        subtitle: 'Safety settings',
-                                        icon: Icons.person,
-                                        onTap: () {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder:
-                                                  (_) =>
-                                                      const TrustedContactsPage(),
-                                            ),
-                                          ).then((_) => _loadOverview());
-                                        },
-                                      ),
-                                    ],
-                                  )
-                                  : _ActionGrid(
-                                    items: [
-                                      _ActionItem(
-                                        title: 'Vehicles',
-                                        subtitle: 'Add & verify car',
-                                        icon:
-                                            Icons
-                                                .directions_car_filled_outlined,
-                                        onTap:
-                                            () => Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder:
-                                                    (_) => const VehiclesPage(),
-                                              ),
-                                            ),
-                                      ),
-                                      // ✅ Trusted Contacts (driver unverified)
-                                      _ActionItem(
-                                        title: 'Trusted Contacts',
-                                        subtitle: 'Safety settings',
-                                        icon: Icons.person,
-                                        onTap: () {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder:
-                                                  (_) =>
-                                                      const TrustedContactsPage(),
-                                            ),
-                                          ).then((_) => _loadOverview());
-                                        },
-                                      ),
-                                    ],
-                                  ))
-                              : _ActionGrid(
-                                // PASSENGER
-                                items: [
-                                  _ActionItem(
-                                    title: 'Book a Ride',
-                                    subtitle: 'Pick route & seats',
-                                    icon: Icons.map_outlined,
-                                    onTap:
-                                        () => Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder:
-                                                (_) => const PassengerMapPage(),
-                                          ),
-                                        ),
+                        // ✅ Safety banner when no trusted contacts yet
+                        if ((_trustedCount ?? 0) == 0)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.indigo.shade50,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.indigo.shade200,
+                                ),
+                              ),
+                              padding: const EdgeInsets.all(14),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.person,
+                                    color: Colors.indigo,
+                                    size: 28,
                                   ),
-                                  _ActionItem(
-                                    title: 'My Rides',
-                                    subtitle: 'Upcoming & history',
-                                    icon: Icons.receipt_long,
-                                    onTap:
-                                        () => Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder:
-                                                (_) =>
-                                                    const PassengerMyRidesPage(),
-                                          ),
-                                        ),
+                                  const SizedBox(width: 12),
+                                  const Expanded(
+                                    child: Text(
+                                      'Set up trusted contacts so we can notify family or friends during SOS.',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
                                   ),
-                                  _ActionItem(
-                                    title: 'Settings',
-                                    subtitle: 'Manage your preferences',
-                                    icon: Icons.settings,
-                                    onTap:
-                                        () => Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) => const ProfilePage(),
-                                          ),
-                                        ),
-                                  ),
-                                  // ✅ Trusted Contacts (passenger)
-                                  _ActionItem(
-                                    title: 'Trusted Contacts',
-                                    subtitle: 'Safety settings',
-                                    icon: Icons.person,
-                                    onTap: () {
+                                  const SizedBox(width: 12),
+                                  ElevatedButton(
+                                    onPressed: () {
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
@@ -547,65 +527,286 @@ class _DashboardPageState extends State<DashboardPage> {
                                         ),
                                       ).then((_) => _loadOverview());
                                     },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.indigo,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    child: const Text('Set up'),
                                   ),
                                 ],
                               ),
+                            ),
+                          ),
+
+                        const SizedBox(height: 16),
+
+                        // QUICK ACTIONS
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text(
+                            'Quick Actions',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child:
+                              isDriver
+                                  ? (isVerified
+                                      ? _ActionGrid(
+                                        items: [
+                                          _ActionItem(
+                                            key: _qaVehiclesKey,
+                                            title: 'Vehicles',
+                                            subtitle: 'Add & verify car',
+                                            icon:
+                                                Icons
+                                                    .directions_car_filled_outlined,
+                                            onTap:
+                                                () => Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                    builder:
+                                                        (_) =>
+                                                            const VehiclesPage(),
+                                                  ),
+                                                ),
+                                          ),
+                                          _ActionItem(
+                                            key: _qaSetRouteKey,
+                                            title: 'Set Driver Route',
+                                            subtitle: 'Go online',
+                                            icon: Icons.alt_route,
+                                            onTap:
+                                                () => Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                    builder:
+                                                        (_) =>
+                                                            const DriverRoutePage(),
+                                                  ),
+                                                ),
+                                          ),
+                                          _ActionItem(
+                                            title: 'My Routes',
+                                            subtitle: 'View & manage',
+                                            icon: Icons.route_outlined,
+                                            onTap: () {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder:
+                                                      (_) =>
+                                                          const DriverRoutesListTab(),
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                          _ActionItem(
+                                            key: _qaRideMatchesKey,
+                                            title: 'Ride Matches',
+                                            subtitle: 'Requests & trips',
+                                            icon: Icons.groups_2,
+                                            onTap:
+                                                () => Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                    builder:
+                                                        (_) =>
+                                                            const DriverRidesPage(),
+                                                  ),
+                                                ),
+                                          ),
+                                          _ActionItem(
+                                            key: _qaTrustedKey,
+                                            title: 'Trusted Contacts',
+                                            subtitle: 'Safety settings',
+                                            icon: Icons.person,
+                                            onTap: () {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder:
+                                                      (_) =>
+                                                          const TrustedContactsPage(),
+                                                ),
+                                              ).then((_) => _loadOverview());
+                                            },
+                                          ),
+                                        ],
+                                      )
+                                      : _ActionGrid(
+                                        items: [
+                                          _ActionItem(
+                                            key: _qaVehiclesKey,
+                                            title: 'Vehicles',
+                                            subtitle: 'Add & verify car',
+                                            icon:
+                                                Icons
+                                                    .directions_car_filled_outlined,
+                                            onTap:
+                                                () => Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                    builder:
+                                                        (_) =>
+                                                            const VehiclesPage(),
+                                                  ),
+                                                ),
+                                          ),
+                                          _ActionItem(
+                                            key: _qaTrustedKey,
+                                            title: 'Trusted Contacts',
+                                            subtitle: 'Safety settings',
+                                            icon: Icons.person,
+                                            onTap: () {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder:
+                                                      (_) =>
+                                                          const TrustedContactsPage(),
+                                                ),
+                                              ).then((_) => _loadOverview());
+                                            },
+                                          ),
+                                        ],
+                                      ))
+                                  : _ActionGrid(
+                                    // PASSENGER
+                                    items: [
+                                      _ActionItem(
+                                        key: _qaBookRideKey,
+                                        title: 'Book a Ride',
+                                        subtitle: 'Pick route & seats',
+                                        icon: Icons.map_outlined,
+                                        onTap:
+                                            () => Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder:
+                                                    (_) =>
+                                                        const PassengerMapPage(),
+                                              ),
+                                            ),
+                                      ),
+                                      _ActionItem(
+                                        key: _qaMyRidesKey,
+                                        title: 'My Rides',
+                                        subtitle: 'Upcoming & history',
+                                        icon: Icons.receipt_long,
+                                        onTap:
+                                            () => Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder:
+                                                    (_) =>
+                                                        const PassengerMyRidesPage(),
+                                              ),
+                                            ),
+                                      ),
+                                      _ActionItem(
+                                        title: 'Settings',
+                                        subtitle: 'Manage preferences',
+                                        icon: Icons.settings,
+                                        onTap:
+                                            () => Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder:
+                                                    (_) => const ProfilePage(),
+                                              ),
+                                            ),
+                                      ),
+                                      _ActionItem(
+                                        key: _qaTrustedKey,
+                                        title: 'Trusted Contacts',
+                                        subtitle: 'Safety settings',
+                                        icon: Icons.person,
+                                        onTap: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder:
+                                                  (_) =>
+                                                      const TrustedContactsPage(),
+                                            ),
+                                          ).then((_) => _loadOverview());
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                        ),
+
+                        // OVERVIEW (only if driver is verified OR user is passenger)
+                        if (!isDriver || isVerified) ...[
+                          const SizedBox(height: 16),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Text(
+                              'Overview',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: _StatCard(
+                                    label: overviewLeftLabel,
+                                    value:
+                                        _loadingOverview
+                                            ? '—'
+                                            : overviewLeftValue,
+                                    icon: Icons.event_available,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: _StatCard(
+                                    label: overviewRightLabel,
+                                    value:
+                                        _loadingOverview
+                                            ? '—'
+                                            : overviewRightValue,
+                                    icon: Icons.history,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: _StatCard(
+                              label: 'Trusted Contacts',
+                              value:
+                                  _loadingOverview
+                                      ? '—'
+                                      : _fmtCount(_trustedCount),
+                              icon: Icons.person,
+                            ),
+                          ),
+                        ],
+
+                        const SizedBox(height: 24),
+                      ],
                     ),
+          ),
 
-                    // OVERVIEW (only if driver is verified OR user is passenger)
-                    if (!isDriver || isVerified) ...[
-                      const SizedBox(height: 16),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Text(
-                          'Overview',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: _StatCard(
-                                label: overviewLeftLabel,
-                                value:
-                                    _loadingOverview ? '—' : overviewLeftValue,
-                                icon: Icons.event_available,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _StatCard(
-                                label: overviewRightLabel,
-                                value:
-                                    _loadingOverview ? '—' : overviewRightValue,
-                                icon: Icons.history,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      // (Optional) show safety stat below
-                      const SizedBox(height: 8),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: _StatCard(
-                          label: 'Trusted Contacts',
-                          value:
-                              _loadingOverview ? '—' : _fmtCount(_trustedCount),
-                          icon: Icons.person,
-                        ),
-                      ),
-                    ],
-
-                    const SizedBox(height: 24),
-                  ],
-                ),
+          // Coach overlay on top of everything
+          if (_showTutorial && _tutorialSteps.isNotEmpty)
+            CoachOverlay(steps: _tutorialSteps, onFinish: _finishTutorial),
+        ],
       ),
     );
   }
@@ -631,6 +832,10 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 }
+
+// =========================
+// Header, grids, cards, etc.
+// =========================
 
 class _HeroHeader extends StatelessWidget {
   final String name;
@@ -768,11 +973,13 @@ class _HeroHeader extends StatelessWidget {
 }
 
 class _ActionItem {
+  final Key? key;
   final String title;
   final String subtitle;
   final IconData icon;
   final VoidCallback onTap;
   _ActionItem({
+    this.key,
     required this.title,
     required this.subtitle,
     required this.icon,
@@ -847,6 +1054,7 @@ class _ActionGrid extends StatelessWidget {
       itemBuilder: (_, i) {
         final it = items[i];
         return InkWell(
+          key: it.key, // 🔑 tutorial anchor
           onTap: it.onTap,
           borderRadius: BorderRadius.circular(16),
           child: Ink(

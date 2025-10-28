@@ -729,24 +729,37 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
           const _CardTitle(icon: Icons.event_seat, text: 'Seats'),
           const SizedBox(height: 6),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Long text can take remaining width and wrap/ellipsis
+            Expanded(
+              child: Text(
                 'Pakyaw: reserving all available seats',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                maxLines: 2,
+                softWrap: true,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-              Text(
+            ),
+            const SizedBox(width: 8),
+            // Compact right label scales down if tight
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
                 'Available: $capAvail / $capTotal',
                 style: TextStyle(
                   fontSize: 13,
-                  color:
-                      capAvail > 0
-                          ? Colors.green.shade700
-                          : Colors.red.shade700,
+                  color: capAvail > 0
+                      ? Colors.green.shade700
+                      : Colors.red.shade700,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
+        ),
         ],
       ),
     );

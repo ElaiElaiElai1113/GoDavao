@@ -23,9 +23,16 @@ class StarRating extends StatelessWidget {
       children: List.generate(max, (i) {
         final idx = i + 1;
         final filled = idx <= value;
+
         return InkWell(
           onTap: readOnly ? null : () => onChanged?.call(idx),
-          child: Icon(filled ? Icons.star : Icons.star_border, size: size),
+          child: Icon(
+            filled ? Icons.star : Icons.star_border,
+            size: size,
+            color: filled
+                ? Colors.amber.shade700
+                : Colors.grey.shade400,
+          ),
         );
       }),
     );

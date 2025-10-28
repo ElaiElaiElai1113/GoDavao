@@ -854,7 +854,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
               child: Align(
                 alignment: Alignment.topCenter,
                 child: Padding(
-                  padding: const EdgeInsets.only(top: 50),
+                  padding: const EdgeInsets.only(top: 80),
                   child: Wrap(
                     spacing: 8,
                     runSpacing: 8,

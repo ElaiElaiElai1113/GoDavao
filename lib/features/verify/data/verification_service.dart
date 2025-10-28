@@ -3,10 +3,11 @@ import 'dart:async';
 import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Canonical verification states used in-app.
-/// We map any DB string (e.g., 'approved') to these.
+/// Canonical, app-level verification states.
+/// (We normalize any DB string to one of these.)
 enum VerificationStatus { pending, verified, rejected, unknown }
 
+/// Parse arbitrary DB value into a canonical [VerificationStatus].
 VerificationStatus _parseStatus(dynamic raw) {
   final v = (raw ?? '').toString().toLowerCase().trim();
   switch (v) {
@@ -22,6 +23,7 @@ VerificationStatus _parseStatus(dynamic raw) {
   }
 }
 
+/// Convert canonical status back into a DB string.
 String _statusToText(VerificationStatus s) {
   switch (s) {
     case VerificationStatus.verified:
@@ -32,27 +34,37 @@ String _statusToText(VerificationStatus s) {
       return 'pending';
     case VerificationStatus.unknown:
     default:
-      // default to pending if unknown is being set
+      // If someone attempts to set unknown, treat it as pending.
       return 'pending';
   }
 }
 
 class VerificationService {
-  final SupabaseClient _sb;
   VerificationService(this._sb);
 
-  // ---------- Auth/user helpers ----------
+  final SupabaseClient _sb;
+
+  // ------------------------- Auth helpers -------------------------
+
+  /// Current authenticated user id or throws if not logged in.
   String get _userId {
     final u = _sb.auth.currentUser;
-    if (u == null) throw Exception('Not logged in');
+    if (u == null) {
+      throw StateError('Not logged in');
+    }
     return u.id;
   }
 
-  // ---------- Storage helpers ----------
+  // ------------------------- Storage helpers -------------------------
+
+  /// Storage bucket for verification artifacts.
   static const String _bucket = 'verifications';
 
+  /// Compose a stable, per-user path for a file inside [_bucket].
   String _path(String filename) => '$_userId/$filename';
 
+  /// Upload [file] to storage (if provided) with upsert behavior.
+  /// Returns the object key (path) or empty string if no file.
   Future<String> _uploadFile(String filename, File? file) async {
     if (file == null) return '';
     final key = _path(filename);
@@ -62,57 +74,130 @@ class VerificationService {
     return key;
   }
 
+  /// Public URL (works if bucket/object is public).
   String publicUrl(String key) => _sb.storage.from(_bucket).getPublicUrl(key);
 
-  // ---------- Submit / Update request ----------
-  /// Creates or updates the user's verification request.
-  /// - Uploads any provided files (id/selfie/license/orcr)
-  /// - Sets users.verification_status = 'pending'
-  /// - Upserts into verification_requests (one row per user via onConflict: 'user_id')
+  /// Signed URL for private buckets with fallback to public.
+  Future<String> signedOrPublicUrl(
+    String key, {
+    Duration ttl = const Duration(minutes: 30),
+  }) async {
+    if (key.isEmpty) return '';
+    try {
+      final signed = await _sb.storage
+          .from(_bucket)
+          .createSignedUrl(key, ttl.inSeconds);
+      return signed;
+    } catch (_) {
+      // If bucket/object is public (or signing not available), fall back.
+      return publicUrl(key);
+    }
+  }
+
+  // ------------------------- Submit / Update -------------------------
+
+  /// Create or update the caller's verification request.
+  ///
+  /// Behavior:
+  /// - Uploads any provided files without clobbering missing ones.
+  /// - Sets `users.verification_status = 'pending'`, `verified_role`, `verified_at`.
+  /// - Upserts into `verification_requests` keyed by `user_id`.
+  ///
+  /// Arguments:
+  /// - [role]: 'driver' | 'passenger'
+  /// - [idType]: human readable doc type (e.g. "Driver’s License", "PhilSys")
   Future<void> submitOrUpdate({
-    required String role, // 'driver' | 'passenger'
+    required String role,
+    required String idType,
     File? idFront,
     File? idBack,
     File? selfie,
     File? driverLicense,
     File? orcr,
   }) async {
-    // 1) Upload files (only when present)
-    final idFrontKey = await _uploadFile('id_front.jpg', idFront);
-    final idBackKey = await _uploadFile('id_back.jpg', idBack);
+    // Normalize role a bit (non-fatal safeguard).
+    final roleNorm = (role).toLowerCase().trim();
+    if (roleNorm != 'driver' && roleNorm != 'passenger') {
+      throw ArgumentError.value(
+        role,
+        'role',
+        "Must be 'driver' or 'passenger'",
+      );
+    }
+
+    // Nicer filenames — stable and explicit.
+    final typeSlug = _slug(idType);
+
+    // 1) Upload only the files that were provided.
+    final idFrontKey = await _uploadFile('id_${typeSlug}_front.jpg', idFront);
+    final idBackKey = await _uploadFile('id_${typeSlug}_back.jpg', idBack);
     final selfieKey = await _uploadFile('selfie.jpg', selfie);
     final licenseKey =
-        role == 'driver' ? await _uploadFile('license.jpg', driverLicense) : '';
-    final orcrKey = role == 'driver' ? await _uploadFile('orcr.jpg', orcr) : '';
+        roleNorm == 'driver'
+            ? await _uploadFile('license.jpg', driverLicense)
+            : '';
+    final orcrKey =
+        roleNorm == 'driver' ? await _uploadFile('orcr.jpg', orcr) : '';
 
-    // 2) Mark user as pending in users table (source of truth)
+    // 2) Mark user as pending in `users` (source of truth).
     await _sb
         .from('users')
         .update({
           'verification_status': 'pending',
-          'verified_role': role,
+          'verified_role': roleNorm,
           'verified_at': DateTime.now().toIso8601String(),
         })
         .eq('id', _userId);
 
-    // 3) Upsert verification request row
-    await _sb.from('verification_requests').upsert({
+    // 3) Fetch existing request so we can preserve file keys if not re-uploaded.
+    final existing =
+        await _sb
+            .from('verification_requests')
+            .select(
+              'id, id_front_key, id_back_key, selfie_key, driver_license_key, orcr_key',
+            )
+            .eq('user_id', _userId)
+            .maybeSingle();
+
+    String keepOr(String newKey, String? oldKey) =>
+        newKey.isNotEmpty ? newKey : (oldKey ?? '');
+
+    // 4) Upsert request row.
+    final payload = <String, dynamic>{
       'user_id': _userId,
-      'role': role,
+      'role': roleNorm,
       'status': 'pending',
-      'id_front_key': idFrontKey.isEmpty ? null : idFrontKey,
-      'id_back_key': idBackKey.isEmpty ? null : idBackKey,
-      'selfie_key': selfieKey.isEmpty ? null : selfieKey,
-      'driver_license_key': licenseKey.isEmpty ? null : licenseKey,
-      'orcr_key': orcrKey.isEmpty ? null : orcrKey,
+      'id_type': idType, // keep the human-readable value for admin filters
+      'id_front_key': keepOr(idFrontKey, existing?['id_front_key']),
+      'id_back_key': keepOr(idBackKey, existing?['id_back_key']),
+      'selfie_key': keepOr(selfieKey, existing?['selfie_key']),
+      'driver_license_key':
+          roleNorm == 'driver'
+              ? keepOr(licenseKey, existing?['driver_license_key'])
+              : null,
+      'orcr_key':
+          roleNorm == 'driver' ? keepOr(orcrKey, existing?['orcr_key']) : null,
       'created_at': DateTime.now().toIso8601String(),
-    }, onConflict: 'user_id');
+    };
+
+    await _sb
+        .from('verification_requests')
+        .upsert(payload, onConflict: 'user_id');
   }
 
-  // ---------- Status read APIs (persist across sessions) ----------
-  /// Fetch the latest verification status from DB.
-  /// Primary source: users.verification_status
-  /// Fallback: role table (drivers/passengers) if users.verification_status is null/unknown
+  /// Quick slug for filenames.
+  String _slug(String s) => s
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+      .replaceAll(RegExp(r'-+'), '-')
+      .replaceAll(RegExp(r'^-|-$'), '');
+
+  // ------------------------- Status read APIs -------------------------
+
+  /// Fetch the latest status for [userId] (or current user).
+  /// Priority:
+  /// 1) users.verification_status
+  /// 2) drivers/passengers.verification_status (fallback)
   Future<VerificationStatus> fetchStatus({String? userId}) async {
     final id = userId ?? _userId;
 
@@ -123,8 +208,8 @@ class VerificationService {
             .eq('id', id)
             .maybeSingle();
 
-    final fromUsers = _parseStatus(userRow?['verification_status']);
-    if (fromUsers != VerificationStatus.unknown) return fromUsers;
+    final primary = _parseStatus(userRow?['verification_status']);
+    if (primary != VerificationStatus.unknown) return primary;
 
     final role = (userRow?['role'] ?? '').toString();
     if (role == 'driver') {
@@ -135,7 +220,8 @@ class VerificationService {
               .eq('user_id', id)
               .maybeSingle();
       return _parseStatus(row?['verification_status']);
-    } else if (role == 'passenger') {
+    }
+    if (role == 'passenger') {
       final row =
           await _sb
               .from('passengers')
@@ -144,70 +230,63 @@ class VerificationService {
               .maybeSingle();
       return _parseStatus(row?['verification_status']);
     }
-
     return VerificationStatus.unknown;
   }
 
-  /// Stream that emits current status immediately, then pushes realtime updates
-  /// whenever users/driver/passenger verification fields change.
-  // Replace your watchStatus with this version:
+  /// Emit current status immediately, then push updates when
+  /// any relevant table changes (users/drivers/passengers).
   Stream<VerificationStatus> watchStatus({String? userId}) async* {
     final id = userId ?? _userId;
 
-    // 1) Emit current value first
+    // 1) Emit current immediately.
     yield await fetchStatus(userId: id);
 
-    // 2) Create a realtime channel and push on any relevant UPDATE
+    // 2) Listen to DB changes and push refreshed value.
     final controller = StreamController<VerificationStatus>();
 
-    Future<void> push() async {
-      final latest = await fetchStatus(userId: id);
-      if (!controller.isClosed) controller.add(latest);
+    Future<void> _push() async {
+      try {
+        final latest = await fetchStatus(userId: id);
+        if (!controller.isClosed) controller.add(latest);
+      } catch (_) {
+        // Swallow; we don't want to break the stream on transient issues.
+      }
     }
 
     final channel =
         _sb
             .channel('user-verification-$id')
-            // users table updates
             .onPostgresChanges(
               event: PostgresChangeEvent.update,
               schema: 'public',
               table: 'users',
               callback: (payload) {
-                try {
-                  final newRec = payload.newRecord ?? {};
-                  if (newRec['id'] == id) push();
-                } catch (_) {}
+                final newRec = payload.newRecord ?? {};
+                if (newRec['id'] == id) _push();
               },
             )
-            // drivers table updates
             .onPostgresChanges(
               event: PostgresChangeEvent.update,
               schema: 'public',
               table: 'drivers',
               callback: (payload) {
-                try {
-                  final newRec = payload.newRecord ?? {};
-                  if (newRec['user_id'] == id) push();
-                } catch (_) {}
+                final newRec = payload.newRecord ?? {};
+                if (newRec['user_id'] == id) _push();
               },
             )
-            // passengers table updates
             .onPostgresChanges(
               event: PostgresChangeEvent.update,
               schema: 'public',
               table: 'passengers',
               callback: (payload) {
-                try {
-                  final newRec = payload.newRecord ?? {};
-                  if (newRec['user_id'] == id) push();
-                } catch (_) {}
+                final newRec = payload.newRecord ?? {};
+                if (newRec['user_id'] == id) _push();
               },
             )
             .subscribe();
 
-    // Kick once more to avoid UI race
-    push();
+    // Nudge once more after subscription to mitigate race conditions.
+    _push();
 
     try {
       yield* controller.stream;
@@ -217,8 +296,9 @@ class VerificationService {
     }
   }
 
-  // ---------- Admin actions ----------
-  /// Generic admin setter for users.verification_status, with optional linkage to a request row.
+  // ------------------------- Admin actions -------------------------
+
+  /// Set a user's verification status (and optionally link to a request).
   Future<void> adminSetUserStatus({
     required String userId,
     required VerificationStatus status,
@@ -227,6 +307,7 @@ class VerificationService {
   }) async {
     final statusText = _statusToText(status);
 
+    // 1) Update the user record (source of truth in the app).
     await _sb
         .from('users')
         .update({
@@ -235,6 +316,7 @@ class VerificationService {
         })
         .eq('id', userId);
 
+    // 2) Optionally annotate the latest verification request.
     if (requestId != null) {
       await _sb
           .from('verification_requests')
@@ -248,7 +330,7 @@ class VerificationService {
     }
   }
 
-  /// Backward-compatible convenience wrappers
+  /// Convenience wrapper for approve.
   Future<void> approveUser(String userId, {String? requestId}) =>
       adminSetUserStatus(
         userId: userId,
@@ -256,6 +338,7 @@ class VerificationService {
         requestId: requestId,
       );
 
+  /// Convenience wrapper for reject (with optional notes).
   Future<void> rejectUser(String userId, {String? requestId, String? notes}) =>
       adminSetUserStatus(
         userId: userId,

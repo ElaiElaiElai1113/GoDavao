@@ -1,4 +1,6 @@
+// lib/features/profile/presentation/profile_page.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
 import 'package:godavao/features/profile/presentation/app_drawer.dart';
@@ -11,6 +13,8 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
+  final _formKey = GlobalKey<FormState>();
+
   final _name = TextEditingController();
   final _email = TextEditingController();
   final _phone = TextEditingController();
@@ -19,6 +23,10 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _loading = true;
   bool _saving = false;
   bool _obscure = true;
+
+  static const purple = Color(0xFF6A27F7);
+  static const purpleDark = Color(0xFF4B18C9);
+  static const textDim = Color(0xFF667085);
 
   @override
   void initState() {
@@ -38,13 +46,16 @@ class _ProfilePageState extends State<ProfilePage> {
   Future<void> _load() async {
     final supabase = Supabase.instance.client;
     final au = supabase.auth.currentUser;
-    if (au == null) return;
+    if (au == null) {
+      setState(() => _loading = false);
+      return;
+    }
 
     try {
       final row =
           await supabase
               .from('users')
-              .select('name, phone')
+              .select('name, phone, verification_status')
               .eq('id', au.id)
               .maybeSingle();
 
@@ -61,37 +72,48 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _save() async {
     if (_saving) return;
+    if (!_formKey.currentState!.validate()) return;
+
     setState(() => _saving = true);
 
     final supabase = Supabase.instance.client;
     final au = supabase.auth.currentUser!;
     try {
+      // Update profile table
       await supabase
           .from('users')
           .update({'name': _name.text.trim(), 'phone': _phone.text.trim()})
           .eq('id', au.id);
 
-      if (_email.text.trim().isNotEmpty &&
-          _email.text.trim() != (au.email ?? '')) {
-        await supabase.auth.updateUser(
-          UserAttributes(email: _email.text.trim()),
-        );
+      // Update auth email if changed
+      final emailNew = _email.text.trim();
+      if (emailNew.isNotEmpty && emailNew != (au.email ?? '')) {
+        await supabase.auth.updateUser(UserAttributes(email: emailNew));
       }
+
+      // Update password if provided
       if (_password.text.isNotEmpty) {
         await supabase.auth.updateUser(
           UserAttributes(password: _password.text),
         );
+        _password.clear();
       }
 
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Profile saved')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Profile updated successfully'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Save failed: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -99,8 +121,6 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    const purple = Color(0xFF6A27F7);
-
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -111,29 +131,29 @@ class _ProfilePageState extends State<ProfilePage> {
       drawer: const AppDrawer(),
       body: Stack(
         children: [
-          // 🔹 Gradient Background Fade
+          // Gradient background
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  purple.withOpacity(0.9), // heavy at top
+                  purple.withOpacity(0.95),
                   purple.withOpacity(0.6),
-                  purple.withOpacity(0.3),
+                  purple.withOpacity(0.25),
                   Colors.transparent,
                 ],
-                stops: const [0.0, 0.2, 0.4, 1.0],
+                stops: const [0.0, 0.22, 0.45, 1.0],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
               ),
             ),
           ),
 
-          // 🔹 Scrollable content
+          // Content
           SafeArea(
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
-                // AppBar-style row
+                // App bar row
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
@@ -146,6 +166,7 @@ class _ProfilePageState extends State<ProfilePage> {
                             (ctx) => IconButton(
                               icon: const Icon(Icons.menu, color: Colors.white),
                               onPressed: () => Scaffold.of(ctx).openDrawer(),
+                              tooltip: 'Menu',
                             ),
                       ),
                       const SizedBox(width: 8),
@@ -154,16 +175,16 @@ class _ProfilePageState extends State<ProfilePage> {
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 20,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ],
                   ),
                 ),
 
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
 
-                // Avatar with badge
+                // Avatar + badge
                 Center(
                   child: Stack(
                     alignment: Alignment.bottomRight,
@@ -183,138 +204,179 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                 ),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: 22),
 
-                // Card-style form
+                // Card with form
                 Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 20),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 24,
-                  ),
+                  margin: const EdgeInsets.symmetric(horizontal: 18),
+                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 20),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: const [
                       BoxShadow(
                         color: Colors.black12,
-                        blurRadius: 10,
-                        offset: Offset(0, 4),
+                        blurRadius: 12,
+                        offset: Offset(0, 6),
                       ),
                     ],
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _label('Full name'),
-                      TextField(
-                        controller: _name,
-                        decoration: const InputDecoration(
-                          hintText: 'Your name',
-                          border: UnderlineInputBorder(),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      children: [
+                        _titleRow(
+                          title: 'Account details',
+                          subtitle:
+                              'Keep your info up to date so drivers and passengers can reach you.',
+                          icon: Icons.person_outline,
                         ),
-                      ),
-                      const SizedBox(height: 16),
+                        const SizedBox(height: 8),
 
-                      _label('Email address'),
-                      TextField(
-                        controller: _email,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(
-                          hintText: 'name@example.com',
-                          border: UnderlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      _label('Phone number'),
-                      TextField(
-                        controller: _phone,
-                        keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(
-                          hintText: '09xxxxxxxxx',
-                          border: UnderlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      _label('Password'),
-                      TextField(
-                        controller: _password,
-                        obscureText: _obscure,
-                        decoration: InputDecoration(
-                          hintText: '••••••••',
-                          border: const UnderlineInputBorder(),
-                          suffixIcon: IconButton(
-                            onPressed:
-                                () => setState(() => _obscure = !_obscure),
-                            icon: Icon(
-                              _obscure
-                                  ? Icons.visibility_off
-                                  : Icons.visibility,
-                            ),
+                        _label('Full name'),
+                        TextFormField(
+                          controller: _name,
+                          textCapitalization: TextCapitalization.words,
+                          decoration: const InputDecoration(
+                            hintText: 'Your full name',
+                            border: UnderlineInputBorder(),
                           ),
+                          validator:
+                              (v) =>
+                                  (v == null || v.trim().isEmpty)
+                                      ? 'Please enter your name'
+                                      : null,
                         ),
-                      ),
-                      const SizedBox(height: 24),
+                        const SizedBox(height: 16),
 
-                      // Save button with gradient
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            gradient: const LinearGradient(
-                              colors: [
-                                Color(0xFF6A27F7), // purple
-                                Color(0xFF4B18C9), // purpleDark
+                        _label('Email address'),
+                        TextFormField(
+                          controller: _email,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: const InputDecoration(
+                            hintText: 'name@example.com',
+                            border: UnderlineInputBorder(),
+                            helperText:
+                                'Changing your email may require re-confirmation.',
+                          ),
+                          validator: (v) {
+                            final t = v?.trim() ?? '';
+                            if (t.isEmpty) return 'Email is required';
+                            final ok = RegExp(
+                              r"^[^\s@]+@[^\s@]+\.[^\s@]+$",
+                            ).hasMatch(t);
+                            return ok ? null : 'Enter a valid email';
+                          },
+                        ),
+                        const SizedBox(height: 16),
+
+                        _label('Phone number'),
+                        TextFormField(
+                          controller: _phone,
+                          keyboardType: TextInputType.phone,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(
+                              RegExp(r'[0-9+]'),
+                            ),
+                          ],
+                          decoration: const InputDecoration(
+                            hintText: '09XXXXXXXXX',
+                            border: UnderlineInputBorder(),
+                            helperText: 'Used for contacting you about rides.',
+                          ),
+                          validator: (v) {
+                            final t = (v ?? '').trim();
+                            if (t.isEmpty) return null; // optional
+                            if (t.length < 10) return 'Enter a valid phone';
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+
+                        _label('Change password (optional)'),
+                        TextFormField(
+                          controller: _password,
+                          obscureText: _obscure,
+                          decoration: InputDecoration(
+                            hintText: 'New password',
+                            border: const UnderlineInputBorder(),
+                            suffixIcon: IconButton(
+                              onPressed:
+                                  () => setState(() => _obscure = !_obscure),
+                              icon: Icon(
+                                _obscure
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                              ),
+                              tooltip: _obscure ? 'Show' : 'Hide',
+                            ),
+                            helperText:
+                                'Leave blank to keep your current password.',
+                          ),
+                          validator: (v) {
+                            if ((v ?? '').isEmpty) return null;
+                            if ((v ?? '').length < 6) return 'Min 6 characters';
+                            return null;
+                          },
+                        ),
+
+                        const SizedBox(height: 22),
+
+                        // Save button with gradient background
+                        SizedBox(
+                          width: double.infinity,
+                          height: 52,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              gradient: const LinearGradient(
+                                colors: [purple, purpleDark],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Colors.black26,
+                                  blurRadius: 10,
+                                  offset: Offset(0, 4),
+                                ),
                               ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
                             ),
-                            boxShadow: const [
-                              BoxShadow(
-                                color: Colors.black26,
-                                blurRadius: 10,
-                                offset: Offset(0, 4),
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.transparent,
+                                shadowColor: Colors.transparent,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
-                            ],
-                          ),
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                              onPressed: _saving ? null : _save,
+                              child:
+                                  _saving
+                                      ? const SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                Colors.white,
+                                              ),
+                                        ),
+                                      )
+                                      : const Text(
+                                        'Save changes',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 16,
+                                        ),
+                                      ),
                             ),
-                            onPressed: _saving ? null : _save,
-                            child:
-                                _saving
-                                    ? const SizedBox(
-                                      width: 22,
-                                      height: 22,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                              Colors.white,
-                                            ),
-                                      ),
-                                    )
-                                    : const Text(
-                                      'Save',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 16,
-                                      ),
-                                    ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
 
@@ -329,13 +391,54 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Widget _label(String text) => Padding(
     padding: const EdgeInsets.only(bottom: 6),
-    child: Text(
-      text,
-      style: const TextStyle(
-        color: Colors.black54,
-        fontSize: 12.5,
-        fontWeight: FontWeight.w500,
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: textDim,
+          fontSize: 12.5,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     ),
   );
+
+  Widget _titleRow({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CircleAvatar(
+          radius: 16,
+          backgroundColor: const Color(0xFFF2EEFF),
+          child: Icon(icon, color: purple, size: 18),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: const TextStyle(color: textDim, fontSize: 12.5),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }

@@ -14,6 +14,7 @@ import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 
 // ➕ Live location (preview-only)
 import 'package:geolocator/geolocator.dart';
+import 'package:godavao/features/verify/data/verification_service.dart';
 
 import 'package:godavao/features/chat/presentation/chat_page.dart';
 import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
@@ -24,6 +25,31 @@ import 'package:godavao/features/ratings/data/ratings_service.dart';
 import 'package:godavao/features/payments/presentation/payment_status_chip.dart';
 import 'package:godavao/main.dart' show localNotify;
 import 'package:godavao/features/ride_status/presentation/driver_ride_status_page.dart';
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/* Distinct passenger colors + legend model (top-level)                      */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+const List<Color> _kPassengerColors = <Color>[
+  Colors.red,
+  Colors.blue,
+  Colors.green,
+  Colors.orange,
+  Colors.purple,
+  Colors.teal,
+  Colors.brown,
+  Colors.pink,
+  Colors.indigo,
+  Colors.cyan,
+];
+
+class _LegendItem {
+  final Color color;
+  final String label;
+  const _LegendItem(this.color, this.label);
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
 
 class DriverRidesPage extends StatefulWidget {
   const DriverRidesPage({super.key});
@@ -118,7 +144,6 @@ class _DriverRidesPageState extends State<DriverRidesPage>
   static const bool _DBG = true;
   void _d(Object? msg) {
     if (_DBG) {
-      // ignore: avoid_print
       print('[DriverRides] $msg');
     }
   }
@@ -126,6 +151,49 @@ class _DriverRidesPageState extends State<DriverRidesPage>
   late final TabController _tabController;
   final _listScroll = ScrollController();
 
+  // Unique passenger colors
+  static const List<Color> _passengerColors = <Color>[
+    Color(0xFFE53935), // red
+    Color(0xFF1E88E5), // blue
+    Color(0xFF43A047), // green
+    Color(0xFFF4511E), // deep orange
+    Color(0xFF6D4C41), // brown
+    Color(0xFF8E24AA), // purple
+    Color(0xFF00897B), // teal
+    Color(0xFFFDD835), // amber
+  ];
+
+  Color _passengerColorAt(int i) =>
+      _passengerColors[i % _passengerColors.length];
+
+  Widget _legendChip(Color c, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.95),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _pin(IconData icon, Color color, {double size = 28}) =>
+      Icon(icon, color: color, size: size);
   // Buckets (for Declined/Completed tabs)
   List<MatchCard> _declined = [];
   List<MatchCard> _completed = [];
@@ -1320,7 +1388,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       'Pass exactly one of single or group',
     );
 
-    // Try to overlay the driver route polyline if routeId (or group.routeId) exists
+    // 1) Try to overlay the driver route polyline if routeId (or group.routeId) exists
     List<LatLng> routePolylinePoints = [];
     final rid = routeId ?? group?.routeId;
     if (rid != null && rid != 'unassigned') {
@@ -1333,17 +1401,17 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                 .maybeSingle();
 
         if (row is Map) {
-          String? encoded;
           final mode = row?['route_mode']?.toString();
           final routePolyline = row?['route_polyline']?.toString();
           final manualPolyline = row?['manual_polyline']?.toString();
-          if (mode == 'manual') {
-            encoded = manualPolyline ?? routePolyline;
-          } else if (mode == 'osrm') {
-            encoded = routePolyline ?? manualPolyline;
-          } else {
-            encoded = routePolyline ?? manualPolyline;
-          }
+
+          String? encoded =
+              mode == 'manual'
+                  ? (manualPolyline ?? routePolyline)
+                  : mode == 'osrm'
+                  ? (routePolyline ?? manualPolyline)
+                  : (routePolyline ?? manualPolyline);
+
           if (encoded != null && encoded.isNotEmpty) {
             final decoded = PolylinePoints().decodePolyline(encoded);
             routePolylinePoints =
@@ -1355,13 +1423,16 @@ class _DriverRidesPageState extends State<DriverRidesPage>
 
     if (!mounted) return;
 
-    // Prepare markers/lines
+    // 2) Prepare markers/lines + legend chips
     final markers = <Marker>[];
     final extraLines = <Polyline>[];
+    final legendChips = <Widget>[];
 
     if (single != null && single.hasCoords) {
+      // —— Single rider preview
       final p = single.pickup!;
       final d = single.destination!;
+
       markers.addAll([
         Marker(
           point: p,
@@ -1376,6 +1447,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           child: const Icon(Icons.flag, color: Colors.red, size: 26),
         ),
       ]);
+
       extraLines.add(
         Polyline(
           points: [p, d],
@@ -1384,23 +1456,92 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           isDotted: true,
         ),
       );
+
+      legendChips.add(
+        _legendChip(
+          _purple,
+          '${single.passengerName} • ${single.pickupAddress} → ${single.destinationAddress}',
+        ),
+      );
     } else if (group != null) {
-      for (final m in group.items.where((x) => x.hasCoords)) {
+      // —— Group preview: ONLY accepted + en_route riders
+      final riders =
+          group.items
+              .where(
+                (m) =>
+                    m.hasCoords &&
+                    (m.status == 'accepted' || m.status == 'en_route'),
+              )
+              .toList();
+
+      for (int i = 0; i < riders.length; i++) {
+        final m = riders[i];
+        final color = _passengerColorAt(i);
+
+        // pickup
         markers.add(
           Marker(
             point: m.pickup!,
             width: 30,
             height: 30,
-            child: const Icon(
-              Icons.person_pin_circle,
-              color: _purple,
-              size: 28,
-            ),
+            child: _pin(Icons.location_pin, color),
           ),
         );
+
+        // destination
+        markers.add(
+          Marker(
+            point: m.destination!,
+            width: 28,
+            height: 28,
+            child: _pin(Icons.flag, color),
+          ),
+        );
+
+        // dotted pickup → destination segment
+        extraLines.add(
+          Polyline(
+            points: [m.pickup!, m.destination!],
+            strokeWidth: 3,
+            color: color.withOpacity(.95),
+            isDotted: true,
+          ),
+        );
+
+        legendChips.add(_legendChip(color, m.passengerName));
       }
+
+      // Compute bounds and show now (group path exits early)
+      final boundsPoints = <LatLng>[
+        ...markers.map((m) => m.point),
+        ...routePolylinePoints,
+      ];
+      if (boundsPoints.isEmpty) return;
+
+      final bounds = LatLngBounds.fromPoints(boundsPoints);
+
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        builder:
+            (_) => _LiveMapSheet(
+              title: 'All pickups on route',
+              bounds: bounds,
+              staticMarkers: markers,
+              routePolylinePoints: routePolylinePoints,
+              extraPolylines: extraLines,
+              purple: _purple,
+              legendChips: legendChips, // ✅ consistent param
+            ),
+      );
+      return; // early exit for group branch
     }
 
+    // 3) Single-branch: compute bounds and show
     final boundsPoints = <LatLng>[
       ...markers.map((m) => m.point),
       ...routePolylinePoints,
@@ -1418,13 +1559,13 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       ),
       builder:
           (_) => _LiveMapSheet(
-            title:
-                group != null ? 'All pickups on route' : 'Pickup & destination',
+            title: 'Pickup & destination',
             bounds: bounds,
             staticMarkers: markers,
             routePolylinePoints: routePolylinePoints,
             extraPolylines: extraLines,
             purple: _purple,
+            legendChips: legendChips,
           ),
     );
   }
@@ -1815,6 +1956,7 @@ class _LiveMapSheet extends StatefulWidget {
     required this.routePolylinePoints,
     required this.extraPolylines,
     required this.purple,
+    this.legendChips = const [],
   });
 
   final String title;
@@ -1823,6 +1965,7 @@ class _LiveMapSheet extends StatefulWidget {
   final List<LatLng> routePolylinePoints;
   final List<Polyline> extraPolylines;
   final Color purple;
+  final List<Widget> legendChips;
 
   @override
   State<_LiveMapSheet> createState() => _LiveMapSheetState();
@@ -1962,6 +2105,33 @@ class _LiveMapSheetState extends State<_LiveMapSheet> {
                 ),
               ],
             ),
+
+            // Legend overlay (only when we have multiple riders)
+            if (widget.legendChips.isNotEmpty)
+              Positioned(
+                left: 8,
+                top: 60, // under the title pill
+                right: 8,
+                child: Container(
+                  constraints: const BoxConstraints(maxHeight: 140),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.black12),
+                  ),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.vertical,
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children:
+                          widget
+                              .legendChips, // 👈 each chip is already a widget
+                    ),
+                  ),
+                ),
+              ),
 
             // Center on me
             Positioned(

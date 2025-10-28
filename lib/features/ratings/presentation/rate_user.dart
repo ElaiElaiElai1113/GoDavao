@@ -152,15 +152,24 @@ class _RateUserSheetState extends State<RateUserSheet> {
               const SizedBox(height: 12),
 
               // Stars
-              Row(
-                children: List.generate(5, (i) {
-                  final idx = i + 1;
-                  return IconButton(
-                    icon: Icon(idx <= _rating ? Icons.star : Icons.star_border),
-                    onPressed: () => setState(() => _rating = idx),
-                  );
-                }),
-              ),
+Row(
+  children: List.generate(5, (i) {
+    final idx = i + 1;
+    final filled = idx <= _rating;
+    final color = filled ? Colors.amber.shade700 : Colors.grey.shade400;
+
+    return IconButton(
+      onPressed: () => setState(() => _rating = idx),
+      icon: Icon(
+        filled ? Icons.star : Icons.star_border,
+        size: 30,
+        color: color,
+      ),
+      style: IconButton.styleFrom(foregroundColor: color),
+    );
+  }),
+),
+
 
               const SizedBox(height: 8),
               Text(
@@ -181,7 +190,7 @@ class _RateUserSheetState extends State<RateUserSheet> {
                 controller: _comment,
                 maxLines: 3,
                 decoration: const InputDecoration(
-                  labelText: 'Optional comment',
+                  labelText: 'Additional comment',
                   hintText: 'Share more details…',
                   border: OutlineInputBorder(),
                 ),

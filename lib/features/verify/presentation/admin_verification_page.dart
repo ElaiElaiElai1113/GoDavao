@@ -3,6 +3,12 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/admin_service.dart';
 
+String getPublicUrl(String key) {
+  if (key == null || key.isEmpty) return '';
+  final supabase = Supabase.instance.client;
+  return supabase.storage.from('verifications').getPublicUrl(key);
+}
+
 class AdminVerificationPage extends StatefulWidget {
   const AdminVerificationPage({super.key});
   @override
@@ -401,14 +407,28 @@ class _VerificationCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: Text(
-                    name,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (row['phone'] != null && row['phone'] != '—')
+                        Text(
+                          row['phone'],
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Colors.black54,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
+
                 _Tag(role.toUpperCase(), roleColor(role)),
                 if (color != null) ...[
                   const SizedBox(width: 6),
@@ -429,6 +449,20 @@ class _VerificationCard extends StatelessWidget {
                   style: const TextStyle(fontSize: 12.5, color: Colors.black87),
                 ),
               ),
+            // --- Verification images (Pending only) ---
+            if (onApprove != null && onReject != null) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _idImageBox(row['id_front_key'], 'Front ID'),
+                  _idImageBox(row['id_back_key'], 'Back ID'),
+                  _idImageBox(row['selfie_key'], 'Selfie'),
+                ],
+              ),
+            ],
+
             if (onApprove != null || onReject != null)
               Padding(
                 padding: const EdgeInsets.only(top: 12),
@@ -464,6 +498,45 @@ class _VerificationCard extends StatelessWidget {
       ),
     );
   }
+}
+
+Widget _idImageBox(dynamic key, String label) {
+  final keyStr = key?.toString() ?? '';
+  if (keyStr.isEmpty) {
+    return Container(
+      width: 100,
+      height: 100,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.grey.shade200,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Icon(Icons.image_not_supported, color: Colors.grey),
+    );
+  }
+
+  final supabase = Supabase.instance.client;
+  final url = supabase.storage.from('verifications').getPublicUrl(keyStr);
+
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          url,
+          width: 100,
+          height: 100,
+          fit: BoxFit.cover,
+          errorBuilder:
+              (_, __, ___) =>
+                  const Icon(Icons.broken_image, size: 40, color: Colors.grey),
+        ),
+      ),
+      const SizedBox(height: 4),
+      Text(label, style: const TextStyle(fontSize: 12)),
+    ],
+  );
 }
 
 class _Tag extends StatelessWidget {
