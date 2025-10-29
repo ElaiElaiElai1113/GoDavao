@@ -324,9 +324,17 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
 
   Widget _rideCard(Map<String, dynamic> ride, {required bool upcoming}) {
     final status = (ride['effective_status'] as String).toLowerCase();
-    final created = DateFormat(
-      'MMM d, y • h:mm a',
-    ).format(DateTime.parse(ride['created_at'].toString()));
+    DateTime _toLocalTs(dynamic v) {
+  // v can be a DateTime or an ISO string; handles nulls safely.
+  if (v == null) return DateTime.now();
+  final dt = v is DateTime ? v : DateTime.tryParse(v.toString());
+  if (dt == null) return DateTime.now();
+  return dt.toLocal(); // <-- convert from UTC to device local time
+}
+
+final createdLocal = _toLocalTs(ride['created_at']);
+final created = DateFormat('MMM d, y • h:mm a').format(createdLocal);
+
     final fare = (ride['fare'] as num?)?.toDouble();
 
     final pLat = (ride['pickup_lat'] as num).toDouble();
