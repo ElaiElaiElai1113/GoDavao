@@ -44,6 +44,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   // Data
   Map<String, dynamic>? _ride; // passenger_ride_by_id composite
   Map<String, dynamic>? _payment; // payment_intents row (maybe null)
+  String? _passengerNote;
 
   // Live state
   LivePublisher? _publisher; // this passenger's publisher
@@ -130,6 +131,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
 
     try {
       await Future.wait([
+        _loadPassengerNoteOnly(),
         _loadRideComposite(),
         _loadPayment(),
         _loadMatchFacts(), // loads _matchId + _seatsBilled
@@ -157,14 +159,46 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   // ───────────────────────── DB Loads ─────────────────────────
 
   Future<void> _loadRideComposite() async {
-    final res =
-        await _sb
-            .rpc('passenger_ride_by_id', params: {'p_ride_id': widget.rideId})
-            .select()
-            .single();
+  final res = await _sb
+      .rpc('passenger_ride_by_id', params: {'p_ride_id': widget.rideId})
+      .select()
+      .single();
+
+  if (!mounted) return;
+
+  final m = (res as Map).cast<String, dynamic>();
+  setState(() {
+    _ride = m;
+    _passengerNote = (m['passenger_note'] as String?); // 👈 try from RPC
+  });
+
+  // If the RPC doesn’t include passenger_note yet, do a quick fallback fetch.
+  if (_passengerNote == null) {
+    final rr = await _sb
+        .from('ride_requests')
+        .select('passenger_note')
+        .eq('id', widget.rideId)
+        .maybeSingle();
+
     if (!mounted) return;
-    setState(() => _ride = (res as Map).cast<String, dynamic>());
+    setState(() {
+      _passengerNote = (rr?['passenger_note'] as String?);
+    });
   }
+}
+
+Future<void> _loadPassengerNoteOnly() async {
+  final rr = await _sb
+      .from('ride_requests')
+      .select('passenger_note')
+      .eq('id', widget.rideId)
+      .maybeSingle();
+
+  if (!mounted) return;
+  setState(() => _passengerNote = (rr?['passenger_note'] as String?));
+  debugPrint('[RideStatus] note="${_passengerNote ?? 'NULL'}" for ${widget.rideId}');
+}
+
 
   Future<void> _loadPayment() async {
     final res =
@@ -269,6 +303,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
           _syncPassengerPublisherToStatus();
           await _estimateFare();
           await _maybePromptRatingIfCompleted();
+          await _loadPassengerNoteOnly();
           if (mounted) setState(() {});
         });
 
@@ -483,6 +518,33 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     if (lat == null || lng == null) return null;
     return LatLng(lat.toDouble(), lng.toDouble());
   }
+
+  Widget _passengerNoteSection() {
+  final note = (_passengerNote ?? '').trim();
+  if (note.isEmpty) return const SizedBox.shrink();
+
+  return _SectionCard(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _CardTitle(
+          icon: Icons.sticky_note_2_outlined,
+          text: 'Your note to driver',
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.amber.shade50,
+            border: Border.all(color: Colors.amber.shade200),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(note),
+        ),
+      ],
+    ),
+  );
+}
 
   String _peso(num? v) =>
       v == null ? '₱0.00' : '₱${(v.toDouble()).toStringAsFixed(2)}';
@@ -900,6 +962,11 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                     ),
                     const SizedBox(height: 12),
 
+                    if ((_passengerNote ?? '').trim().isNotEmpty) ...[
+  _passengerNoteSection(),
+  const SizedBox(height: 12),
+],
+
                     // Fare
                     if (_fareBx != null)
                       _SectionCard(
@@ -1055,6 +1122,12 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
               const Divider(height: 20),
               _detailRow('Passenger', passengerName),
               _detailRow('Driver', driverName),
+              _detailRow(
+  'Passenger note',
+  ((_passengerNote ?? '').trim().isEmpty)
+      ? '—'
+      : _passengerNote!.trim(),
+),
               if (fare != null) _detailRow('Fare', _peso(fare)),
               const SizedBox(height: 12),
               if (_payment != null)
@@ -1331,8 +1404,8 @@ class _CarpoolBreakdownTable extends StatelessWidget {
               mono: true,
               bold: isCurrent,
             ),
-            _cell(peso(fb.total), mono: true, bold: isCurrent),
-            _cell(peso(perSeat), mono: true, bold: isCurrent),
+            _cell(peso(fb.total),  mono: false, bold: isCurrent),
+_cell(peso(perSeat),   mono: false, bold: isCurrent),
           ],
         ),
       );
