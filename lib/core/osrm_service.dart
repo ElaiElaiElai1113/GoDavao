@@ -1,4 +1,3 @@
-// lib/core/osrm_service.dart
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart' show kDebugMode;
@@ -7,12 +6,8 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
-/// 👉 Set this if you host your own OSRM (prefer HTTPS in production).
-/// Leave null to use the public OSRM server (good for pilots).
-const String? kOsrmOverrideBaseUrl = null; // e.g. 'https://osrm.example.com'
+const String? kOsrmOverrideBaseUrl = null;
 
-/// Public OSRM works on real devices. If you set an http:// URL for dev,
-/// remember to add android:usesCleartextTraffic="true" in AndroidManifest.
 String getOsrmBaseUrl() =>
     kOsrmOverrideBaseUrl ?? 'https://router.project-osrm.org';
 

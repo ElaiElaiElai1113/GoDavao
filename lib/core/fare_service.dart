@@ -35,9 +35,13 @@ class FareRules {
   final double minSurgeMultiplier;
   final double maxSurgeMultiplier;
 
-  /// Carpool discount table by unique riders (1..N) -> pct (0..1)
-  /// e.g., {2: 0.06, 3: 0.12, 4: 0.20}
-  final Map<int, double> carpoolDiscountByPax;
+  /// ✅ NEW (preferred): Carpool discount table by total **seats taken** on the route (1..N) -> pct (0..1)
+  /// Example: {2: 0.06, 3: 0.12, 4: 0.20, 5: 0.25}
+  final Map<int, double> carpoolDiscountBySeats;
+
+  /// ⚠️ Legacy (still supported for backward compatibility): discount by unique riders
+  /// If `carpoolDiscountBySeats` is provided, that takes precedence.
+  final Map<int, double> carpoolDiscountByPaxLegacy;
 
   const FareRules({
     this.baseFare = 25.0,
@@ -51,8 +55,18 @@ class FareRules {
     this.defaultPlatformFeeRate = 0.0,
     this.minSurgeMultiplier = 0.7,
     this.maxSurgeMultiplier = 2.0,
-    this.carpoolDiscountByPax = const <int, double>{
-      // 1 rider => 0% (implicit)
+
+    /// Default tiers (same numbers you used, just reinterpreted as "seats")
+    this.carpoolDiscountBySeats = const <int, double>{
+      // 1 seat => 0% (implicit)
+      2: 0.06,
+      3: 0.12,
+      4: 0.20,
+      5: 0.25,
+    },
+
+    /// Kept for code that still supplies carpoolPassengers only
+    this.carpoolDiscountByPaxLegacy = const <int, double>{
       2: 0.06,
       3: 0.12,
       4: 0.20,
@@ -74,13 +88,16 @@ class FareBreakdown {
   /// Surge used (clamped)
   final double surgeMultiplier;
 
-  /// Seats billed (>=1). Seat count multiplies price; discount is *carpool-based*, not per seat.
+  /// Seats billed for THIS booking (>=1). Seat count multiplies price.
   final int seatsBilled;
 
-  /// Unique riders sharing (carpool participants)
+  /// ✅ Total seats (ALL riders on this route) used to determine discount
+  final int carpoolSeats;
+
+  /// ⚠️ Legacy: unique riders sharing (if provided by caller)
   final int carpoolPassengers;
 
-  /// Discount pct applied based on carpool size (0..1)
+  /// Discount pct applied based on carpool seats (0..1)
   final double carpoolDiscountPct;
 
   /// Final passenger total (rounded to peso)
@@ -97,6 +114,7 @@ class FareBreakdown {
     required this.nightSurcharge,
     required this.surgeMultiplier,
     required this.seatsBilled,
+    required this.carpoolSeats,
     required this.carpoolPassengers,
     required this.carpoolDiscountPct,
     required this.total,
@@ -111,7 +129,8 @@ class FareBreakdown {
     'night_surcharge': nightSurcharge,
     'surge_multiplier': surgeMultiplier,
     'seats_billed': seatsBilled,
-    'carpool_passengers': carpoolPassengers,
+    'carpool_seats': carpoolSeats,
+    'carpool_passengers': carpoolPassengers, // legacy informational
     'carpool_discount_pct': carpoolDiscountPct,
     'total': total,
     'platform_fee': platformFee,
@@ -130,8 +149,17 @@ class FareService {
     required LatLng pickup,
     required LatLng destination,
     DateTime? when,
+
+    /// Seats requested in this booking (>=1)
     int seats = 1,
+
+    /// ✅ Preferred (new): total seats on the route used for discount tiers
+    /// (this should include this booking's seats)
+    int? carpoolSeats,
+
+    /// ⚠️ Legacy: unique riders (kept for backward compat). Ignored if carpoolSeats is provided.
     int carpoolPassengers = 1,
+
     double? platformFeeRate,
     double surgeMultiplier = 1.0,
   }) async {
@@ -141,6 +169,7 @@ class FareService {
       durationMin: mins,
       when: when,
       seats: seats,
+      carpoolSeats: carpoolSeats,
       carpoolPassengers: carpoolPassengers,
       platformFeeRate: platformFeeRate,
       surgeMultiplier: surgeMultiplier,
@@ -152,8 +181,16 @@ class FareService {
     required double distanceKm,
     required double durationMin,
     DateTime? when,
+
+    /// Seats requested in this booking (>=1)
     int seats = 1,
+
+    /// ✅ Preferred (new): total seats on the route used for discount tiers
+    int? carpoolSeats,
+
+    /// ⚠️ Legacy: unique riders (used only if carpoolSeats == null)
     int carpoolPassengers = 1,
+
     double? platformFeeRate,
     double surgeMultiplier = 1.0,
   }) {
@@ -179,12 +216,15 @@ class FareService {
       rules.maxSurgeMultiplier,
     );
 
-    // 4) Seats billed (no per-seat discount; discount is carpool-based)
+    // 4) Seats billed for THIS booking (no per-seat discount; discount is carpool-based)
     final seatsBilled = _max(seats.toDouble(), 1).toInt();
 
-    // 5) Carpool discount pct based on unique riders
-    final pax = carpoolPassengers < 1 ? 1 : carpoolPassengers;
-    final carpoolDiscountPct = rules.carpoolDiscountByPax[pax] ?? 0.0;
+    // 5) Discount by **total seats** (preferred). Fallback to legacy riders.
+    final seatsForDiscount = _resolveSeatsForDiscount(
+      explicitSeats: carpoolSeats,
+      legacyPassengers: carpoolPassengers,
+    );
+    final carpoolDiscountPct = _lookupDiscountPct(seatsForDiscount);
 
     // Compose price then apply discount
     final raw = (subtotal + nightSurcharge) * clampSurge * seatsBilled;
@@ -209,7 +249,8 @@ class FareService {
       nightSurcharge: _round2(nightSurcharge),
       surgeMultiplier: clampSurge,
       seatsBilled: seatsBilled,
-      carpoolPassengers: pax,
+      carpoolSeats: seatsForDiscount,
+      carpoolPassengers: _max(carpoolPassengers.toDouble(), 1).toInt(),
       carpoolDiscountPct: _round2(carpoolDiscountPct),
       total: total,
       platformFee: platformFee,
@@ -218,6 +259,47 @@ class FareService {
   }
 
   // -------- Internals --------
+
+  int _resolveSeatsForDiscount({
+    required int? explicitSeats,
+    required int legacyPassengers,
+  }) {
+    if (explicitSeats != null && explicitSeats > 0) {
+      return explicitSeats;
+    }
+    // Fallback: use legacy unique riders if provided; still maps to seats table.
+    final pax = _max(legacyPassengers.toDouble(), 1).toInt();
+    return pax;
+  }
+
+  double _lookupDiscountPct(int seatsForDiscount) {
+    if (seatsForDiscount <= 1) return 0.0;
+
+    // Prefer seat-based table
+    if (rules.carpoolDiscountBySeats.isNotEmpty) {
+      // Find the highest tier <= seatsForDiscount
+      double pct = 0.0;
+      for (final entry in rules.carpoolDiscountBySeats.entries) {
+        if (entry.key <= seatsForDiscount && entry.value > pct) {
+          pct = entry.value;
+        }
+      }
+      return pct;
+    }
+
+    // Fallback to legacy pax table
+    if (rules.carpoolDiscountByPaxLegacy.isNotEmpty) {
+      double pct = 0.0;
+      for (final entry in rules.carpoolDiscountByPaxLegacy.entries) {
+        if (entry.key <= seatsForDiscount && entry.value > pct) {
+          pct = entry.value;
+        }
+      }
+      return pct;
+    }
+
+    return 0.0;
+  }
 
   Future<(double km, double mins)> _distanceAndTime(
     LatLng from,
@@ -229,10 +311,10 @@ class FareService {
       final mins = d.durationSeconds / 60.0;
       if (km > 0) return (km, _max(mins, 1.0));
     } catch (_) {
-   
+      // OSRM fallback handled below
     }
     final km = _haversineKm(from, to);
-    const avgKmh = 22.0; 
+    const avgKmh = 22.0;
     final mins = (km / avgKmh) * 60.0;
     return (km, _max(mins, 1.0));
   }
@@ -264,7 +346,6 @@ class FareService {
       return h >= rules.nightStartHour || h < rules.nightEndHour;
     }
   }
-
 
   double _round(double v, int places) =>
       double.parse(v.toStringAsFixed(places));

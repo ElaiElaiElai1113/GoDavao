@@ -37,9 +37,12 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   final _sb = Supabase.instance.client;
   final _map = MapController();
   bool get _isChatLocked {
-  final s = _status.toLowerCase();
-  return s == 'cancelled' || s == 'canceled' || s == 'declined' || s == 'completed';
-}
+    final s = _status.toLowerCase();
+    return s == 'cancelled' ||
+        s == 'canceled' ||
+        s == 'declined' ||
+        s == 'completed';
+  }
 
   // Data
   Map<String, dynamic>? _ride; // passenger_ride_by_id composite
@@ -70,7 +73,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   final FareService _fareService = FareService(
     rules: const FareRules(
       defaultPlatformFeeRate: 0.15,
-      carpoolDiscountByPax: {2: 0.06, 3: 0.12, 4: 0.20, 5: 0.25},
+      carpoolDiscountBySeats: {2: 0.06, 3: 0.12, 4: 0.20, 5: 0.25},
     ),
   );
   FareBreakdown? _fareBx;
@@ -159,46 +162,50 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   // ───────────────────────── DB Loads ─────────────────────────
 
   Future<void> _loadRideComposite() async {
-  final res = await _sb
-      .rpc('passenger_ride_by_id', params: {'p_ride_id': widget.rideId})
-      .select()
-      .single();
-
-  if (!mounted) return;
-
-  final m = (res as Map).cast<String, dynamic>();
-  setState(() {
-    _ride = m;
-    _passengerNote = (m['passenger_note'] as String?); // 👈 try from RPC
-  });
-
-  // If the RPC doesn’t include passenger_note yet, do a quick fallback fetch.
-  if (_passengerNote == null) {
-    final rr = await _sb
-        .from('ride_requests')
-        .select('passenger_note')
-        .eq('id', widget.rideId)
-        .maybeSingle();
+    final res =
+        await _sb
+            .rpc('passenger_ride_by_id', params: {'p_ride_id': widget.rideId})
+            .select()
+            .single();
 
     if (!mounted) return;
+
+    final m = (res as Map).cast<String, dynamic>();
     setState(() {
-      _passengerNote = (rr?['passenger_note'] as String?);
+      _ride = m;
+      _passengerNote = (m['passenger_note'] as String?); // 👈 try from RPC
     });
+
+    // If the RPC doesn’t include passenger_note yet, do a quick fallback fetch.
+    if (_passengerNote == null) {
+      final rr =
+          await _sb
+              .from('ride_requests')
+              .select('passenger_note')
+              .eq('id', widget.rideId)
+              .maybeSingle();
+
+      if (!mounted) return;
+      setState(() {
+        _passengerNote = (rr?['passenger_note'] as String?);
+      });
+    }
   }
-}
 
-Future<void> _loadPassengerNoteOnly() async {
-  final rr = await _sb
-      .from('ride_requests')
-      .select('passenger_note')
-      .eq('id', widget.rideId)
-      .maybeSingle();
+  Future<void> _loadPassengerNoteOnly() async {
+    final rr =
+        await _sb
+            .from('ride_requests')
+            .select('passenger_note')
+            .eq('id', widget.rideId)
+            .maybeSingle();
 
-  if (!mounted) return;
-  setState(() => _passengerNote = (rr?['passenger_note'] as String?));
-  debugPrint('[RideStatus] note="${_passengerNote ?? 'NULL'}" for ${widget.rideId}');
-}
-
+    if (!mounted) return;
+    setState(() => _passengerNote = (rr?['passenger_note'] as String?));
+    debugPrint(
+      '[RideStatus] note="${_passengerNote ?? 'NULL'}" for ${widget.rideId}',
+    );
+  }
 
   Future<void> _loadPayment() async {
     final res =
@@ -520,31 +527,31 @@ Future<void> _loadPassengerNoteOnly() async {
   }
 
   Widget _passengerNoteSection() {
-  final note = (_passengerNote ?? '').trim();
-  if (note.isEmpty) return const SizedBox.shrink();
+    final note = (_passengerNote ?? '').trim();
+    if (note.isEmpty) return const SizedBox.shrink();
 
-  return _SectionCard(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const _CardTitle(
-          icon: Icons.sticky_note_2_outlined,
-          text: 'Your note to driver',
-        ),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: Colors.amber.shade50,
-            border: Border.all(color: Colors.amber.shade200),
-            borderRadius: BorderRadius.circular(10),
+    return _SectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardTitle(
+            icon: Icons.sticky_note_2_outlined,
+            text: 'Your note to driver',
           ),
-          child: Text(note),
-        ),
-      ],
-    ),
-  );
-}
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.amber.shade50,
+              border: Border.all(color: Colors.amber.shade200),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(note),
+          ),
+        ],
+      ),
+    );
+  }
 
   String _peso(num? v) =>
       v == null ? '₱0.00' : '₱${(v.toDouble()).toStringAsFixed(2)}';
@@ -668,28 +675,29 @@ Future<void> _loadPassengerNoteOnly() async {
           ),
           if (driverId != null) VerifiedBadge(userId: driverId, size: 22),
           if (driverId != null && _matchId != null)
-  IconButton(
-    tooltip: 'Chat with driver',
-    icon: const Icon(Icons.message_outlined),
-    onPressed: _isChatLocked
-        ? () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Chat unavailable — this ride was cancelled, declined, or completed.',
-                ),
-              ),
-            );
-          }
-        : () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ChatPage(matchId: _matchId!),
-              ),
-            );
-          },
-  ),
+            IconButton(
+              tooltip: 'Chat with driver',
+              icon: const Icon(Icons.message_outlined),
+              onPressed:
+                  _isChatLocked
+                      ? () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Chat unavailable — this ride was cancelled, declined, or completed.',
+                            ),
+                          ),
+                        );
+                      }
+                      : () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ChatPage(matchId: _matchId!),
+                          ),
+                        );
+                      },
+            ),
         ],
       ),
       body:
@@ -736,21 +744,21 @@ Future<void> _loadPassengerNoteOnly() async {
                           ],
                         ),
                       ),
-                      if (_isChatLocked)
-  Container(
-    padding: const EdgeInsets.all(10),
-    margin: const EdgeInsets.only(top: 6),
-    decoration: BoxDecoration(
-      color: Colors.amber.shade50,
-      border: Border.all(color: Colors.amber.shade200),
-      borderRadius: BorderRadius.circular(8),
-    ),
-    child: const Text(
-      'Chat is disabled for this ride because it was cancelled, declined, or completed.',
-      textAlign: TextAlign.center,
-      style: TextStyle(fontSize: 12),
-    ),
-  ),
+                    if (_isChatLocked)
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        margin: const EdgeInsets.only(top: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade50,
+                          border: Border.all(color: Colors.amber.shade200),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Chat is disabled for this ride because it was cancelled, declined, or completed.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
 
                     if (isCanceled) const SizedBox(height: 12),
 
@@ -963,9 +971,9 @@ Future<void> _loadPassengerNoteOnly() async {
                     const SizedBox(height: 12),
 
                     if ((_passengerNote ?? '').trim().isNotEmpty) ...[
-  _passengerNoteSection(),
-  const SizedBox(height: 12),
-],
+                      _passengerNoteSection(),
+                      const SizedBox(height: 12),
+                    ],
 
                     // Fare
                     if (_fareBx != null)
@@ -1123,11 +1131,11 @@ Future<void> _loadPassengerNoteOnly() async {
               _detailRow('Passenger', passengerName),
               _detailRow('Driver', driverName),
               _detailRow(
-  'Passenger note',
-  ((_passengerNote ?? '').trim().isEmpty)
-      ? '—'
-      : _passengerNote!.trim(),
-),
+                'Passenger note',
+                ((_passengerNote ?? '').trim().isEmpty)
+                    ? '—'
+                    : _passengerNote!.trim(),
+              ),
               if (fare != null) _detailRow('Fare', _peso(fare)),
               const SizedBox(height: 12),
               if (_payment != null)
@@ -1375,7 +1383,7 @@ class _CarpoolBreakdownTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final keys =
-        <int>{1, ...fareService.rules.carpoolDiscountByPax.keys}.toList()
+        <int>{1, ...fareService.rules.carpoolDiscountBySeats.keys}.toList()
           ..sort();
 
     final rows = <TableRow>[];
@@ -1404,8 +1412,8 @@ class _CarpoolBreakdownTable extends StatelessWidget {
               mono: true,
               bold: isCurrent,
             ),
-            _cell(peso(fb.total),  mono: false, bold: isCurrent),
-_cell(peso(perSeat),   mono: false, bold: isCurrent),
+            _cell(peso(fb.total), mono: false, bold: isCurrent),
+            _cell(peso(perSeat), mono: false, bold: isCurrent),
           ],
         ),
       );

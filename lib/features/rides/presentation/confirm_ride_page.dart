@@ -45,10 +45,12 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
 
   // Services
   final _sb = Supabase.instance.client;
+
+  /// ⚠️ Uses seat-based tiers; pakyaw still disables discount.
   final _fareService = FareService(
     rules: const FareRules(
       defaultPlatformFeeRate: 0.15,
-      carpoolDiscountByPax: {2: 0.06, 3: 0.12, 4: 0.20, 5: 0.25},
+      carpoolDiscountBySeats: {2: 0.06, 3: 0.12, 4: 0.20, 5: 0.25},
     ),
   );
 
@@ -67,7 +69,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   int? _capacityAvailable;
 
   bool _pakyaw = false; // whole-vehicle booking
-  int _carpoolSize = 1; // preview size (incl. me unless pakyaw)
+  int _carpoolSeatsForDiscount = 1; // seats used for discount tiers
   FareBreakdown? _fare;
 
   bool _didFit = false;
@@ -203,37 +205,41 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     return max(1, min(6, avail));
   }
 
-  // ────────────── Carpool + Fare preview ──────────────
+  // ────────────── Carpool + Fare preview (Seat-based) ──────────────
   Future<void> _refreshCarpoolAndFare() async {
-    // Get current carpool size from server (excluding me)
-    int paxExisting = 0;
+    // Seats already allocated on this route (active statuses), EXCLUDING this booking
+    int seatsExisting = 0;
     try {
       final res =
           await _sb
               .rpc(
-                'carpool_size_for_route',
+                'carpool_seats_for_route',
                 params: {'p_route_id': widget.routeId},
               )
               .single();
       final v = (res as Map).values.first;
-      paxExisting = (v is num) ? v.toInt() : int.tryParse('$v') ?? 0;
+      seatsExisting = (v is num) ? v.toInt() : int.tryParse('$v') ?? 0;
     } catch (_) {
-      paxExisting = 0;
+      seatsExisting = 0;
     }
 
-    // For preview, include me unless pakyaw (pakyaw disables discount)
-    final paxForPricing = _pakyaw ? 1 : (paxExisting + 1);
+    // For preview: pakyaw disables discount (so don't add my seats to the discount tier)
+    final seatsForDiscount =
+        _pakyaw
+            ? max(1, seatsExisting)
+            : max(1, seatsExisting + _seatsRequested);
 
     final fb = _fareService.estimateForDistance(
       distanceKm: _distanceKm,
       durationMin: _durationMin,
-      seats: _effectiveSeats,
-      carpoolPassengers: paxForPricing,
+      seats: _effectiveSeats, // seats I pay for
+      carpoolSeats: seatsForDiscount, // seats used for discount tier
+      // (legacy carpoolPassengers is not needed anymore)
     );
 
     if (!mounted) return;
     setState(() {
-      _carpoolSize = paxForPricing;
+      _carpoolSeatsForDiscount = seatsForDiscount;
       _fare = fb;
     });
   }
@@ -300,7 +306,10 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 'requested_seats': seatsToReserve,
                 'payment_method': 'gcash',
                 'is_pakyaw': _pakyaw,
-                'passenger_note': _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
+                'passenger_note':
+                    _noteCtrl.text.trim().isEmpty
+                        ? null
+                        : _noteCtrl.text.trim(),
               }, onConflict: 'client_token')
               .select('id')
               .single();
@@ -332,6 +341,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       await _ensureRideMatch(rideReqId);
 
       // 5) Ask server to reprice EVERYONE on this route now (keeps DB truthy)
+      //    (Recommended: make this use total seats for discount tiers.)
       try {
         await _sb.rpc(
           'reprice_carpool_for_route',
@@ -737,37 +747,36 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
           const _CardTitle(icon: Icons.event_seat, text: 'Seats'),
           const SizedBox(height: 6),
           Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // Long text can take remaining width and wrap/ellipsis
-            Expanded(
-              child: Text(
-                'Pakyaw: reserving all available seats',
-                maxLines: 2,
-                softWrap: true,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Text(
+                  'Pakyaw: reserving all available seats',
+                  maxLines: 2,
+                  softWrap: true,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            // Compact right label scales down if tight
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                'Available: $capAvail / $capTotal',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: capAvail > 0
-                      ? Colors.green.shade700
-                      : Colors.red.shade700,
+              const SizedBox(width: 8),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  'Available: $capAvail / $capTotal',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color:
+                        capAvail > 0
+                            ? Colors.green.shade700
+                            : Colors.red.shade700,
+                  ),
                 ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
         ],
       ),
     );
@@ -823,28 +832,28 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   }
 
   Widget _noteCard() {
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      const _CardTitle(
-        icon: Icons.sticky_note_2_outlined,
-        text: 'Note to driver',
-      ),
-      const SizedBox(height: 6),
-      TextField(
-        controller: _noteCtrl,
-        maxLines: 3,
-        maxLength: 500, // keep in sync with DB cap
-        textInputAction: TextInputAction.newline,
-        decoration: const InputDecoration(
-          hintText: 'Landmarks, gate code, special assistance, etc.',
-          border: OutlineInputBorder(),
-          isDense: true,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _CardTitle(
+          icon: Icons.sticky_note_2_outlined,
+          text: 'Note to driver',
         ),
-      ),
-    ],
-  );
-}
+        const SizedBox(height: 6),
+        TextField(
+          controller: _noteCtrl,
+          maxLines: 3,
+          maxLength: 500, // keep in sync with DB cap
+          textInputAction: TextInputAction.newline,
+          decoration: const InputDecoration(
+            hintText: 'Landmarks, gate code, special assistance, etc.',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _pickupDestinationBubbles() {
     return Container(
@@ -951,11 +960,12 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 ),
               _ChipIcon(
                 icon: Icons.group_outlined,
-                label: 'Carpool size: $_carpoolSize',
+                label: 'Carpool seats: $_carpoolSeatsForDiscount',
               ),
               _ChipIcon(
                 icon: Icons.event_seat_outlined,
-                label: 'Seats: ${_pakyaw ? _effectiveSeats : _seatsRequested}',
+                label:
+                    'Seats billed: ${_pakyaw ? _effectiveSeats : _seatsRequested}',
               ),
               _ChipIcon(
                 icon: Icons.route_outlined,
@@ -988,6 +998,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
             _fareRow('Surge used', '${bx.surgeMultiplier.toStringAsFixed(2)}×'),
             const SizedBox(height: 6),
             _fareRow('Seats billed', '${bx.seatsBilled}'),
+            _fareRow('Carpool seats (tier)', '${_carpoolSeatsForDiscount}'),
             _fareRow(
               'Carpool discount',
               '${(bx.carpoolDiscountPct * 100).toStringAsFixed(0)}%',
@@ -1011,19 +1022,20 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
 
   Widget _carpoolPreviewTable() {
     final cap = _capacityTotal ?? 4;
-    final maxPax = cap.clamp(1, 5);
+    final maxSeatsTier = cap.clamp(1, 5);
     final rows = <TableRow>[];
 
-    for (int pax = 1; pax <= maxPax; pax++) {
+    // Preview how the discount changes with TOTAL SEATS on the route
+    for (int seatsTier = 1; seatsTier <= maxSeatsTier; seatsTier++) {
       final fb = _fareService.estimateForDistance(
         distanceKm: _distanceKm,
         durationMin: _durationMin,
-        seats: _seatsRequested,
-        carpoolPassengers: pax,
+        seats: _seatsRequested, // what I am booking
+        carpoolSeats: seatsTier, // discount tier seat count
       );
       final perSeat =
           _seatsRequested > 0 ? (fb.total / _seatsRequested) : fb.total;
-      rows.add(_tableRow(['$pax', _peso(fb.total), _peso(perSeat)]));
+      rows.add(_tableRow(['$seatsTier', _peso(fb.total), _peso(perSeat)]));
     }
 
     return _Card(
@@ -1032,11 +1044,11 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         children: [
           const _CardTitle(
             icon: Icons.ssid_chart_outlined,
-            text: 'Carpool savings preview',
+            text: 'Carpool savings preview (by total seats)',
           ),
           const SizedBox(height: 6),
           Text(
-            'See how price changes as more riders share the trip.',
+            'See how price changes as more seats are taken on this route.',
             style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
           ),
           const SizedBox(height: 10),
@@ -1048,7 +1060,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
             },
             defaultVerticalAlignment: TableCellVerticalAlignment.middle,
             children: [
-              _tableHeader(['Riders', 'Total (₱)', 'Per seat (₱)']),
+              _tableHeader(['Seats (total)', 'Total (₱)', 'Per seat (₱)']),
               ...rows,
             ],
           ),
