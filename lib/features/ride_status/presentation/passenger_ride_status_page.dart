@@ -5,27 +5,20 @@ import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
-// Features
 import 'package:godavao/features/chat/presentation/chat_page.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
 import 'package:godavao/features/ratings/presentation/rate_user.dart';
 import 'package:godavao/features/ratings/data/ratings_service.dart';
 import 'package:godavao/features/payments/presentation/payment_status_chip.dart';
-import 'package:godavao/features/safety/presentation/sos_sheet.dart'; // <-- Safety
-
-// Live tracking
+import 'package:godavao/features/safety/presentation/sos_sheet.dart';
 import 'package:godavao/features/live_tracking/data/live_publisher.dart';
 import 'package:godavao/features/live_tracking/data/live_subscriber.dart';
-
-// Pricing
 import 'package:godavao/core/fare_service.dart';
 
 class PassengerRideStatusPage extends StatefulWidget {
   final String rideId;
   const PassengerRideStatusPage({super.key, required this.rideId});
-
   @override
   State<PassengerRideStatusPage> createState() =>
       _PassengerRideStatusPageState();
@@ -33,7 +26,6 @@ class PassengerRideStatusPage extends StatefulWidget {
 
 class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     with WidgetsBindingObserver {
-  // Core
   final _sb = Supabase.instance.client;
   final _map = MapController();
   bool get _isChatLocked {
@@ -44,32 +36,26 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
         s == 'completed';
   }
 
-  // Data
-  Map<String, dynamic>? _ride; // passenger_ride_by_id composite
-  Map<String, dynamic>? _payment; // payment_intents row (maybe null)
+  Map<String, dynamic>? _ride;
+  Map<String, dynamic>? _payment;
   String? _passengerNote;
 
-  // Live state
-  LivePublisher? _publisher; // this passenger's publisher
+  LivePublisher? _publisher;
   LiveSubscriber? _driverSub;
   LiveSubscriber? _selfSub;
   LatLng? _driverLive;
   LatLng? _myLive;
 
-  // Streams
   StreamSubscription<List<Map<String, dynamic>>>? _rideReqSub;
   StreamSubscription<List<Map<String, dynamic>>>? _rideMatchSub;
   RealtimeChannel? _feeChannel;
 
-  // IDs / booking facts
   String? _matchId;
-  int _seatsBilled = 1; // ride_matches.seats_allocated for THIS booking
+  int _seatsBilled = 1;
 
-  // Carpool snapshot across the route
-  int _activeBookings = 1; // unique active ride requests
-  int _activeSeatsTotal = 1; // sum of seats across those bookings
+  int _activeBookings = 1;
+  int _activeSeatsTotal = 1;
 
-  // Fare
   final FareService _fareService = FareService(
     rules: const FareRules(
       defaultPlatformFeeRate: 0.15,
@@ -80,18 +66,14 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   double _platformFeeRate = 0.0;
   bool _estimatingFare = false;
 
-  // UX state
   bool _loading = true;
   String? _error;
   bool _ratingPromptShown = false;
   bool _didFitOnce = false;
 
-  // Theme
   static const _bg = Color(0xFFF7F7FB);
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
-
-  // ───────────────────────── Lifecycle ─────────────────────────
 
   @override
   void initState() {
@@ -123,33 +105,26 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     }
   }
 
-  // ───────────────────────── Bootstrap ─────────────────────────
-
   Future<void> _bootstrap() async {
     setState(() {
       _loading = true;
       _error = null;
       _didFitOnce = false;
     });
-
     try {
       await Future.wait([
         _loadPassengerNoteOnly(),
         _loadRideComposite(),
         _loadPayment(),
-        _loadMatchFacts(), // loads _matchId + _seatsBilled
+        _loadMatchFacts(),
         _loadPlatformFeeRate(),
       ]);
-
-      await _loadCarpoolSeatSnapshot(); // riders vs seats on the route
-
+      await _loadCarpoolSeatSnapshot();
       _subscribePlatformFee();
       _watchParents();
-
       _syncPassengerPublisherToStatus();
       _startDriverSubscriber();
       _startSelfSubscriber();
-
       await _estimateFare();
       await _maybePromptRatingIfCompleted();
     } catch (e) {
@@ -159,24 +134,18 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     }
   }
 
-  // ───────────────────────── DB Loads ─────────────────────────
-
   Future<void> _loadRideComposite() async {
     final res =
         await _sb
             .rpc('passenger_ride_by_id', params: {'p_ride_id': widget.rideId})
             .select()
             .single();
-
     if (!mounted) return;
-
     final m = (res as Map).cast<String, dynamic>();
     setState(() {
       _ride = m;
-      _passengerNote = (m['passenger_note'] as String?); // 👈 try from RPC
+      _passengerNote = (m['passenger_note'] as String?);
     });
-
-    // If the RPC doesn’t include passenger_note yet, do a quick fallback fetch.
     if (_passengerNote == null) {
       final rr =
           await _sb
@@ -184,7 +153,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
               .select('passenger_note')
               .eq('id', widget.rideId)
               .maybeSingle();
-
       if (!mounted) return;
       setState(() {
         _passengerNote = (rr?['passenger_note'] as String?);
@@ -199,12 +167,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
             .select('passenger_note')
             .eq('id', widget.rideId)
             .maybeSingle();
-
     if (!mounted) return;
     setState(() => _passengerNote = (rr?['passenger_note'] as String?));
-    debugPrint(
-      '[RideStatus] note="${_passengerNote ?? 'NULL'}" for ${widget.rideId}',
-    );
   }
 
   Future<void> _loadPayment() async {
@@ -218,7 +182,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     setState(() => _payment = (res as Map?)?.cast<String, dynamic>());
   }
 
-  /// Load match id AND authoritative seats allocated for THIS booking
   Future<void> _loadMatchFacts() async {
     final row =
         await _sb
@@ -226,12 +189,9 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
             .select('id, seats_allocated')
             .eq('ride_request_id', widget.rideId)
             .maybeSingle();
-
     if (!mounted) return;
-
     final id = (row as Map?)?['id']?.toString();
     final seats = ((row?['seats_allocated'] as num?)?.toInt() ?? 1).clamp(1, 6);
-
     setState(() {
       _matchId = id;
       _seatsBilled = seats;
@@ -246,7 +206,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
               .select('key, value, value_num')
               .eq('key', 'platform_fee_rate')
               .maybeSingle();
-
       final num? n = (row?['value_num'] as num?) ?? (row?['value'] as num?);
       final parsed =
           n?.toDouble() ?? double.tryParse(row?['value']?.toString() ?? '');
@@ -257,17 +216,14 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     } catch (_) {}
   }
 
-  /// Riders vs seats across the route (active only)
   Future<void> _loadCarpoolSeatSnapshot() async {
     final routeId = _ride?['driver_route_id']?.toString();
     if (routeId == null) return;
-
     try {
       final rows = await _sb
           .from('ride_matches')
           .select('ride_request_id, seats_allocated, ride_requests(status)')
           .eq('driver_route_id', routeId);
-
       final activeStatuses = {'pending', 'accepted', 'en_route'};
       final active =
           (rows as List).map((e) => Map<String, dynamic>.from(e)).where((r) {
@@ -275,26 +231,19 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                 (r['ride_requests']?['status'] as String?)?.toLowerCase() ?? '';
             return activeStatuses.contains(s);
           }).toList();
-
       final bookings =
           active.map((r) => r['ride_request_id'].toString()).toSet().length;
-
       final seatsTotal = active.fold<int>(
         0,
         (acc, r) => acc + ((r['seats_allocated'] as num?)?.toInt() ?? 0),
       );
-
       if (!mounted) return;
       setState(() {
         _activeBookings = bookings == 0 ? 1 : bookings;
         _activeSeatsTotal = seatsTotal == 0 ? 1 : seatsTotal;
       });
-    } catch (_) {
-      // ignore; keep previous snapshot
-    }
+    } catch (_) {}
   }
-
-  // ───────────────────────── Streams / Realtime ─────────────────────────
 
   void _watchParents() {
     _rideReqSub?.cancel();
@@ -313,7 +262,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
           await _loadPassengerNoteOnly();
           if (mounted) setState(() {});
         });
-
     _rideMatchSub?.cancel();
     _rideMatchSub = _sb
         .from('ride_matches')
@@ -375,8 +323,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
           )
           ..subscribe();
   }
-
-  // ───────────────────────── Live tracking ─────────────────────────
 
   void _syncPassengerPublisherToStatus() {
     final s = _status;
@@ -443,37 +389,30 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     )..listen();
   }
 
-  // ───────────────────────── Fare estimation ─────────────────────────
-
   Future<void> _estimateFare() async {
     final p = _pickup;
     final d = _dropoff;
     if (p == null || d == null) return;
-
-    final seats = _seatsBilled; // seats you actually booked
-    final carpoolPassengers = _activeBookings; // unique bookings
+    final seats = _seatsBilled;
+    final totalSeatsOnRoute = _activeSeatsTotal;
     final surge = (_ride?['surge_multiplier'] as num?)?.toDouble() ?? 1.0;
-
     setState(() => _estimatingFare = true);
     try {
       final bx = await _fareService.estimate(
         pickup: p,
         destination: d,
         seats: seats,
-        carpoolPassengers: carpoolPassengers,
+        carpoolSeats: totalSeatsOnRoute,
         platformFeeRate: _platformFeeRate,
         surgeMultiplier: surge,
       );
       if (!mounted) return;
       setState(() => _fareBx = bx);
     } catch (_) {
-      // keep last known _fareBx
     } finally {
       if (mounted) setState(() => _estimatingFare = false);
     }
   }
-
-  // ───────────────────────── Helpers ─────────────────────────
 
   void _fitImportant() {
     final pts = <LatLng>[
@@ -529,7 +468,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   Widget _passengerNoteSection() {
     final note = (_passengerNote ?? '').trim();
     if (note.isEmpty) return const SizedBox.shrink();
-
     return _SectionCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -576,14 +514,12 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     final me = _sb.auth.currentUser?.id;
     final driverId = _ride?['driver_id']?.toString();
     if (me == null || driverId == null) return;
-
     final existing = await RatingsService(_sb).getExistingRating(
       rideId: widget.rideId,
       raterUserId: me,
       rateeUserId: driverId,
     );
     if (existing != null) return;
-
     if (!mounted) return;
     _ratingPromptShown = true;
     await showModalBottomSheet(
@@ -600,8 +536,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     );
   }
 
-  // ───────────────────────── Safety ─────────────────────────
-
   void _openSos() {
     HapticFeedback.selectionClick();
     showModalBottomSheet(
@@ -611,8 +545,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     );
   }
 
-  // ───────────────────────── UI ─────────────────────────
-
   @override
   Widget build(BuildContext context) {
     final fare = (_ride?['fare'] as num?)?.toDouble();
@@ -620,10 +552,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     final driverId = _ride?['driver_id']?.toString();
     final driverName = (_ride?['driver_name'] as String?) ?? '—';
     final bookingType = (_ride?['booking_type'] as String?) ?? 'shared';
-
     final center =
         _driverLive ?? _pickup ?? _dropoff ?? const LatLng(7.1907, 125.4553);
-
     final isCancelable = _status == 'pending' || _status == 'accepted';
     final isCanceled = _status == 'canceled';
 
@@ -667,7 +597,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
         iconTheme: const IconThemeData(color: Colors.white),
         actionsIconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          // Quick SOS access from AppBar
           IconButton(
             tooltip: 'SOS',
             icon: const Icon(Icons.emergency_share),
@@ -759,10 +688,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                           style: TextStyle(fontSize: 12),
                         ),
                       ),
-
                     if (isCanceled) const SizedBox(height: 12),
-
-                    // Chips (status, pay, riders/seats)
                     _SectionCard(
                       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                       child: Wrap(
@@ -808,8 +734,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                       ),
                     ),
                     const SizedBox(height: 12),
-
-                    // Map
                     _SectionCard(
                       child: Column(
                         children: [
@@ -925,8 +849,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                       ),
                     ),
                     const SizedBox(height: 12),
-
-                    // Driver summary
                     _SectionCard(
                       child: Row(
                         children: [
@@ -969,13 +891,10 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                       ),
                     ),
                     const SizedBox(height: 12),
-
                     if ((_passengerNote ?? '').trim().isNotEmpty) ...[
                       _passengerNoteSection(),
                       const SizedBox(height: 12),
                     ],
-
-                    // Fare
                     if (_fareBx != null)
                       _SectionCard(
                         child: _FareBreakdownPro(
@@ -994,7 +913,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                           peso: _peso,
                         ),
                       ),
-
                     if (_fareBx != null) ...[
                       const SizedBox(height: 12),
                       _SectionCard(
@@ -1007,7 +925,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                         ),
                       ),
                     ],
-
                     if (_status == 'completed' && driverId != null) ...[
                       const SizedBox(height: 16),
                       OutlinedButton.icon(
@@ -1087,7 +1004,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                 ),
                 onPressed: () {
                   if (_status == 'en_route') {
-                    _openSos(); // <-- Safety sheet
+                    _openSos();
                   } else if (isCancelable) {
                     _cancelRide();
                   } else {
@@ -1172,13 +1089,10 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   }
 }
 
-/* ───────────── Small UI helpers ───────────── */
-
 class _SectionCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry? padding;
   const _SectionCard({required this.child, this.padding});
-
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -1209,7 +1123,6 @@ class _MiniAction extends StatelessWidget {
     required this.label,
     required this.onPressed,
   });
-
   @override
   Widget build(BuildContext context) {
     return OutlinedButton.icon(
@@ -1231,14 +1144,12 @@ class _FareBreakdownSimple extends StatelessWidget {
   final int seats;
   final String bookingType;
   final String Function(num?) peso;
-
   const _FareBreakdownSimple({
     required this.total,
     required this.seats,
     required this.bookingType,
     required this.peso,
   });
-
   @override
   Widget build(BuildContext context) {
     final perSeat = seats > 0 ? (total / seats) : total;
@@ -1287,20 +1198,17 @@ class _FareBreakdownPro extends StatelessWidget {
   final FareBreakdown bx;
   final String Function(num?) peso;
   final bool estimating;
-  final int? seatsBilledOverride; // show allocated seats
-
+  final int? seatsBilledOverride;
   const _FareBreakdownPro({
     required this.bx,
     required this.peso,
     this.estimating = false,
     this.seatsBilledOverride,
   });
-
   @override
   Widget build(BuildContext context) {
     final seatsBilled = (seatsBilledOverride ?? bx.seatsBilled).clamp(1, 6);
     final perSeat = seatsBilled > 0 ? (bx.total / seatsBilled) : bx.total;
-
     TextStyle label = const TextStyle(color: Colors.black54, fontSize: 13);
     TextStyle val = const TextStyle(fontWeight: FontWeight.w700);
     TextStyle valStrong = const TextStyle(fontWeight: FontWeight.w800);
@@ -1371,7 +1279,6 @@ class _CarpoolBreakdownTable extends StatelessWidget {
   final FareBreakdown bx;
   final FareService fareService;
   final String Function(num?) peso;
-
   const _CarpoolBreakdownTable({
     required this.currentCarpool,
     required this.seatsRequested,
@@ -1385,28 +1292,26 @@ class _CarpoolBreakdownTable extends StatelessWidget {
     final keys =
         <int>{1, ...fareService.rules.carpoolDiscountBySeats.keys}.toList()
           ..sort();
-
     final rows = <TableRow>[];
-    for (final pax in keys) {
+    for (final tierSeats in keys) {
       final fb = fareService.estimateForDistance(
         distanceKm: bx.distanceKm,
         durationMin: bx.durationMin,
         seats: seatsRequested,
-        carpoolPassengers: pax,
+        carpoolSeats: tierSeats,
         platformFeeRate: fareService.rules.defaultPlatformFeeRate,
         surgeMultiplier: bx.surgeMultiplier,
       );
       final perSeat =
           fb.seatsBilled > 0 ? (fb.total / fb.seatsBilled) : fb.total;
-
-      final isCurrent = pax == currentCarpool;
+      final isCurrent = tierSeats == currentCarpool;
       rows.add(
         TableRow(
           decoration: BoxDecoration(
             color: isCurrent ? Colors.indigo.withOpacity(.05) : null,
           ),
           children: [
-            _cell('$pax', bold: isCurrent),
+            _cell('$tierSeats', bold: isCurrent),
             _cell(
               '${(fb.carpoolDiscountPct * 100).toStringAsFixed(0)}%',
               mono: true,
@@ -1418,7 +1323,6 @@ class _CarpoolBreakdownTable extends StatelessWidget {
         ),
       );
     }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1498,7 +1402,6 @@ class _Chip extends StatelessWidget {
     this.color,
     this.textColor,
   });
-
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -1531,7 +1434,6 @@ class _CardTitle extends StatelessWidget {
   final IconData icon;
   final String text;
   const _CardTitle({required this.icon, required this.text});
-
   @override
   Widget build(BuildContext context) {
     return Row(

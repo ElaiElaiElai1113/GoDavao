@@ -17,8 +17,8 @@ import 'package:godavao/main.dart' show localNotify;
 class ConfirmRidePage extends StatefulWidget {
   final LatLng pickup;
   final LatLng destination;
-  final String routeId; // driver_routes.id
-  final String driverId; // driver user id
+  final String routeId;
+  final String driverId;
 
   const ConfirmRidePage({
     required this.pickup,
@@ -33,7 +33,6 @@ class ConfirmRidePage extends StatefulWidget {
 }
 
 class _ConfirmRidePageState extends State<ConfirmRidePage> {
-  // Theme / formatters
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
   final _pesoFmt = NumberFormat.currency(
@@ -43,21 +42,21 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   );
   String _peso(num? v) => _pesoFmt.format((v ?? 0).toDouble());
 
-  // Services
   final _sb = Supabase.instance.client;
 
-  /// ⚠️ Uses seat-based tiers; pakyaw still disables discount.
   final _fareService = FareService(
     rules: const FareRules(
       defaultPlatformFeeRate: 0.15,
       carpoolDiscountBySeats: {2: 0.06, 3: 0.12, 4: 0.20, 5: 0.25},
+      groupFlatMultiplier: 1.10,
+      pakyawMultiplier: 1.20,
     ),
   );
 
-  // State
   bool _loading = true;
   bool _submitting = false;
   String? _error;
+  bool _groupFlat = false;
 
   final _map = MapController();
   Polyline? _routePolyline;
@@ -68,8 +67,8 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   int? _capacityTotal;
   int? _capacityAvailable;
 
-  bool _pakyaw = false; // whole-vehicle booking
-  int _carpoolSeatsForDiscount = 1; // seats used for discount tiers
+  bool _pakyaw = false;
+  int _carpoolSeatsForDiscount = 1;
   FareBreakdown? _fare;
 
   bool _didFit = false;
@@ -91,25 +90,22 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     super.dispose();
   }
 
-  // ───────────────── Bootstrap ─────────────────
   Future<void> _bootstrap() async {
     setState(() {
       _loading = true;
       _error = null;
       _didFit = false;
     });
-
     try {
       await Future.wait([_loadRouteGeometryAndMetrics(), _loadCapacity()]);
       await _refreshCarpoolAndFare();
-    } catch (e) {
+    } catch (_) {
       _error ??= 'Something went wrong.';
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  // ────────────── Route / OSRM metrics ──────────────
   Future<void> _loadRouteGeometryAndMetrics() async {
     try {
       final d = await fetchOsrmRouteDetailed(
@@ -119,7 +115,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       );
       final km = d.distanceMeters / 1000.0;
       final mins = max(d.durationSeconds / 60.0, 1.0);
-
       if (!mounted) return;
       setState(() {
         _routePolyline = d.toPolyline(
@@ -130,11 +125,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         _durationMin = double.parse(mins.toStringAsFixed(0));
       });
     } catch (_) {
-      // straight-line fallback
       final km = _haversineKm(widget.pickup, widget.destination);
       const avgKmh = 22.0;
       final mins = max((km / avgKmh) * 60.0, 1.0);
-
       if (!mounted) return;
       setState(() {
         _routePolyline = Polyline(
@@ -147,8 +140,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         _error = 'OSRM unavailable — using approximate route.';
       });
     }
-
-    // Fit map once
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_didFit) return;
       _didFit = true;
@@ -173,7 +164,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     return r * c;
   }
 
-  // ────────────── Capacity ──────────────
   Future<void> _loadCapacity() async {
     try {
       final route =
@@ -182,10 +172,8 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
               .select('capacity_total, capacity_available')
               .eq('id', widget.routeId)
               .single();
-
       final total = (route['capacity_total'] as num?)?.toInt();
       final avail = (route['capacity_available'] as num?)?.toInt();
-
       setState(() {
         _capacityTotal = total;
         _capacityAvailable = avail;
@@ -205,9 +193,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     return max(1, min(6, avail));
   }
 
-  // ────────────── Carpool + Fare preview (Seat-based) ──────────────
   Future<void> _refreshCarpoolAndFare() async {
-    // Seats already allocated on this route (active statuses), EXCLUDING this booking
     int seatsExisting = 0;
     try {
       final res =
@@ -223,18 +209,19 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       seatsExisting = 0;
     }
 
-    // For preview: pakyaw disables discount (so don't add my seats to the discount tier)
     final seatsForDiscount =
+        _pakyaw ? 1 : max(1, seatsExisting + _seatsRequested);
+    final mode =
         _pakyaw
-            ? max(1, seatsExisting)
-            : max(1, seatsExisting + _seatsRequested);
+            ? PricingMode.pakyaw
+            : (_groupFlat ? PricingMode.groupFlat : PricingMode.shared);
 
     final fb = _fareService.estimateForDistance(
       distanceKm: _distanceKm,
       durationMin: _durationMin,
-      seats: _effectiveSeats, // seats I pay for
-      carpoolSeats: seatsForDiscount, // seats used for discount tier
-      // (legacy carpoolPassengers is not needed anymore)
+      seats: _effectiveSeats,
+      carpoolSeats: seatsForDiscount,
+      mode: mode,
     );
 
     if (!mounted) return;
@@ -254,7 +241,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     );
   }
 
-  // ────────────── Confirm Ride ──────────────
   Future<void> _confirmRide() async {
     if (_submitting) return;
     setState(() => _submitting = true);
@@ -283,11 +269,10 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
 
     final token = const Uuid().v4();
     final amount = fb.total;
-    final fareBasis =
-        (fb.subtotal + fb.nightSurcharge) * fb.surgeMultiplier * fb.seatsBilled;
+    final fareBasis = (fb.subtotal + fb.nightSurcharge) * fb.surgeMultiplier;
+    final bookingType = _pakyaw ? 'pakyaw' : (_groupFlat ? 'group' : 'shared');
 
     try {
-      // 1) Create ride request with final fare & metadata
       final req =
           await _sb
               .from('ride_requests')
@@ -306,6 +291,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 'requested_seats': seatsToReserve,
                 'payment_method': 'gcash',
                 'is_pakyaw': _pakyaw,
+                'booking_type': bookingType,
                 'passenger_note':
                     _noteCtrl.text.trim().isEmpty
                         ? null
@@ -317,7 +303,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       final rideReqId = (req['id'] as String?) ?? '';
       if (rideReqId.isEmpty) throw 'Failed to create ride request';
 
-      // 2) Allocate seats (atomic on DB)
       await _sb.rpc(
         'allocate_seats',
         params: {
@@ -327,7 +312,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         },
       );
 
-      // 3) Payment hold
       final payments = PaymentsService(_sb);
       await payments.upsertOnHoldSafe(
         rideId: rideReqId,
@@ -337,25 +321,22 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         payeeUserId: widget.driverId,
       );
 
-      // 4) Ensure a ride_match row exists
       await _ensureRideMatch(rideReqId);
 
-      // 5) Ask server to reprice EVERYONE on this route now (keeps DB truthy)
-      //    (Recommended: make this use total seats for discount tiers.)
       try {
         await _sb.rpc(
           'reprice_carpool_for_route',
           params: {'p_route_id': widget.routeId},
         );
-      } catch (_) {
-        // Non-fatal; UI already priced, backend will catch up
-      }
+      } catch (_) {}
 
       await _notify(
         'Ride Requested',
         _pakyaw
             ? 'Whole vehicle reserved & payment hold placed.'
-            : 'Seats reserved & payment hold placed.',
+            : (_groupFlat
+                ? 'Group booking placed.'
+                : 'Seats reserved & payment hold placed.'),
       );
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/passenger_rides');
@@ -378,7 +359,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       'status': 'pending',
       'seats_allocated': _effectiveSeats,
     };
-
     try {
       await _sb.from('ride_matches').insert(payload);
     } on PostgrestException catch (e) {
@@ -410,7 +390,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     }
   }
 
-  // ────────────── Utils ──────────────
   Future<void> _notify(String title, String body) async {
     try {
       const android = AndroidNotificationDetails(
@@ -434,8 +413,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
-
-  // ────────────── UI ──────────────
 
   @override
   Widget build(BuildContext context) {
@@ -481,10 +458,8 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
           ),
         ),
       ),
-
       body: Column(
         children: [
-          // --- MAP SECTION ---
           Padding(
             padding: const EdgeInsets.all(12),
             child: ClipRRect(
@@ -496,7 +471,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                     BoxShadow(
                       color: Colors.black.withOpacity(0.1),
                       blurRadius: 12,
-                      offset: const Offset(0, 4),
+                      offset: Offset(0, 4),
                     ),
                   ],
                 ),
@@ -504,7 +479,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
               ),
             ),
           ),
-
           if (_error != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -521,8 +495,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 ),
               ),
             ),
-
-          // --- DETAILS SECTION ---
           Expanded(
             child: RefreshIndicator(
               onRefresh: () async {
@@ -543,6 +515,22 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                   if (!_pakyaw) ...[
                     const SizedBox(height: 10),
                     _buildCard(child: _seatsCard()),
+                    const SizedBox(height: 10),
+                    _buildCard(
+                      child: SwitchListTile.adaptive(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Group booking (one payer)'),
+                        subtitle: const Text('Flat price for your group'),
+                        value: _groupFlat,
+                        onChanged:
+                            _submitting
+                                ? null
+                                : (v) async {
+                                  setState(() => _groupFlat = v);
+                                  await _refreshCarpoolAndFare();
+                                },
+                      ),
+                    ),
                   ],
                   if (_pakyaw) ...[
                     const SizedBox(height: 10),
@@ -550,10 +538,8 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                   ],
                   const SizedBox(height: 10),
                   _pickupDestinationBubbles(),
-
                   const SizedBox(height: 10),
                   _buildCard(child: _noteCard()),
-
                   const SizedBox(height: 10),
                   _buildCard(child: _fareCard(fareTotal, perSeat)),
                   if (!_pakyaw) ...[
@@ -566,8 +552,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
           ),
         ],
       ),
-
-      // --- CONFIRM BUTTON ---
       bottomNavigationBar: SafeArea(
         child: Container(
           margin: const EdgeInsets.all(16),
@@ -582,7 +566,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
               BoxShadow(
                 color: _purple.withOpacity(0.4),
                 blurRadius: 10,
-                offset: const Offset(0, 5),
+                offset: Offset(0, 5),
               ),
             ],
           ),
@@ -595,6 +579,8 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                     ? 'Processing...'
                     : _pakyaw
                     ? 'Confirm Pakyaw • ${_peso(fareTotal)}'
+                    : _groupFlat
+                    ? 'Confirm Group • ${_peso(fareTotal)}'
                     : 'Confirm • ${_peso(fareTotal)}',
                 style: const TextStyle(
                   fontSize: 16,
@@ -634,7 +620,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
             blurRadius: 6,
-            offset: const Offset(0, 3),
+            offset: Offset(0, 3),
           ),
         ],
       ),
@@ -647,7 +633,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       (widget.pickup.latitude + widget.destination.latitude) / 2,
       (widget.pickup.longitude + widget.destination.longitude) / 2,
     );
-
     return AbsorbPointer(
       absorbing: true,
       child: FlutterMap(
@@ -689,7 +674,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
           BoxShadow(
             color: Colors.black.withOpacity(0.12),
             blurRadius: 6,
-            offset: const Offset(0, 3),
+            offset: Offset(0, 3),
           ),
         ],
       ),
@@ -698,7 +683,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     ),
   );
 
-  // ── Cards ─────────────────────────────────────────────
   Widget _pakyawCard() {
     final capAvail = _capacityAvailable ?? 0;
     return _Card(
@@ -723,7 +707,10 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 (capAvail <= 0 || _submitting)
                     ? null
                     : (v) async {
-                      setState(() => _pakyaw = v);
+                      setState(() {
+                        _pakyaw = v;
+                        if (v) _groupFlat = false;
+                      });
                       await _refreshCarpoolAndFare();
                     },
           ),
@@ -749,16 +736,13 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Expanded(
+              const Expanded(
                 child: Text(
                   'Pakyaw: reserving all available seats',
                   maxLines: 2,
                   softWrap: true,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                 ),
               ),
               const SizedBox(width: 8),
@@ -785,7 +769,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   Widget _seatsCard() {
     final capAvail = _capacityAvailable ?? 0;
     final capTotal = _capacityTotal ?? 0;
-
     return _Card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -843,7 +826,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         TextField(
           controller: _noteCtrl,
           maxLines: 3,
-          maxLength: 500, // keep in sync with DB cap
+          maxLength: 500,
           textInputAction: TextInputAction.newline,
           decoration: const InputDecoration(
             hintText: 'Landmarks, gate code, special assistance, etc.',
@@ -865,7 +848,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
             blurRadius: 6,
-            offset: const Offset(0, 3),
+            offset: Offset(0, 3),
           ),
         ],
       ),
@@ -934,10 +917,8 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     );
   }
 
-  /// Fare with detailed breakdown (expandable)
   Widget _fareCard(double fareTotal, double perSeat) {
     final bx = _fare;
-
     return _Card(
       child: ExpansionTile(
         initiallyExpanded: _expandFare,
@@ -947,7 +928,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         childrenPadding: EdgeInsets.zero,
         children: [
           _fareRow('Total (₱)', _peso(fareTotal), strong: true),
-          if (!_pakyaw) _fareRow('Per seat (₱)', _peso(perSeat)),
+          if (!_pakyaw && !_groupFlat) _fareRow('Per seat (₱)', _peso(perSeat)),
           const SizedBox(height: 8),
           Wrap(
             runSpacing: 6,
@@ -957,6 +938,11 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 const _ChipIcon(
                   icon: Icons.local_taxi_outlined,
                   label: 'Pakyaw',
+                ),
+              if (_groupFlat && !_pakyaw)
+                const _ChipIcon(
+                  icon: Icons.groups_2_outlined,
+                  label: 'Group flat',
                 ),
               _ChipIcon(
                 icon: Icons.group_outlined,
@@ -998,7 +984,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
             _fareRow('Surge used', '${bx.surgeMultiplier.toStringAsFixed(2)}×'),
             const SizedBox(height: 6),
             _fareRow('Seats billed', '${bx.seatsBilled}'),
-            _fareRow('Carpool seats (tier)', '${_carpoolSeatsForDiscount}'),
+            _fareRow('Carpool seats (tier)', '$_carpoolSeatsForDiscount'),
             _fareRow(
               'Carpool discount',
               '${(bx.carpoolDiscountPct * 100).toStringAsFixed(0)}%',
@@ -1024,14 +1010,13 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     final cap = _capacityTotal ?? 4;
     final maxSeatsTier = cap.clamp(1, 5);
     final rows = <TableRow>[];
-
-    // Preview how the discount changes with TOTAL SEATS on the route
     for (int seatsTier = 1; seatsTier <= maxSeatsTier; seatsTier++) {
       final fb = _fareService.estimateForDistance(
         distanceKm: _distanceKm,
         durationMin: _durationMin,
-        seats: _seatsRequested, // what I am booking
-        carpoolSeats: seatsTier, // discount tier seat count
+        seats: _seatsRequested,
+        carpoolSeats: seatsTier,
+        mode: PricingMode.shared,
       );
       final perSeat =
           _seatsRequested > 0 ? (fb.total / _seatsRequested) : fb.total;
@@ -1069,7 +1054,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     );
   }
 
-  // Table / row helpers
   TableRow _tableHeader(List<String> cols) => TableRow(
     decoration: BoxDecoration(color: Colors.grey.shade100),
     children:
@@ -1122,8 +1106,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   );
 }
 
-/* ───────────── Small UI helpers ───────────── */
-
 class _Card extends StatelessWidget {
   final Widget child;
   const _Card({required this.child});
@@ -1140,7 +1122,7 @@ class _Card extends StatelessWidget {
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
             blurRadius: 12,
-            offset: const Offset(0, 6),
+            offset: Offset(0, 6),
           ),
         ],
       ),
