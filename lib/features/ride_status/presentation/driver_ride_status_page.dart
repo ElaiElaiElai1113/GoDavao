@@ -22,8 +22,9 @@ import 'package:godavao/features/live_tracking/presentation/driver_marker.dart';
 import 'package:godavao/features/live_tracking/presentation/passenger_marker.dart';
 import 'package:godavao/features/live_tracking/utils/live_tracking_helpers.dart';
 
-// Publish driver live location
+// Publish + Subscribe live location
 import 'package:godavao/features/live_tracking/data/live_publisher.dart';
+import 'package:godavao/features/live_tracking/data/live_subscriber.dart';
 
 class DriverRideStatusPage extends StatefulWidget {
   final String rideId;
@@ -37,11 +38,13 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final sb = Supabase.instance.client;
 
-  // Realtime channels
+  // Realtime channels (only for ride + settings now)
   RealtimeChannel? _rideChannel;
-  RealtimeChannel? _driverLiveChan;
-  RealtimeChannel? _passengerLiveChan;
   RealtimeChannel? _feeChannel;
+
+  // Reusable live subscribers
+  LiveSubscriber? _driverSub;
+  LiveSubscriber? _passengerSub;
 
   // Map
   final MapController _map = MapController();
@@ -116,9 +119,9 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     WidgetsBinding.instance.removeObserver(this);
     _publisher.stop();
     _rideChannel._kill(sb);
-    _driverLiveChan._kill(sb);
-    _passengerLiveChan._kill(sb);
     _feeChannel._kill(sb);
+    _driverSub?.dispose();
+    _passengerSub?.dispose();
     _driverAnim.dispose();
     super.dispose();
   }
@@ -136,16 +139,12 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
   }
 
   Future<void> _resubscribeAll() async {
+    // Recreate subscribers idempotently
+    _startDriverSubscriber();
+    _startPassengerSubscriber();
+
     _rideChannel._kill(sb);
-    _driverLiveChan._kill(sb);
-    _passengerLiveChan._kill(sb);
-
-    await _seedLive('driver');
-    await _seedLive('passenger');
-
     _subscribeRideStatus();
-    _subscribeLive('driver');
-    _subscribeLive('passenger');
   }
 
   // ===================== Platform fee =====================
@@ -257,20 +256,16 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
       _passengerId = _ride?['passenger_id']?.toString();
       if (_passengerId != null) _fetchPassengerAggregate();
 
-      // Seed last known live points
-      await _seedLive('driver');
-      await _seedLive('passenger');
-
       // Map camera start
       _safeMove(_pickup, 13);
 
       // Subscriptions
       _subscribeRideStatus();
-      _subscribeLive('driver');
-      _subscribeLive('passenger');
 
-      // Publisher state
+      // Start live publisher + subscribers (idempotent)
       _syncPublisherToStatus(status);
+      _startDriverSubscriber();
+      _startPassengerSubscriber();
 
       // Prompt for rating if already completed
       await _maybePromptRatingIfCompleted();
@@ -282,6 +277,36 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
       if (!mounted) return;
       setState(() => _loading = false);
     }
+  }
+
+  void _startDriverSubscriber() {
+    _driverSub?.dispose();
+    _driverSub = LiveSubscriber(
+      sb,
+      rideId: widget.rideId,
+      actor: 'driver',
+      onUpdate: (pos, heading) {
+        _consumeDriverLocation({
+          'lat': pos.latitude,
+          'lng': pos.longitude,
+          'heading': heading,
+        });
+      },
+    )..listen();
+    // seed is handled inside LiveSubscriber via _seed()
+  }
+
+  void _startPassengerSubscriber() {
+    _passengerSub?.dispose();
+    _passengerSub = LiveSubscriber(
+      sb,
+      rideId: widget.rideId,
+      actor: 'passenger',
+      onUpdate: (pos, _) {
+        if (!mounted) return;
+        setState(() => _passengerLive = pos);
+      },
+    )..listen();
   }
 
   Future<void> _fetchPassengerAggregate() async {
@@ -299,10 +324,10 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     }
   }
 
-  // ===================== SUPABASE LIVE =====================
+  // ===================== ride status realtime =====================
 
   void _subscribeRideStatus() {
-    _rideChannel?._kill(sb);
+    _rideChannel._kill(sb);
     _rideChannel =
         sb.channel('ride_requests:${widget.rideId}')
           ..onPostgresChanges(
@@ -336,87 +361,6 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
           ..subscribe();
   }
 
-  void _subscribeLive(String actor) {
-    if (actor == 'driver') {
-      _driverLiveChan?._kill(sb);
-    } else {
-      _passengerLiveChan?._kill(sb);
-    }
-
-    final chan =
-        sb.channel('live_locations:${widget.rideId}:$actor')
-          ..onPostgresChanges(
-            schema: 'public',
-            table: 'live_locations',
-            event: PostgresChangeEvent.insert,
-            callback: (p) {
-              final r = p.newRecord;
-              if (r['ride_id']?.toString() == widget.rideId &&
-                  r['actor']?.toString() == actor) {
-                _onLiveRow(actor, r);
-              }
-            },
-          )
-          ..onPostgresChanges(
-            schema: 'public',
-            table: 'live_locations',
-            event: PostgresChangeEvent.update,
-            callback: (p) {
-              final r = p.newRecord;
-              if (r['ride_id']?.toString() == widget.rideId &&
-                  r['actor']?.toString() == actor) {
-                _onLiveRow(actor, r);
-              }
-            },
-          )
-          ..subscribe();
-
-    if (actor == 'driver') {
-      _driverLiveChan = chan;
-    } else {
-      _passengerLiveChan = chan;
-    }
-  }
-
-  Future<void> _seedLive(String actor) async {
-    final res =
-        await sb
-            .from('live_locations')
-            .select('lat,lng,heading')
-            .eq('ride_id', widget.rideId)
-            .eq('actor', actor)
-            .maybeSingle();
-
-    if (res == null) return;
-    final lat = (res['lat'] as num?)?.toDouble();
-    final lng = (res['lng'] as num?)?.toDouble();
-    if (lat == null || lng == null) return;
-
-    if (actor == 'driver') {
-      _consumeDriverLocation({
-        'lat': lat,
-        'lng': lng,
-        'heading': (res['heading'] as num?)?.toDouble(),
-      });
-    } else {
-      if (!mounted) return;
-      setState(() => _passengerLive = LatLng(lat, lng));
-    }
-  }
-
-  void _onLiveRow(String actor, Map row) {
-    final lat = (row['lat'] as num?)?.toDouble();
-    final lng = (row['lng'] as num?)?.toDouble();
-    if (lat == null || lng == null) return;
-
-    if (actor == 'driver') {
-      _consumeDriverLocation(row);
-    } else {
-      if (!mounted) return;
-      setState(() => _passengerLive = LatLng(lat, lng));
-    }
-  }
-
   // ===================== driver interp =====================
 
   double _smooth(double prev, double next, [double a = 0.20]) =>
@@ -428,13 +372,23 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     if (lat == null || lng == null) return;
 
     final next = LatLng(lat, lng);
-    final hdgRaw = (rec['heading'] as num?)?.toDouble() ?? _driverHeading;
+    final hdgRaw = (rec['heading'] as num?)?.toDouble();
+
+    // If heading is missing, infer from last->next bearing
+    final inferredHeading = () {
+      if (_driverNext != null) {
+        return LiveTrackingHelpers.bearingDeg(_driverNext!, next);
+      }
+      return _driverHeading;
+    }();
+
+    final hdg = hdgRaw ?? inferredHeading;
 
     if (!mounted) return;
     setState(() {
       _driverPrev = _driverInterp ?? _driverNext ?? next;
       _driverNext = next;
-      _driverHeading = _smooth(_driverHeading, hdgRaw);
+      _driverHeading = _smooth(_driverHeading, hdg);
       _driverAnim
         ..reset()
         ..forward();
@@ -610,80 +564,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (_error != null) {
-      return Scaffold(
-        backgroundColor: _bg,
-        appBar: AppBar(
-          flexibleSpace: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [_purple.withOpacity(0.4), Colors.transparent],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
-            ),
-          ),
-          backgroundColor: const Color.fromARGB(3, 0, 0, 0),
-          elevation: 0,
-          centerTitle: true,
-          leading: Padding(
-            padding: const EdgeInsets.only(left: 12),
-            child: CircleAvatar(
-              backgroundColor: Colors.white.withOpacity(0.9),
-              child: IconButton(
-                icon: const Icon(
-                  Icons.arrow_back_ios_new,
-                  color: _purple,
-                  size: 18,
-                ),
-                onPressed: () => Navigator.maybePop(context),
-              ),
-            ),
-          ),
-          title: const Text(
-            'Driver Ride Details',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
-            ),
-          ),
-          iconTheme: const IconThemeData(color: Colors.white),
-          actionsIconTheme: const IconThemeData(color: Colors.white),
-          actions: [
-            IconButton(
-              tooltip: 'SOS',
-              icon: const Icon(Icons.emergency_share),
-              onPressed: _openSos,
-            ),
-          ],
-        ),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.error_outline, size: 40, color: Colors.red),
-                const SizedBox(height: 12),
-                Text(
-                  'Error: $_error',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 12),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    HapticFeedback.selectionClick();
-                    _loadAll();
-                  },
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Retry'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
+      return _errorScaffold();
     }
     if (_ride == null) {
       return const Scaffold(body: Center(child: Text('No ride data')));
@@ -828,7 +709,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                         label: 'Your location',
                         child: DriverMarker(
                           size: 36,
-                          headingDeg: 0,
+                          headingDeg: _driverHeading, // ✅ now uses real heading
                           active: true,
                         ),
                       ),
@@ -1096,6 +977,83 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Scaffold _errorScaffold() {
+    return Scaffold(
+      backgroundColor: _bg,
+      appBar: AppBar(
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [_purple.withOpacity(0.4), Colors.transparent],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        ),
+        backgroundColor: const Color.fromARGB(3, 0, 0, 0),
+        elevation: 0,
+        centerTitle: true,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: CircleAvatar(
+            backgroundColor: Colors.white.withOpacity(0.9),
+            child: IconButton(
+              icon: const Icon(
+                Icons.arrow_back_ios_new,
+                color: _purple,
+                size: 18,
+              ),
+              onPressed: () => Navigator.maybePop(context),
+            ),
+          ),
+        ),
+        title: const Text(
+          'Driver Ride Details',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+        actionsIconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            tooltip: 'SOS',
+            icon: const Icon(Icons.emergency_share),
+            onPressed: _openSos,
+          ),
+        ],
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 40, color: Colors.red),
+              const SizedBox(height: 12),
+              Text(
+                'Error: $_error',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: () {
+                  HapticFeedback.selectionClick();
+                  _loadAll();
+                },
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

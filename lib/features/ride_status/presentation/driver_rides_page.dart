@@ -1,20 +1,16 @@
 // lib/features/ride_status/presentation/driver_rides_page.dart
-import 'dart:collection';
 import 'dart:async';
+import 'dart:collection';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:intl/intl.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-
-// Maps
+import 'package:geolocator/geolocator.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
-
-// ➕ Live location (preview-only)
-import 'package:geolocator/geolocator.dart';
-import 'package:godavao/features/verify/data/verification_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:godavao/features/chat/presentation/chat_page.dart';
 import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
@@ -23,39 +19,9 @@ import 'package:godavao/features/ratings/presentation/user_rating.dart';
 import 'package:godavao/features/ratings/presentation/rate_user.dart';
 import 'package:godavao/features/ratings/data/ratings_service.dart';
 import 'package:godavao/features/payments/presentation/payment_status_chip.dart';
-import 'package:godavao/main.dart' show localNotify;
 import 'package:godavao/features/ride_status/presentation/driver_ride_status_page.dart';
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* Distinct passenger colors + legend model (top-level)                      */
-/* ────────────────────────────────────────────────────────────────────────── */
-
-const List<Color> _kPassengerColors = <Color>[
-  Colors.red,
-  Colors.blue,
-  Colors.green,
-  Colors.orange,
-  Colors.purple,
-  Colors.teal,
-  Colors.brown,
-  Colors.pink,
-  Colors.indigo,
-  Colors.cyan,
-];
-
-class _LegendItem {
-  final Color color;
-  final String label;
-  const _LegendItem(this.color, this.label);
-}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-
-class DriverRidesPage extends StatefulWidget {
-  const DriverRidesPage({super.key});
-  @override
-  State<DriverRidesPage> createState() => _DriverRidesPageState();
-}
+import 'package:godavao/features/live_tracking/data/live_subscriber.dart';
+import 'package:godavao/main.dart' show localNotify;
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /* Models                                                                     */
@@ -74,7 +40,6 @@ class MatchCard {
   final String destinationAddress;
   final double? fare;
   final int pax;
-  final String? passengerNote;
 
   // Map coords
   final double? pickupLat;
@@ -82,8 +47,11 @@ class MatchCard {
   final double? destLat;
   final double? destLng;
 
+  // ⭐ Ratings
+  final double? ratingAvg;
+  final int? ratingCount;
+
   const MatchCard({
-    this.driverRouteName,
     required this.matchId,
     required this.rideRequestId,
     required this.driverRouteId,
@@ -95,11 +63,13 @@ class MatchCard {
     required this.destinationAddress,
     required this.fare,
     required this.pax,
+    this.driverRouteName,
     this.pickupLat,
     this.pickupLng,
     this.destLat,
     this.destLng,
-    this.passengerNote,
+    this.ratingAvg,
+    this.ratingCount,
   });
 
   bool get hasCoords =>
@@ -139,74 +109,97 @@ class RouteGroup {
 
 /* ────────────────────────────────────────────────────────────────────────── */
 
+class DriverRidesPage extends StatefulWidget {
+  const DriverRidesPage({super.key});
+  @override
+  State<DriverRidesPage> createState() => _DriverRidesPageState();
+}
+
 class _DriverRidesPageState extends State<DriverRidesPage>
     with SingleTickerProviderStateMixin {
   final _supabase = Supabase.instance.client;
 
-  static const bool _DBG = true;
+  static const _purple = Color(0xFF6A27F7);
+  static const _purpleDark = Color(0xFF4B18C9);
+  static const _bg = Color(0xFFF7F7FB);
+
+  static const bool _dbg = false;
   void _d(Object? msg) {
-    if (_DBG) {
-      print('[DriverRides] $msg');
-    }
+    if (_dbg) debugPrint('[DriverRides] $msg');
   }
 
-  late final TabController _tabController;
-  final _listScroll = ScrollController();
+  // ⭐ Ratings cache: user_id -> {avg, count}
+  final Map<String, Map<String, dynamic>> _ratingCache = {};
+  static const double _defaultNewRating = 3.0;
 
-  // Unique passenger colors
-  static const List<Color> _passengerColors = <Color>[
-    Color(0xFFE53935), // red
-    Color(0xFF1E88E5), // blue
-    Color(0xFF43A047), // green
-    Color(0xFFF4511E), // deep orange
-    Color(0xFF6D4C41), // brown
-    Color(0xFF8E24AA), // purple
-    Color(0xFF00897B), // teal
-    Color(0xFFFDD835), // amber
-  ];
+  Future<void> _hydratePassengerRatings(Iterable<String> passengerIds) async {
+    final ids = passengerIds.where((e) => e.isNotEmpty).toSet().toList();
+    if (ids.isEmpty) return;
+    final svc = RatingsService(_supabase);
 
-  Color _passengerColorAt(int i) =>
-      _passengerColors[i % _passengerColors.length];
+    final futures = <Future<void>>[];
+    for (final uid in ids) {
+      if (_ratingCache.containsKey(uid)) continue;
+      futures.add(
+        svc
+            .fetchUserAggregate(uid)
+            .then((agg) {
+              _ratingCache[uid] = {
+                'avg': (agg['avg_rating'] as num?)?.toDouble(),
+                'count': (agg['rating_count'] as num?)?.toInt() ?? 0,
+              };
+            })
+            .catchError((_) {
+              _ratingCache[uid] = {'avg': null, 'count': 0};
+            }),
+      );
+    }
+    await Future.wait(futures);
+  }
 
-  Widget _legendChip(Color c, String label) {
+  Widget _ratingChip(double? avg, int? count) {
+    final isNew = (count == null || count == 0);
+    final shown = (isNew ? _defaultNewRating : (avg ?? _defaultNewRating));
+    final label =
+        isNew
+            ? '${shown.toStringAsFixed(1)} (new)'
+            : '${shown.toStringAsFixed(1)} ($count)';
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.95),
+        color: Colors.amber.withOpacity(0.12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.black12),
+        border: Border.all(color: Colors.amber.withOpacity(0.35)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(color: c, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 6),
+          const Icon(Icons.star, size: 14),
+          const SizedBox(width: 4),
           Text(
             label,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
           ),
         ],
       ),
     );
   }
 
-  Widget _pin(IconData icon, Color color, {double size = 28}) =>
-      Icon(icon, color: color, size: size);
+  late final TabController _tabController;
+  final _listScroll = ScrollController();
+
   // Buckets (for Declined/Completed tabs)
   List<MatchCard> _declined = [];
   List<MatchCard> _completed = [];
 
-  // Grouped upcoming (pending | accepted | en_route) by route
+  // Grouped (pending | accepted | en_route) by route
   final LinkedHashMap<String, RouteGroup> _routeGroups = LinkedHashMap();
 
-  // Owned route IDs (driver authored)
+  // My authored routes
   final Set<String> _myRouteIds = {};
 
-  // NEW tracking + tab badges
+  // New badges
   final Set<String> _newMatchIds = {};
   int _badgeUpcoming = 0;
   int _badgeDeclined = 0;
@@ -222,15 +215,11 @@ class _DriverRidesPageState extends State<DriverRidesPage>
 
   double _platformFeeRate = 0.15;
 
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
-  static const _bg = Color(0xFFF7F7FB);
-
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-    _tabController.addListener(_onTabChanged);
+    _tabController = TabController(length: 3, vsync: this)
+      ..addListener(_onTabChanged);
 
     _initFee();
     _refreshMyRouteIds().then((_) async {
@@ -266,6 +255,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               .maybeSingle();
       final rate = _parseFeeRate(row as Map?);
       if (rate != null && rate >= 0 && rate <= 1) {
+        if (!mounted) return;
         setState(() => _platformFeeRate = rate);
       }
     } catch (e) {
@@ -286,6 +276,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               if (rec?['key']?.toString() != 'platform_fee_rate') return;
               final rate = _parseFeeRate(rec);
               if (rate != null && rate >= 0 && rate <= 1) {
+                if (!mounted) return;
                 setState(() => _platformFeeRate = rate);
               }
             },
@@ -299,6 +290,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               if (rec?['key']?.toString() != 'platform_fee_rate') return;
               final rate = _parseFeeRate(rec);
               if (rate != null && rate >= 0 && rate <= 1) {
+                if (!mounted) return;
                 setState(() => _platformFeeRate = rate);
               }
             },
@@ -367,12 +359,9 @@ class _DriverRidesPageState extends State<DriverRidesPage>
 
     try {
       final sel = '''
-  id, ride_request_id, status, created_at, driver_id, driver_route_id, seats_allocated, driver_routes ( id, name ),
-  ride_requests (
-    id, pickup_lat, pickup_lng, destination_lat, destination_lng,
-    passenger_id, fare, requested_seats, passenger_note, users ( id, name )
-  )
-''';
+        id, ride_request_id, status, created_at, driver_id, driver_route_id, seats_allocated, driver_routes ( id, name ),
+        ride_requests ( id, pickup_lat, pickup_lng, destination_lat, destination_lng, passenger_id, fare, requested_seats, users ( id, name ), status )
+      ''';
 
       final uid = user.id;
       final hasRoutes = _myRouteIds.isNotEmpty;
@@ -413,12 +402,11 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         }
         passengerId ??= req?['passenger_id']?.toString();
 
+        // seats
         final seatsAllocated = (m['seats_allocated'] as num?)?.toInt();
-        // seats requested
         final reqSeats =
-            (req?['seats'] as num?)?.toInt() ??
-            (req?['requested_seats'] as num?)?.toInt();
-
+            (req?['requested_seats'] as num?)?.toInt() ??
+            (req?['seats'] as num?)?.toInt();
         final pax = (seatsAllocated ?? reqSeats ?? 1);
 
         // reverse geocode best-effort
@@ -456,11 +444,11 @@ class _DriverRidesPageState extends State<DriverRidesPage>
 
         final card = MatchCard(
           driverRouteName: routeName,
-          matchId: m['id'],
-          rideRequestId: m['ride_request_id'],
+          matchId: m['id'].toString(),
+          rideRequestId: m['ride_request_id'].toString(),
           driverRouteId: m['driver_route_id']?.toString(),
           status: (m['status'] as String?)?.toLowerCase() ?? 'pending',
-          createdAt: DateTime.parse(m['created_at']),
+          createdAt: DateTime.parse(m['created_at'].toString()),
           passengerName: passengerName,
           passengerId: passengerId,
           pickupAddress: pickupAddr,
@@ -471,19 +459,59 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           pickupLng: (req?['pickup_lng'] as num?)?.toDouble(),
           destLat: (req?['destination_lat'] as num?)?.toDouble(),
           destLng: (req?['destination_lng'] as num?)?.toDouble(),
-          passengerNote: (req?['passenger_note'] as String?),
         );
         all.add(card);
         if (card.driverRouteId != null) routeIds.add(card.driverRouteId!);
         rideIds.add(card.rideRequestId);
       }
 
+      // ⭐ Ratings hydration + attach to cards
+      final passengerIds = all.map((m) => m.passengerId).whereType<String>();
+      await _hydratePassengerRatings(passengerIds);
+
+      final List<MatchCard> allWithRatings =
+          all.map((m) {
+            double? avg;
+            int? cnt;
+
+            if (m.passengerId != null &&
+                _ratingCache.containsKey(m.passengerId)) {
+              final r = _ratingCache[m.passengerId!]!;
+              avg = (r['avg'] as num?)?.toDouble();
+              cnt = (r['count'] as num?)?.toInt() ?? 0;
+            } else {
+              avg = null;
+              cnt = 0;
+            }
+
+            return MatchCard(
+              matchId: m.matchId,
+              rideRequestId: m.rideRequestId,
+              driverRouteId: m.driverRouteId,
+              status: m.status,
+              createdAt: m.createdAt,
+              passengerName: m.passengerName,
+              passengerId: m.passengerId,
+              pickupAddress: m.pickupAddress,
+              destinationAddress: m.destinationAddress,
+              fare: m.fare,
+              pax: m.pax,
+              pickupLat: m.pickupLat,
+              pickupLng: m.pickupLng,
+              destLat: m.destLat,
+              destLng: m.destLng,
+              driverRouteName: m.driverRouteName,
+              ratingAvg: avg,
+              ratingCount: cnt,
+            );
+          }).toList();
+
       await _loadPaymentIntents(rideIds);
       await _loadRouteCapacities(routeIds.toList());
 
       // Group
       final updatedGroups = <String, RouteGroup>{};
-      for (final card in all) {
+      for (final card in allWithRatings) {
         final key = card.driverRouteId ?? 'unassigned';
         updatedGroups.putIfAbsent(
           key,
@@ -497,8 +525,10 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         updatedGroups[key]!.items.add(card);
       }
 
-      final declined = all.where((m) => m.status == 'declined').toList();
-      final completed = all.where((m) => m.status == 'completed').toList();
+      final declined =
+          allWithRatings.where((m) => m.status == 'declined').toList();
+      final completed =
+          allWithRatings.where((m) => m.status == 'completed').toList();
 
       if (!mounted) return;
       setState(() {
@@ -510,7 +540,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         _loading = false;
 
         _badgeUpcoming =
-            all
+            allWithRatings
                 .where((m) => m.status != 'declined' && m.status != 'completed')
                 .length;
         _badgeDeclined = declined.length;
@@ -550,10 +580,12 @@ class _DriverRidesPageState extends State<DriverRidesPage>
 
               final id = rec['id']?.toString();
               if (id != null) {
-                setState(() {
-                  _newMatchIds.add(id);
-                  _badgeUpcoming += 1;
-                });
+                if (mounted) {
+                  setState(() {
+                    _newMatchIds.add(id);
+                    _badgeUpcoming += 1;
+                  });
+                }
               }
 
               _showNotification(
@@ -656,9 +688,10 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         .from('ride_matches')
         .update({'status': newStatus})
         .eq('id', matchId);
-
-    final upd = {'status': newStatus};
-    await _supabase.from('ride_requests').update(upd).eq('id', rideRequestId);
+    await _supabase
+        .from('ride_requests')
+        .update({'status': newStatus})
+        .eq('id', rideRequestId);
 
     if (['completed', 'declined', 'canceled'].contains(newStatus)) {
       await _syncPaymentForRide(rideRequestId, newStatus);
@@ -695,6 +728,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         if (allowSeats <= 0) break;
       }
 
+      if (!mounted) return;
       if (acceptedCount == 0) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Selected riders exceed capacity.')),
@@ -705,9 +739,11 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Accept failed: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Accept failed: $e')));
+      }
     } finally {
       await _loadMatches();
       if (mounted) setState(() => _loading = false);
@@ -721,13 +757,17 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       for (final m in accepted) {
         await _updateMatchStatus(m.matchId, m.rideRequestId, 'en_route');
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Started ${accepted.length} rider(s).')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Started ${accepted.length} rider(s).')),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Start failed: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Start failed: $e')));
+      }
     } finally {
       await _loadMatches();
       if (mounted) setState(() => _loading = false);
@@ -741,13 +781,17 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       for (final m in enroute) {
         await _updateMatchStatus(m.matchId, m.rideRequestId, 'completed');
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Completed ${enroute.length} rider(s).')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Completed ${enroute.length} rider(s).')),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Complete failed: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Complete failed: $e')));
+      }
     } finally {
       await _loadMatches();
       if (mounted) setState(() => _loading = false);
@@ -787,43 +831,35 @@ class _DriverRidesPageState extends State<DriverRidesPage>
   double? _driverNetForFare(num? fare) =>
       fare == null ? null : (fare.toDouble() * (1 - _platformFeeRate));
 
-  Widget _miniIconBtn({
-    required IconData icon,
-    required String tooltip,
-    VoidCallback? onTap,
-  }) {
-    return IconButton(
-      tooltip: tooltip,
-      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-      padding: EdgeInsets.zero,
-      iconSize: 20,
-      onPressed: onTap,
-      icon: Icon(icon),
-    );
-  }
-
   Widget _pill(String text, {IconData? icon, Color? color}) {
-    final baseColor = color ?? const Color(0xFF6A27F7);
+    final baseColor = color ?? _purple;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: baseColor.withOpacity(0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: baseColor.withOpacity(0.15)),
+        border: Border.all(color: baseColor.withOpacity(0.18)),
+        boxShadow: [
+          BoxShadow(
+            color: baseColor.withOpacity(0.06),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 14, color: baseColor.withOpacity(0.9)),
-            const SizedBox(width: 5),
+            Icon(icon, size: 14, color: baseColor.withOpacity(0.95)),
+            const SizedBox(width: 6),
           ],
           Text(
             text,
             style: TextStyle(
               fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-              color: baseColor.withOpacity(0.9),
+              fontWeight: FontWeight.w700,
+              color: baseColor.withOpacity(0.95),
               letterSpacing: 0.2,
             ),
           ),
@@ -832,7 +868,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     );
   }
 
-  /* ───────────── Per-rider card (Declined/Completed tabs) ───────────── */
+  /* ───────────── Per-rider FLAT card (Declined/Completed tabs) ───────────── */
 
   Widget _buildFlatCard(MatchCard m) {
     final dt = DateFormat('MMM d, y • h:mm a').format(m.createdAt);
@@ -841,12 +877,13 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         m.status == 'accepted' ||
         m.status == 'en_route' ||
         m.status == 'completed';
+    final pr = _paymentByRide[m.rideRequestId];
 
     return Card(
       elevation: 0,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         side: BorderSide(color: Colors.black12.withOpacity(0.06)),
       ),
       color: Colors.white,
@@ -857,7 +894,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           children: [
             Text(
               '${m.pickupAddress} → ${m.destinationAddress}',
-              style: const TextStyle(fontWeight: FontWeight.w700),
+              style: const TextStyle(fontWeight: FontWeight.w800),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -869,12 +906,12 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                 onTap: () => _openMapPreview(single: m),
               ),
             ],
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             Wrap(
               spacing: 8,
               runSpacing: 6,
               children: [
-                _pill('${m.pax} pax', icon: Icons.people),
+                _pill('${m.pax} pax', icon: Icons.people_alt),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -885,6 +922,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                       child: Text(
                         m.passengerName,
                         overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                     ),
                     if (m.passengerId != null) ...[
@@ -893,6 +931,8 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                       const SizedBox(width: 6),
                       UserRatingBadge(userId: m.passengerId!, iconSize: 14),
                     ],
+                    const SizedBox(width: 8),
+                    _ratingChip(m.ratingAvg, m.ratingCount),
                   ],
                 ),
               ],
@@ -909,51 +949,29 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     'Driver net ${_peso(driverNet)}',
                     icon: Icons.account_balance_wallet,
                   ),
-                if (_paymentByRide[m.rideRequestId] != null)
+                if (pr != null)
                   PaymentStatusChip(
-                    status:
-                        _paymentByRide[m.rideRequestId]?['status'] as String?,
-                    amount:
-                        _paymentByRide[m.rideRequestId]?['amount'] as double?,
+                    status: pr['status'] as String?,
+                    amount: (pr['amount'] as num?)?.toDouble(),
                   ),
               ],
             ),
-            if ((m.passengerNote ?? '').trim().isNotEmpty) ...[
-  const SizedBox(height: 8),
-  Container(
-    padding: const EdgeInsets.all(10),
-    decoration: BoxDecoration(
-      color: Colors.amber.shade50,
-      border: Border.all(color: Colors.amber.shade200),
-      borderRadius: BorderRadius.circular(10),
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Icon(Icons.sticky_note_2_outlined, size: 18),
-        const SizedBox(width: 8),
-        Expanded(child: Text(m.passengerNote!.trim())),
-      ],
-    ),
-  ),
-],
-            const Divider(height: 18),
+            const Divider(height: 22),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Text(
-                  m.status.toUpperCase(),
-                  style: TextStyle(
-                    color: _statusColor(m.status),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                _miniIconBtn(
-                  icon: Icons.message_outlined,
+                _pill(m.status.toUpperCase(), color: _statusColor(m.status)),
+                IconButton(
                   tooltip: 'Open chat',
-                  onTap: () {
+                  constraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 36,
+                  ),
+                  padding: EdgeInsets.zero,
+                  iconSize: 20,
+                  onPressed: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -961,6 +979,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                       ),
                     );
                   },
+                  icon: const Icon(Icons.message_outlined),
                 ),
                 if (canOpenMap)
                   OutlinedButton.icon(
@@ -969,7 +988,13 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                       'View ride',
                       overflow: TextOverflow.ellipsis,
                     ),
-                    style: OutlinedButton.styleFrom(foregroundColor: _purple),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _purple,
+                      side: const BorderSide(color: _purple),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
                     onPressed: () {
                       Navigator.push(
                         context,
@@ -988,7 +1013,13 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                       'Rate passenger',
                       overflow: TextOverflow.ellipsis,
                     ),
-                    style: OutlinedButton.styleFrom(foregroundColor: _purple),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _purple,
+                      side: const BorderSide(color: _purple),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
                     onPressed: () => _ratePassenger(m),
                   ),
               ],
@@ -1019,195 +1050,96 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       if (list.isEmpty) return [];
       return [
         Padding(
-          padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
           child: Text(
             label,
             style: const TextStyle(
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w800,
               fontSize: 13,
-              color: Color(0xFF4B18C9),
+              color: _purpleDark,
             ),
           ),
         ),
-        ...list.map(
-          (m) => Container(
-            margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.9),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 6,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-              border: Border.all(color: Colors.black12.withOpacity(0.05)),
-            ),
-            child: CheckboxListTile(
-              dense: true,
-              visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 2,
-              ),
-              value: selectable ? g.selected.contains(m.matchId) : false,
-              onChanged:
-                  selectable
-                      ? (v) => setState(() {
-                        if (v == true) {
-                          g.selected.add(m.matchId);
-                        } else {
-                          g.selected.remove(m.matchId);
-                        }
-                      })
-                      : null,
-              controlAffinity: ListTileControlAffinity.leading,
-              title: Text(
-                '${m.pickupAddress} → ${m.destinationAddress}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
-              ),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 4),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      _pill('${m.pax} pax', icon: Icons.people),
-                      if (m.fare != null)
-                        _pill(_peso(m.fare), icon: Icons.payments),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.person,
-                            size: 14,
-                            color: Colors.black54,
-                          ),
-                          const SizedBox(width: 4),
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 180),
-                            child: Text(
-                              m.passengerName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (m.passengerId != null) ...[
-                            const SizedBox(width: 6),
-                            VerifiedBadge(userId: m.passengerId!, size: 16),
-                            const SizedBox(width: 6),
-                            UserRatingBadge(
-                              userId: m.passengerId!,
-                              iconSize: 14,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                  if ((m.passengerNote ?? '').trim().isNotEmpty) ...[
-      const SizedBox(height: 8),
-      Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: Colors.amber.shade50,
-          border: Border.all(color: Colors.amber.shade200),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Icon(Icons.sticky_note_2_outlined, size: 18),
-            const SizedBox(width: 8),
-            Expanded(child: Text(m.passengerNote!.trim())),
-          ],
-        ),
-      ),
-    ],
-                  if (m.hasCoords)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6, left: 4, right: 4),
-                      child: _MapThumb(
-                        pickup: m.pickup!,
-                        destination: m.destination!,
-                        onTap:
-                            () =>
-                                _openMapPreview(single: m, routeId: g.routeId),
-                      ),
-                    ),
-                ],
-              ),
-              secondary: Wrap(
-                spacing: 4,
-                children: [
-                  _miniIconBtn(
-                    icon: Icons.message_outlined,
-                    tooltip: 'Chat',
-                    onTap: () {
+        ...list.map((m) {
+          final canOpenRide =
+              m.status == 'accepted' ||
+              m.status == 'en_route' ||
+              m.status == 'completed';
+          return _MatchListTile(
+            m: m,
+            selectable: selectable,
+            selected: selectable ? g.selected.contains(m.matchId) : false,
+            onSelect:
+                selectable
+                    ? (v) => setState(() {
+                      if (v == true) {
+                        g.selected.add(m.matchId);
+                      } else {
+                        g.selected.remove(m.matchId);
+                      }
+                    })
+                    : (_) {},
+            onDecline: () async {
+              setState(() => _loading = true);
+              try {
+                await _updateMatchStatus(
+                  m.matchId,
+                  m.rideRequestId,
+                  'declined',
+                );
+                if (mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('Declined')));
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('Decline failed: $e')));
+                }
+              } finally {
+                await _loadMatches();
+                if (mounted) setState(() => _loading = false);
+              }
+            },
+            onOpenRide:
+                canOpenRide
+                    ? () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => ChatPage(matchId: m.matchId),
+                          builder:
+                              (_) =>
+                                  DriverRideStatusPage(rideId: m.rideRequestId),
                         ),
                       );
-                    },
-                  ),
-                  if (m.status == 'pending')
-                    _miniIconBtn(
-                      icon: Icons.close,
-                      tooltip: 'Decline',
-                      onTap: () async {
-                        setState(() => _loading = true);
-                        try {
-                          await _updateMatchStatus(
-                            m.matchId,
-                            m.rideRequestId,
-                            'declined',
-                          );
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Declined')),
-                          );
-                        } catch (e) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Decline failed: $e')),
-                          );
-                        } finally {
-                          await _loadMatches();
-                          if (mounted) setState(() => _loading = false);
-                        }
-                      },
-                    ),
-                  if (m.status == 'accepted' ||
-                      m.status == 'en_route' ||
-                      m.status == 'completed')
-                    _miniIconBtn(
-                      icon: Icons.map_outlined,
-                      tooltip: 'View ride',
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder:
-                                (_) => DriverRideStatusPage(
-                                  rideId: m.rideRequestId,
-                                ),
+                    }
+                    : null,
+            onChat: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => ChatPage(matchId: m.matchId)),
+              );
+            },
+            buildPill:
+                (text, {icon, color}) => _pill(text, icon: icon, color: color),
+            buildRatingChip: (avg, count) => _ratingChip(avg, count),
+            mapThumb:
+                m.hasCoords
+                    ? _MapThumb(
+                      pickup: m.pickup!,
+                      destination: m.destination!,
+                      onTap:
+                          () => _openMapPreview(
+                            single: m,
+                            routeGroupId: g.routeId,
                           ),
-                        );
-                      },
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
+                    )
+                    : const SizedBox.shrink(),
+            trailingStatusColor: _statusColor(m.status),
+          );
+        }),
       ];
     }
 
@@ -1224,8 +1156,8 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         borderRadius: BorderRadius.circular(24),
         gradient: LinearGradient(
           colors: [
-            Colors.white.withOpacity(0.75),
-            Colors.white.withOpacity(0.55),
+            Colors.white.withOpacity(0.8),
+            Colors.white.withOpacity(0.6),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -1242,14 +1174,14 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         borderRadius: BorderRadius.circular(24),
         child: ExpansionTile(
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          collapsedBackgroundColor: Colors.white.withOpacity(0.8),
-          backgroundColor: Colors.white.withOpacity(0.9),
-          leading: const Icon(Icons.alt_route, color: Color(0xFF6A27F7)),
+          collapsedBackgroundColor: Colors.white.withOpacity(0.9),
+          backgroundColor: Colors.white,
+          leading: const Icon(Icons.alt_route, color: _purple),
           title: Text(
             routeTitle,
             style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF4B18C9),
+              fontWeight: FontWeight.w900,
+              color: _purpleDark,
             ),
             overflow: TextOverflow.ellipsis,
           ),
@@ -1283,10 +1215,10 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     icon: const Icon(Icons.map),
                     label: const Text('Map: all pickups'),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF6A27F7),
-                      side: const BorderSide(color: Color(0xFF6A27F7)),
+                      foregroundColor: _purple,
+                      side: const BorderSide(color: _purple),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(999),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                     onPressed:
@@ -1298,10 +1230,10 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     icon: const Icon(Icons.select_all),
                     label: const Text('Select all pending'),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF6A27F7),
-                      side: const BorderSide(color: Color(0xFF6A27F7)),
+                      foregroundColor: _purple,
+                      side: const BorderSide(color: _purple),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(999),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                     onPressed:
@@ -1317,10 +1249,10 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     icon: const Icon(Icons.clear_all),
                     label: const Text('Clear selection'),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF6A27F7),
-                      side: const BorderSide(color: Color(0xFF6A27F7)),
+                      foregroundColor: _purple,
+                      side: const BorderSide(color: _purple),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(999),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                     onPressed:
@@ -1332,12 +1264,12 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     icon: const Icon(Icons.done_all),
                     label: const Text('Accept selected'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF6A27F7),
+                      backgroundColor: _purple,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(999),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      elevation: 4,
+                      elevation: 3,
                     ),
                     onPressed:
                         g.selected.isEmpty
@@ -1348,12 +1280,12 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     icon: const Icon(Icons.play_arrow),
                     label: const Text('Start route'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF6A27F7),
+                      backgroundColor: _purple,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(999),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      elevation: 4,
+                      elevation: 3,
                     ),
                     onPressed: accepted.isEmpty ? null : () => _startRoute(g),
                   ),
@@ -1361,12 +1293,12 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     icon: const Icon(Icons.check_circle),
                     label: const Text('Complete route'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF4B18C9),
+                      backgroundColor: _purpleDark,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(999),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      elevation: 4,
+                      elevation: 3,
                     ),
                     onPressed: enRoute.isEmpty ? null : () => _completeRoute(g),
                   ),
@@ -1422,16 +1354,16 @@ class _DriverRidesPageState extends State<DriverRidesPage>
   Future<void> _openMapPreview({
     MatchCard? single,
     RouteGroup? group,
-    String? routeId,
+    String? routeGroupId,
   }) async {
     assert(
       (single != null) ^ (group != null),
       'Pass exactly one of single or group',
     );
 
-    // 1) Try to overlay the driver route polyline if routeId (or group.routeId) exists
+    // 1) Overlay the driver route polyline if route exists
     List<LatLng> routePolylinePoints = [];
-    final rid = routeId ?? group?.routeId;
+    final rid = routeGroupId ?? group?.routeId;
     if (rid != null && rid != 'unassigned') {
       try {
         final row =
@@ -1446,12 +1378,11 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           final routePolyline = row?['route_polyline']?.toString();
           final manualPolyline = row?['manual_polyline']?.toString();
 
-          String? encoded =
-              mode == 'manual'
-                  ? (manualPolyline ?? routePolyline)
-                  : mode == 'osrm'
-                  ? (routePolyline ?? manualPolyline)
-                  : (routePolyline ?? manualPolyline);
+          String? encoded = switch (mode) {
+            'manual' => (manualPolyline ?? routePolyline),
+            'osrm' => (routePolyline ?? manualPolyline),
+            _ => (routePolyline ?? manualPolyline),
+          };
 
           if (encoded != null && encoded.isNotEmpty) {
             final decoded = PolylinePoints().decodePolyline(encoded);
@@ -1499,13 +1430,44 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       );
 
       legendChips.add(
-        _legendChip(
+        _legendChipLocal(
           _purple,
           '${single.passengerName} • ${single.pickupAddress} → ${single.destinationAddress}',
         ),
       );
+
+      final boundsPoints = <LatLng>[
+        ...markers.map((m) => m.point),
+        ...routePolylinePoints,
+      ];
+      if (boundsPoints.isEmpty) return;
+      final bounds = LatLngBounds.fromPoints(boundsPoints);
+
+      final allowPassengerLive = single.status == 'en_route';
+
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        builder:
+            (_) => _LiveMapSheet(
+              title: 'Pickup & destination',
+              bounds: bounds,
+              staticMarkers: markers,
+              routePolylinePoints: routePolylinePoints,
+              extraPolylines: extraLines,
+              purple: _purple,
+              legendChips: legendChips,
+              rideIdForPassengerLive: single.rideRequestId,
+              allowPassengerLive: allowPassengerLive,
+            ),
+      );
+      return;
     } else if (group != null) {
-      // —— Group preview: ONLY accepted + en_route riders
+      // —— Group preview: ONLY accepted + en_route riders (no live dots here)
       final riders =
           group.items
               .where(
@@ -1515,50 +1477,56 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               )
               .toList();
 
+      Color colorAt(int i) {
+        const palette = <Color>[
+          Color(0xFFE53935),
+          Color(0xFF1E88E5),
+          Color(0xFF43A047),
+          Color(0xFFF4511E),
+          Color(0xFF6D4C41),
+          Color(0xFF8E24AA),
+          Color(0xFF00897B),
+          Color(0xFFFDD835),
+        ];
+        return palette[i % palette.length];
+      }
+
+      Icon _pin(IconData icon, Color color, {double size = 28}) =>
+          Icon(icon, color: color, size: size);
+
       for (int i = 0; i < riders.length; i++) {
         final m = riders[i];
-        final color = _passengerColorAt(i);
-
-        // pickup
-        markers.add(
+        final color = colorAt(i);
+        markers.addAll([
           Marker(
             point: m.pickup!,
             width: 30,
             height: 30,
             child: _pin(Icons.location_pin, color),
           ),
-        );
-
-        // destination
-        markers.add(
           Marker(
             point: m.destination!,
             width: 28,
             height: 28,
             child: _pin(Icons.flag, color),
           ),
-        );
-
-        // dotted pickup → destination segment
+        ]);
         extraLines.add(
           Polyline(
             points: [m.pickup!, m.destination!],
             strokeWidth: 3,
-            color: color.withOpacity(.95),
+            color: color,
             isDotted: true,
           ),
         );
-
-        legendChips.add(_legendChip(color, m.passengerName));
+        legendChips.add(_legendChipLocal(color, m.passengerName));
       }
 
-      // Compute bounds and show now (group path exits early)
       final boundsPoints = <LatLng>[
         ...markers.map((m) => m.point),
         ...routePolylinePoints,
       ];
       if (boundsPoints.isEmpty) return;
-
       final bounds = LatLngBounds.fromPoints(boundsPoints);
 
       showModalBottomSheet(
@@ -1576,39 +1544,13 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               routePolylinePoints: routePolylinePoints,
               extraPolylines: extraLines,
               purple: _purple,
-              legendChips: legendChips, // ✅ consistent param
+              legendChips: legendChips,
+              rideIdForPassengerLive: null,
+              allowPassengerLive: false,
             ),
       );
-      return; // early exit for group branch
+      return;
     }
-
-    // 3) Single-branch: compute bounds and show
-    final boundsPoints = <LatLng>[
-      ...markers.map((m) => m.point),
-      ...routePolylinePoints,
-    ];
-    if (boundsPoints.isEmpty) return;
-
-    final bounds = LatLngBounds.fromPoints(boundsPoints);
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder:
-          (_) => _LiveMapSheet(
-            title: 'Pickup & destination',
-            bounds: bounds,
-            staticMarkers: markers,
-            routePolylinePoints: routePolylinePoints,
-            extraPolylines: extraLines,
-            purple: _purple,
-            legendChips: legendChips,
-          ),
-    );
   }
 
   /* ───────────── Scaffold ───────────── */
@@ -1672,7 +1614,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             child: Container(
               height: 52,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.7),
+                color: Colors.white.withOpacity(0.75),
                 borderRadius: BorderRadius.circular(999),
                 border: Border.all(color: Colors.white.withOpacity(0.6)),
                 boxShadow: [
@@ -1687,17 +1629,16 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                 borderRadius: BorderRadius.circular(999),
                 child: TabBar(
                   controller: _tabController,
-                  isScrollable: false, // evenly fills space
                   indicator: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [Color(0xFF6A27F7), Color(0xFF4B18C9)],
+                      colors: [_purple, _purpleDark],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(999),
                     boxShadow: [
                       BoxShadow(
-                        color: Color(0xFF6A27F7).withOpacity(0.25),
+                        color: _purple.withOpacity(0.25),
                         blurRadius: 10,
                         offset: const Offset(0, 3),
                       ),
@@ -1729,7 +1670,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               : TabBarView(
                 controller: _tabController,
                 children: [
-                  // UPCOMING: grouped by route
+                  // UPCOMING
                   RefreshIndicator(
                     onRefresh: _loadMatches,
                     child:
@@ -1799,17 +1740,50 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 42, color: Colors.black26),
-            const SizedBox(height: 10),
-            Text(message, style: const TextStyle(color: Colors.black54)),
+            Icon(icon, size: 44, color: Colors.black26),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              style: const TextStyle(
+                color: Colors.black54,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
         ),
       ),
     );
   }
+
+  // Small local legend chip for map sheets
+  Widget _legendChipLocal(Color c, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.95),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-/* ───────────── Small widgets ───────────── */
+/* ───────────────────────── Small widgets ───────────────────────── */
 
 class _AdminMenuButton extends StatelessWidget {
   const _AdminMenuButton();
@@ -1893,7 +1867,7 @@ class _TabWithBadge extends StatelessWidget {
   }
 }
 
-/* ───────────── Map thumbnail widget ───────────── */
+/* ───────────────────────── Map thumbnail widget ───────────────────────── */
 
 class _MapThumb extends StatelessWidget {
   const _MapThumb({
@@ -1926,7 +1900,7 @@ class _MapThumb extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           child: SizedBox(
-            height: 90,
+            height: 96,
             child: AbsorbPointer(
               absorbing: true,
               child: FlutterMap(
@@ -1987,7 +1961,7 @@ class _MapThumb extends StatelessWidget {
   }
 }
 
-/* ───────────── Live Map Sheet (preview-only tracking) ───────────── */
+/* ───────────────────────── Live Map Sheet ───────────────────────── */
 
 class _LiveMapSheet extends StatefulWidget {
   const _LiveMapSheet({
@@ -1998,6 +1972,8 @@ class _LiveMapSheet extends StatefulWidget {
     required this.extraPolylines,
     required this.purple,
     this.legendChips = const [],
+    this.rideIdForPassengerLive,
+    this.allowPassengerLive = false,
   });
 
   final String title;
@@ -2008,43 +1984,55 @@ class _LiveMapSheet extends StatefulWidget {
   final Color purple;
   final List<Widget> legendChips;
 
+  /// If provided and [allowPassengerLive] is true, we subscribe to passenger live.
+  final String? rideIdForPassengerLive;
+  final bool allowPassengerLive;
+
   @override
   State<_LiveMapSheet> createState() => _LiveMapSheetState();
 }
 
 class _LiveMapSheetState extends State<_LiveMapSheet> {
   final _mapController = MapController();
+
+  // Device preview live (optional)
   StreamSubscription<Position>? _posSub;
   LatLng? _me;
   double? _acc; // meters
   DateTime? _ts;
 
+  // Passenger live (privacy-aware)
+  LiveSubscriber? _paxLive;
+  LatLng? _pax;
+  DateTime? _paxTs;
+
   @override
   void initState() {
     super.initState();
-    _startLivePreview();
+    _startDevicePreview();
+    _maybeStartPassengerLive();
   }
 
   @override
   void dispose() {
     _posSub?.cancel();
+    _paxLive?.dispose();
     super.dispose();
   }
 
-  Future<void> _startLivePreview() async {
+  Future<void> _startDevicePreview() async {
     LocationPermission perm = await Geolocator.checkPermission();
     if (perm == LocationPermission.denied) {
       perm = await Geolocator.requestPermission();
     }
     if (perm == LocationPermission.denied ||
         perm == LocationPermission.deniedForever) {
-      // No permission: silent fail; static map still works
       return;
     }
 
-    // Warm up: last known
     final last = await Geolocator.getLastKnownPosition();
     if (last != null) {
+      if (!mounted) return;
       setState(() {
         _me = LatLng(last.latitude, last.longitude);
         _acc = last.accuracy;
@@ -2052,19 +2040,37 @@ class _LiveMapSheetState extends State<_LiveMapSheet> {
       });
     }
 
-    // Live stream (preview-friendly settings)
     _posSub = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.best,
-        distanceFilter: 8, // meters
+        distanceFilter: 8,
       ),
     ).listen((pos) {
+      if (!mounted) return;
       setState(() {
         _me = LatLng(pos.latitude, pos.longitude);
         _acc = pos.accuracy;
         _ts = DateTime.now();
       });
     });
+  }
+
+  void _maybeStartPassengerLive() {
+    if (!widget.allowPassengerLive || widget.rideIdForPassengerLive == null)
+      return;
+
+    _paxLive = LiveSubscriber(
+      Supabase.instance.client,
+      rideId: widget.rideIdForPassengerLive!,
+      actor: 'passenger',
+      onUpdate: (pos, heading) {
+        if (!mounted) return;
+        setState(() {
+          _pax = pos;
+          _paxTs = DateTime.now();
+        });
+      },
+    )..listen();
   }
 
   @override
@@ -2074,20 +2080,37 @@ class _LiveMapSheetState extends State<_LiveMapSheet> {
         Polyline(
           points: widget.routePolylinePoints,
           strokeWidth: 4,
-          color: widget.purple.withOpacity(0.85),
+          color: widget.purple.withOpacity(0.9),
         ),
       ...widget.extraPolylines,
     ];
 
     final allMarkers = <Marker>[
       ...widget.staticMarkers,
+      if (_pax != null && widget.allowPassengerLive)
+        Marker(
+          point: _pax!,
+          width: 34,
+          height: 34,
+          child: const Icon(
+            Icons.person_pin_circle,
+            size: 30,
+            color: Colors.deepPurple,
+          ),
+        ),
       if (_me != null)
         Marker(
           point: _me!,
-          width: 36,
-          height: 36,
-          child: const Icon(Icons.my_location, size: 28, color: Colors.blue),
+          width: 32,
+          height: 32,
+          child: const Icon(Icons.my_location, size: 26, color: Colors.blue),
         ),
+    ];
+
+    final legend = <Widget>[
+      ...widget.legendChips,
+      if (_pax != null && widget.allowPassengerLive)
+        _legendChipLocal(Colors.deepPurple, 'Passenger (live)'),
     ];
 
     return SafeArea(
@@ -2120,24 +2143,17 @@ class _LiveMapSheetState extends State<_LiveMapSheet> {
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: Colors.black12),
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(
                           horizontal: 10,
                           vertical: 6,
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(
-                              Icons.route,
-                              size: 16,
-                              color: Colors.purple,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              widget.title,
-                              style: const TextStyle(fontSize: 12),
-                            ),
+                            Icon(Icons.route, size: 16, color: Colors.purple),
+                            SizedBox(width: 6),
+                            Text('Live Map', style: TextStyle(fontSize: 12)),
                           ],
                         ),
                       ),
@@ -2147,11 +2163,10 @@ class _LiveMapSheetState extends State<_LiveMapSheet> {
               ],
             ),
 
-            // Legend overlay (only when we have multiple riders)
-            if (widget.legendChips.isNotEmpty)
+            if (legend.isNotEmpty)
               Positioned(
                 left: 8,
-                top: 60, // under the title pill
+                top: 60,
                 right: 8,
                 child: Container(
                   constraints: const BoxConstraints(maxHeight: 140),
@@ -2163,18 +2178,11 @@ class _LiveMapSheetState extends State<_LiveMapSheet> {
                   ),
                   child: SingleChildScrollView(
                     scrollDirection: Axis.vertical,
-                    child: Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children:
-                          widget
-                              .legendChips, // 👈 each chip is already a widget
-                    ),
+                    child: Wrap(spacing: 6, runSpacing: 6, children: legend),
                   ),
                 ),
               ),
 
-            // Center on me
             Positioned(
               right: 12,
               bottom: 72,
@@ -2188,31 +2196,41 @@ class _LiveMapSheetState extends State<_LiveMapSheet> {
               ),
             ),
 
-            // GPS status pill
-            if (_me != null)
-              Positioned(
-                left: 12,
-                bottom: 16,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.92),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: Colors.black12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.06),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
+            Positioned(
+              left: 12,
+              bottom: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.92),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: Colors.black12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (widget.allowPassengerLive && _paxTs != null) ...[
+                      const Icon(
+                        Icons.person_outline,
+                        size: 14,
+                        color: Colors.black54,
                       ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
+                      const SizedBox(width: 6),
+                      Text(
+                        'Pax ${_ago(_paxTs)}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ] else if (_me != null) ...[
                       const Icon(
                         Icons.gps_fixed,
                         size: 14,
@@ -2225,12 +2243,14 @@ class _LiveMapSheetState extends State<_LiveMapSheet> {
                             : 'Live',
                         style: const TextStyle(fontSize: 12),
                       ),
+                    ] else ...[
+                      const Text('Map preview', style: TextStyle(fontSize: 12)),
                     ],
-                  ),
+                  ],
                 ),
               ),
+            ),
 
-            // Close
             Positioned(
               right: 12,
               bottom: 16,
@@ -2255,4 +2275,246 @@ class _LiveMapSheetState extends State<_LiveMapSheet> {
     final m = (s / 60).floor();
     return '${m}m ago';
   }
+
+  Widget _legendChipLocal(Color c, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.95),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/* ───────────────────────── Modern, flexible list tile ───────────────────────── */
+
+class _MatchListTile extends StatelessWidget {
+  const _MatchListTile({
+    required this.m,
+    required this.selectable,
+    required this.selected,
+    required this.onSelect,
+    required this.onDecline,
+    required this.onOpenRide,
+    required this.onChat,
+    required this.buildPill,
+    required this.buildRatingChip,
+    required this.mapThumb,
+    required this.trailingStatusColor,
+  });
+
+  final MatchCard m;
+  final bool selectable;
+  final bool selected;
+  final ValueChanged<bool?> onSelect;
+  final VoidCallback onDecline;
+  final VoidCallback? onOpenRide;
+  final VoidCallback onChat;
+
+  final Widget Function(String text, {IconData? icon, Color? color}) buildPill;
+  final Widget Function(double? avg, int? count) buildRatingChip;
+  final Widget mapThumb;
+
+  final Color trailingStatusColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final canOpenMap = onOpenRide != null;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.black12.withOpacity(0.06)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (selectable)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: SizedBox(
+                  width: 28,
+                  child: Checkbox(
+                    visualDensity: const VisualDensity(
+                      horizontal: -3,
+                      vertical: -3,
+                    ),
+                    value: selected,
+                    onChanged: onSelect,
+                  ),
+                ),
+              )
+            else
+              const SizedBox(width: 4),
+
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${m.pickupAddress} → ${m.destinationAddress}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      buildPill('${m.pax} pax', icon: Icons.people_alt),
+                      if (m.fare != null)
+                        buildPill(_pesoStatic(m.fare), icon: Icons.payments),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.person,
+                            size: 14,
+                            color: Colors.black54,
+                          ),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 180),
+                            child: Text(
+                              m.passengerName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          if (m.passengerId != null) ...[
+                            VerifiedBadge(userId: m.passengerId!, size: 16),
+                            UserRatingBadge(
+                              userId: m.passengerId!,
+                              iconSize: 14,
+                            ),
+                          ],
+                          buildRatingChip(m.ratingAvg, m.ratingCount),
+                        ],
+                      ),
+                    ],
+                  ),
+                  if (m.hasCoords) ...[const SizedBox(height: 8), mapThumb],
+                ],
+              ),
+            ),
+
+            const SizedBox(width: 8),
+
+            // Trailing column
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: trailingStatusColor.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: trailingStatusColor.withOpacity(0.18),
+                    ),
+                  ),
+                  child: Text(
+                    m.status.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                      color: trailingStatusColor,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: [
+                    IconButton(
+                      tooltip: 'Chat',
+                      constraints: const BoxConstraints(
+                        minWidth: 36,
+                        minHeight: 36,
+                      ),
+                      padding: EdgeInsets.zero,
+                      iconSize: 20,
+                      onPressed: onChat,
+                      icon: const Icon(Icons.message_outlined),
+                    ),
+                    if (m.status == 'pending')
+                      IconButton(
+                        tooltip: 'Decline',
+                        constraints: const BoxConstraints(
+                          minWidth: 36,
+                          minHeight: 36,
+                        ),
+                        padding: EdgeInsets.zero,
+                        iconSize: 20,
+                        onPressed: onDecline,
+                        icon: const Icon(Icons.close),
+                      ),
+                    if (canOpenMap)
+                      IconButton(
+                        tooltip: 'View ride',
+                        constraints: const BoxConstraints(
+                          minWidth: 36,
+                          minHeight: 36,
+                        ),
+                        padding: EdgeInsets.zero,
+                        iconSize: 20,
+                        onPressed: onOpenRide,
+                        icon: const Icon(Icons.map_outlined),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _pesoStatic(num? v) =>
+      v == null ? '₱0.00' : '₱${(v.toDouble()).toStringAsFixed(2)}';
 }

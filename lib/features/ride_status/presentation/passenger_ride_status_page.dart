@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'package:godavao/features/chat/presentation/chat_page.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
@@ -12,13 +13,18 @@ import 'package:godavao/features/ratings/presentation/rate_user.dart';
 import 'package:godavao/features/ratings/data/ratings_service.dart';
 import 'package:godavao/features/payments/presentation/payment_status_chip.dart';
 import 'package:godavao/features/safety/presentation/sos_sheet.dart';
+
+// Live location
 import 'package:godavao/features/live_tracking/data/live_publisher.dart';
 import 'package:godavao/features/live_tracking/data/live_subscriber.dart';
+
+// Fares
 import 'package:godavao/core/fare_service.dart';
 
 class PassengerRideStatusPage extends StatefulWidget {
   final String rideId;
   const PassengerRideStatusPage({super.key, required this.rideId});
+
   @override
   State<PassengerRideStatusPage> createState() =>
       _PassengerRideStatusPageState();
@@ -26,33 +32,44 @@ class PassengerRideStatusPage extends StatefulWidget {
 
 class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     with WidgetsBindingObserver {
+  // --------- Services / Refs ---------
   final _sb = Supabase.instance.client;
-  final _map = MapController();
-  bool get _isChatLocked {
-    final s = _status.toLowerCase();
-    return s == 'cancelled' ||
-        s == 'canceled' ||
-        s == 'declined' ||
-        s == 'completed';
-  }
 
+  // Map
+  final _map = MapController();
+  bool _mapReady = false;
+  bool _didFitOnce = false;
+  bool _debouncingMove = false;
+
+  // Ride + payment
   Map<String, dynamic>? _ride;
   Map<String, dynamic>? _payment;
   String? _passengerNote;
 
+  // Live tracking (publisher = THIS passenger; subscribers = driver + passenger echo)
   LivePublisher? _publisher;
   LiveSubscriber? _driverSub;
   LiveSubscriber? _selfSub;
+
+  // Live points
   LatLng? _driverLive;
   LatLng? _myLive;
+  DateTime? _driverLastAt;
+  DateTime? _selfLastAt;
 
+  // Watchdog to resurrect streams if they go quiet (network hiccups/app resume)
+  Timer? _liveWatchdog;
+  static const _watchdogPeriod = Duration(seconds: 15);
+  static const _watchdogSilence = Duration(seconds: 30);
+
+  // Realtime/streams
   StreamSubscription<List<Map<String, dynamic>>>? _rideReqSub;
   StreamSubscription<List<Map<String, dynamic>>>? _rideMatchSub;
   RealtimeChannel? _feeChannel;
 
+  // Matching / fare
   String? _matchId;
   int _seatsBilled = 1;
-
   int _activeBookings = 1;
   int _activeSeatsTotal = 1;
 
@@ -66,15 +83,25 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   double _platformFeeRate = 0.0;
   bool _estimatingFare = false;
 
+  // UI flags
   bool _loading = true;
   String? _error;
   bool _ratingPromptShown = false;
-  bool _didFitOnce = false;
 
+  // Theme tokens
   static const _bg = Color(0xFFF7F7FB);
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
 
+  bool get _isChatLocked {
+    final s = _status;
+    return s == 'cancelled' ||
+        s == 'canceled' ||
+        s == 'declined' ||
+        s == 'completed';
+  }
+
+  // ---------- Lifecycle ----------
   @override
   void initState() {
     super.initState();
@@ -85,11 +112,12 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _cancelWatchdog();
     _rideReqSub?.cancel();
     _rideMatchSub?.cancel();
-    _driverSub?.dispose();
-    _selfSub?.dispose();
-    _publisher?.stop();
+    _disposeAndNullPublisher();
+    _disposeAndNullDriverSubscriber();
+    _disposeAndNullSelfSubscriber();
     if (_feeChannel != null) _sb.removeChannel(_feeChannel!);
     super.dispose();
   }
@@ -97,14 +125,20 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      // Re-sync publisher/subscribers and kick the watchdog
       _syncPassengerPublisherToStatus();
+      _ensureDriverSubscriber();
+      _ensureSelfSubscriber();
+      _kickWatchdog();
     } else if (state == AppLifecycleState.paused) {
+      // Conserve battery when ride is not active
       if (!(_status == 'accepted' || _status == 'en_route')) {
         _publisher?.stop();
       }
     }
   }
 
+  // ---------- Bootstrap ----------
   Future<void> _bootstrap() async {
     setState(() {
       _loading = true;
@@ -120,11 +154,16 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
         _loadPlatformFeeRate(),
       ]);
       await _loadCarpoolSeatSnapshot();
+
       _subscribePlatformFee();
       _watchParents();
+
+      // Live tracking
       _syncPassengerPublisherToStatus();
-      _startDriverSubscriber();
-      _startSelfSubscriber();
+      _ensureDriverSubscriber();
+      _ensureSelfSubscriber();
+      _kickWatchdog();
+
       await _estimateFare();
       await _maybePromptRatingIfCompleted();
     } catch (e) {
@@ -134,6 +173,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     }
   }
 
+  // ---------- Loads ----------
   Future<void> _loadRideComposite() async {
     final res =
         await _sb
@@ -147,16 +187,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
       _passengerNote = (m['passenger_note'] as String?);
     });
     if (_passengerNote == null) {
-      final rr =
-          await _sb
-              .from('ride_requests')
-              .select('passenger_note')
-              .eq('id', widget.rideId)
-              .maybeSingle();
-      if (!mounted) return;
-      setState(() {
-        _passengerNote = (rr?['passenger_note'] as String?);
-      });
+      await _loadPassengerNoteOnly();
     }
   }
 
@@ -245,6 +276,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     } catch (_) {}
   }
 
+  // ---------- Streams / Realtime ----------
   void _watchParents() {
     _rideReqSub?.cancel();
     _rideReqSub = _sb
@@ -252,31 +284,35 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
         .stream(primaryKey: ['id'])
         .eq('id', widget.rideId)
         .listen((_) async {
-          await _loadRideComposite();
-          await _loadPayment();
-          await _loadMatchFacts();
-          await _loadCarpoolSeatSnapshot();
-          _syncPassengerPublisherToStatus();
-          await _estimateFare();
-          await _maybePromptRatingIfCompleted();
-          await _loadPassengerNoteOnly();
-          if (mounted) setState(() {});
+          await _onParentChanged();
         });
+
     _rideMatchSub?.cancel();
     _rideMatchSub = _sb
         .from('ride_matches')
         .stream(primaryKey: ['id'])
         .eq('ride_request_id', widget.rideId)
         .listen((_) async {
-          await _loadRideComposite();
-          await _loadPayment();
-          await _loadMatchFacts();
-          await _loadCarpoolSeatSnapshot();
-          _syncPassengerPublisherToStatus();
-          await _estimateFare();
-          await _maybePromptRatingIfCompleted();
-          if (mounted) setState(() {});
+          await _onParentChanged();
         });
+  }
+
+  Future<void> _onParentChanged() async {
+    await _loadRideComposite();
+    await _loadPayment();
+    await _loadMatchFacts();
+    await _loadCarpoolSeatSnapshot();
+    _syncPassengerPublisherToStatus();
+
+    // Driver might have been matched just now → ensure live subscribers
+    _ensureDriverSubscriber();
+    _ensureSelfSubscriber();
+    _kickWatchdog();
+
+    await _estimateFare();
+    await _maybePromptRatingIfCompleted();
+    await _loadPassengerNoteOnly();
+    if (mounted) setState(() {});
   }
 
   void _subscribePlatformFee() {
@@ -324,6 +360,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
           ..subscribe();
   }
 
+  // ---------- Live publisher/subscribers ----------
   void _syncPassengerPublisherToStatus() {
     final s = _status;
     if (s == 'accepted' || s == 'en_route') {
@@ -337,13 +374,20 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
         minPeriod: const Duration(seconds: 3),
         distanceFilter: 3,
       );
-      if (!(_publisher!.isRunning)) _publisher!.start();
+      if (!_publisher!.isRunning) _publisher!.start();
     } else {
       _publisher?.stop();
     }
   }
 
-  void _startDriverSubscriber() {
+  void _ensureDriverSubscriber() {
+    // If no driver yet, tear down to avoid stale channel
+    final driverId = _ride?['driver_id']?.toString();
+    if (driverId == null || driverId.isEmpty) {
+      _disposeAndNullDriverSubscriber();
+      return;
+    }
+    // Idempotent create+listen
     _driverSub?.dispose();
     _driverSub = LiveSubscriber(
       _sb,
@@ -357,16 +401,14 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
             prev.longitude == pos.longitude) {
           return;
         }
+        _driverLastAt = DateTime.now();
         setState(() => _driverLive = pos);
-        if (!_didFitOnce) {
-          _didFitOnce = true;
-          _fitImportant();
-        }
+        _fitOnceWhenBothKnown();
       },
     )..listen();
   }
 
-  void _startSelfSubscriber() {
+  void _ensureSelfSubscriber() {
     _selfSub?.dispose();
     _selfSub = LiveSubscriber(
       _sb,
@@ -380,15 +422,63 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
             prev.longitude == pos.longitude) {
           return;
         }
+        _selfLastAt = DateTime.now();
         setState(() => _myLive = pos);
-        if (!_didFitOnce && _driverLive != null) {
-          _didFitOnce = true;
-          _fitImportant();
-        }
+        _fitOnceWhenBothKnown();
       },
     )..listen();
   }
 
+  void _fitOnceWhenBothKnown() {
+    if (_didFitOnce) return;
+    if (_driverLive != null && (_pickup != null || _myLive != null)) {
+      _didFitOnce = true;
+      _fitImportant();
+    }
+  }
+
+  void _kickWatchdog() {
+    _cancelWatchdog();
+    _liveWatchdog = Timer.periodic(_watchdogPeriod, (_) {
+      // If streams go quiet too long, recreate subscribers
+      final now = DateTime.now();
+      final driverQuiet =
+          _driverLastAt == null ||
+          now.difference(_driverLastAt!) > _watchdogSilence;
+      final selfQuiet =
+          _selfLastAt == null ||
+          now.difference(_selfLastAt!) > _watchdogSilence;
+
+      if (driverQuiet) {
+        _ensureDriverSubscriber();
+      }
+      if (selfQuiet) {
+        _ensureSelfSubscriber();
+      }
+    });
+  }
+
+  void _cancelWatchdog() {
+    _liveWatchdog?.cancel();
+    _liveWatchdog = null;
+  }
+
+  void _disposeAndNullPublisher() {
+    _publisher?.stop();
+    _publisher = null;
+  }
+
+  void _disposeAndNullDriverSubscriber() {
+    _driverSub?.dispose();
+    _driverSub = null;
+  }
+
+  void _disposeAndNullSelfSubscriber() {
+    _selfSub?.dispose();
+    _selfSub = null;
+  }
+
+  // ---------- Fare ----------
   Future<void> _estimateFare() async {
     final p = _pickup;
     final d = _dropoff;
@@ -409,25 +499,13 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
       if (!mounted) return;
       setState(() => _fareBx = bx);
     } catch (_) {
+      // ignore transient fare calc errors
     } finally {
       if (mounted) setState(() => _estimatingFare = false);
     }
   }
 
-  void _fitImportant() {
-    final pts = <LatLng>[
-      if (_pickup != null) _pickup!,
-      if (_dropoff != null) _dropoff!,
-      if (_driverLive != null) _driverLive!,
-      if (_myLive != null) _myLive!,
-    ];
-    if (pts.length < 2) return;
-    final bounds = LatLngBounds.fromPoints(pts);
-    _map.fitCamera(
-      CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(36)),
-    );
-  }
-
+  // ---------- Helpers ----------
   String get _status =>
       (_ride?['effective_status'] as String?)?.toLowerCase() ??
       (_ride?['status'] as String?)?.toLowerCase() ??
@@ -465,29 +543,17 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     return LatLng(lat.toDouble(), lng.toDouble());
   }
 
-  Widget _passengerNoteSection() {
-    final note = (_passengerNote ?? '').trim();
-    if (note.isEmpty) return const SizedBox.shrink();
-    return _SectionCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _CardTitle(
-            icon: Icons.sticky_note_2_outlined,
-            text: 'Your note to driver',
-          ),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.amber.shade50,
-              border: Border.all(color: Colors.amber.shade200),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(note),
-          ),
-        ],
-      ),
+  void _fitImportant() {
+    final pts = <LatLng>[
+      if (_pickup != null) _pickup!,
+      if (_dropoff != null) _dropoff!,
+      if (_driverLive != null) _driverLive!,
+      if (_myLive != null) _myLive!,
+    ];
+    if (pts.length < 2) return;
+    final bounds = LatLngBounds.fromPoints(pts);
+    _map.fitCamera(
+      CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(36)),
     );
   }
 
@@ -545,6 +611,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     );
   }
 
+  // ---------- UI ----------
   @override
   Widget build(BuildContext context) {
     final fare = (_ride?['fare'] as num?)?.toDouble();
@@ -643,6 +710,9 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                   await _loadPlatformFeeRate();
                   await _loadCarpoolSeatSnapshot();
                   _syncPassengerPublisherToStatus();
+                  _ensureDriverSubscriber();
+                  _ensureSelfSubscriber();
+                  _kickWatchdog();
                   await _estimateFare();
                   await _maybePromptRatingIfCompleted();
                 },
@@ -689,6 +759,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                         ),
                       ),
                     if (isCanceled) const SizedBox(height: 12),
+
+                    // Status + facts
                     _SectionCard(
                       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                       child: Wrap(
@@ -728,12 +800,15 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                           ),
                           _Chip(
                             icon: Icons.group_outlined,
-                            label: 'Booking: ${bookingType.toUpperCase()}',
+                            label:
+                                'Booking: ${((_ride?['booking_type'] as String?) ?? 'shared').toUpperCase()}',
                           ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 12),
+
+                    // Map
                     _SectionCard(
                       child: Column(
                         children: [
@@ -743,7 +818,15 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                               borderRadius: BorderRadius.circular(14),
                               child: FlutterMap(
                                 mapController: _map,
-                                options: MapOptions(center: center, zoom: 13),
+                                options: MapOptions(
+                                  center: center,
+                                  zoom: 13,
+                                  onMapReady:
+                                      () => setState(() => _mapReady = true),
+                                  onTap: (_, __) {
+                                    // no-op; keeps interaction alive
+                                  },
+                                ),
                                 children: [
                                   TileLayer(
                                     urlTemplate:
@@ -810,7 +893,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                                 label: 'Driver',
                                 onPressed: () {
                                   if (_driverLive != null) {
-                                    _map.move(_driverLive!, 16);
+                                    _moveDebounced(_driverLive!, 16);
                                   }
                                 },
                               ),
@@ -820,7 +903,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                                 label: 'Pickup',
                                 onPressed: () {
                                   if (_pickup != null) {
-                                    _map.move(_pickup!, 16);
+                                    _moveDebounced(_pickup!, 16);
                                   }
                                 },
                               ),
@@ -830,7 +913,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                                 label: 'Dropoff',
                                 onPressed: () {
                                   if (_dropoff != null) {
-                                    _map.move(_dropoff!, 16);
+                                    _moveDebounced(_dropoff!, 16);
                                   }
                                 },
                               ),
@@ -849,6 +932,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                       ),
                     ),
                     const SizedBox(height: 12),
+
+                    // Driver card
                     _SectionCard(
                       child: Row(
                         children: [
@@ -891,10 +976,14 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                       ),
                     ),
                     const SizedBox(height: 12),
+
+                    // Passenger note
                     if ((_passengerNote ?? '').trim().isNotEmpty) ...[
                       _passengerNoteSection(),
                       const SizedBox(height: 12),
                     ],
+
+                    // Fare
                     if (_fareBx != null)
                       _SectionCard(
                         child: _FareBreakdownPro(
@@ -913,6 +1002,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                           peso: _peso,
                         ),
                       ),
+
                     if (_fareBx != null) ...[
                       const SizedBox(height: 12),
                       _SectionCard(
@@ -925,6 +1015,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                         ),
                       ),
                     ],
+
                     if (_status == 'completed' && driverId != null) ...[
                       const SizedBox(height: 16),
                       OutlinedButton.icon(
@@ -948,6 +1039,17 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     );
   }
 
+  // Debounce map move to avoid jank if frequent updates arrive
+  void _moveDebounced(LatLng p, double zoom) {
+    if (_debouncingMove) return;
+    _debouncingMove = true;
+    _map.move(p, zoom);
+    Future.delayed(const Duration(milliseconds: 180), () {
+      _debouncingMove = false;
+    });
+  }
+
+  // ---------- Bottom bar / sheets ----------
   Widget _buildBottomBar(
     String passenger,
     String driverName,
@@ -1087,8 +1189,35 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
       ],
     );
   }
+
+  Widget _passengerNoteSection() {
+    final note = (_passengerNote ?? '').trim();
+    if (note.isEmpty) return const SizedBox.shrink();
+    return _SectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _CardTitle(
+            icon: Icons.sticky_note_2_outlined,
+            text: 'Your note to driver',
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.amber.shade50,
+              border: Border.all(color: Colors.amber.shade200),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(note),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
+// ---------- Small UI helpers ----------
 class _SectionCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry? padding;
@@ -1139,6 +1268,65 @@ class _MiniAction extends StatelessWidget {
   }
 }
 
+class _Chip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color? color;
+  final Color? textColor;
+  const _Chip({
+    required this.icon,
+    required this.label,
+    this.color,
+    this.textColor,
+  });
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color ?? Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: textColor ?? Colors.black54),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: textColor ?? Colors.black87,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CardTitle extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _CardTitle({required this.icon, required this.text});
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, color: const Color(0xFF6A27F7)),
+        const SizedBox(width: 8),
+        Text(
+          text,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------- Fare UI ----------
 class _FareBreakdownSimple extends StatelessWidget {
   final double total;
   final int seats;
@@ -1387,64 +1575,6 @@ class _TH extends StatelessWidget {
         t,
         style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
       ),
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color? color;
-  final Color? textColor;
-  const _Chip({
-    required this.icon,
-    required this.label,
-    this.color,
-    this.textColor,
-  });
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: color ?? Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.black12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 15, color: textColor ?? Colors.black54),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: textColor ?? Colors.black87,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CardTitle extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  const _CardTitle({required this.icon, required this.text});
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, color: const Color(0xFF6A27F7)),
-        const SizedBox(width: 8),
-        Text(
-          text,
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-        ),
-      ],
     );
   }
 }

@@ -28,14 +28,19 @@ class _ChatPageState extends State<ChatPage>
   Timer? _typingTimer;
 
   bool _didSubscribeRoute = false;
-  String? _rideStatus; // will hold ride status like accepted, cancelled, completed
-    // OLD:
-    // bool get _isChatLocked =>
-    //     _rideStatus == 'cancelled' || _rideStatus == 'completed';
+  String?
+  _rideStatus; // will hold ride status like accepted, cancelled, completed
+  // OLD:
+  // bool get _isChatLocked =>
+  //     _rideStatus == 'cancelled' || _rideStatus == 'completed';
 
-    // NEW:
-    bool get _isChatLocked =>
-      const {'cancelled','canceled','declined','completed'}.contains(_rideStatus);
+  // NEW:
+  bool get _isChatLocked => const {
+    'cancelled',
+    'canceled',
+    'declined',
+    'completed',
+  }.contains(_rideStatus);
 
   @override
   bool get wantKeepAlive => true;
@@ -50,7 +55,6 @@ class _ChatPageState extends State<ChatPage>
     _markSeen();
     _fetchRideStatus();
     _listenRideStatus();
-    
   }
 
   @override
@@ -84,109 +88,115 @@ class _ChatPageState extends State<ChatPage>
   }
 
   Future<void> _fetchHistory() async {
-  try {
-    print('Fetching messages for matchId: ${widget.matchId}');
-    final rows = await _supabase
-        .from('ride_messages')
-        .select('id, sender_id, content, created_at, seen_at, ride_match_id')
-        .eq('ride_match_id', widget.matchId)
-        .order('created_at', ascending: true);
+    try {
+      print('Fetching messages for matchId: ${widget.matchId}');
+      final rows = await _supabase
+          .from('ride_messages')
+          .select('id, sender_id, content, created_at, seen_at, ride_match_id')
+          .eq('ride_match_id', widget.matchId)
+          .order('created_at', ascending: true);
 
-    print('Fetched rows: $rows'); // 👈 Add this
-    setState(() {
-      _messages = (rows as List)
-          .map((m) => ChatMessage.fromMap(m as Map<String, dynamic>))
-          .toList();
-    });
-    _scrollToBottom();
-  } catch (e, st) {
-    print('Error fetching chat history: $e\n$st');
+      print('Fetched rows: $rows'); // 👈 Add this
+      setState(() {
+        _messages =
+            (rows as List)
+                .map((m) => ChatMessage.fromMap(m as Map<String, dynamic>))
+                .toList();
+      });
+      _scrollToBottom();
+    } catch (e, st) {
+      print('Error fetching chat history: $e\n$st');
+    }
   }
-}
 
   void _listenPostgres() {
-  _pgChannel = _supabase
-      .channel('messages:${widget.matchId}')
-      // INSERT: new messages
-      .onPostgresChanges(
-        schema: 'public',
-        table: 'ride_messages',
-        event: PostgresChangeEvent.insert,
-        filter: PostgresChangeFilter(
-          type: PostgresChangeFilterType.eq,
-          column: 'ride_match_id',
-          value: widget.matchId,
-        ),
-        callback: (p) async {
-  final incoming = ChatMessage.fromMap(Map.from(p.newRecord));
-  final me = _supabase.auth.currentUser?.id;
+    _pgChannel =
+        _supabase
+            .channel('messages:${widget.matchId}')
+            // INSERT: new messages
+            .onPostgresChanges(
+              schema: 'public',
+              table: 'ride_messages',
+              event: PostgresChangeEvent.insert,
+              filter: PostgresChangeFilter(
+                type: PostgresChangeFilterType.eq,
+                column: 'ride_match_id',
+                value: widget.matchId,
+              ),
+              callback: (p) async {
+                final incoming = ChatMessage.fromMap(Map.from(p.newRecord));
+                final me = _supabase.auth.currentUser?.id;
 
-  setState(() {
-    final iById = _messages.indexWhere((m) => m.id == incoming.id);
-    if (iById != -1) {
-      _messages[iById] = incoming;
-    } else {
-      final iTmp = _messages.lastIndexWhere((m) =>
-          m.status == MessageStatus.sending &&
-          m.senderId == incoming.senderId &&
-          m.content == incoming.content);
-      if (iTmp != -1) {
-        _messages[iTmp] = incoming;
-      } else {
-        _messages.add(incoming);
-      }
-    }
-  });
-  _scrollToBottom();
+                setState(() {
+                  final iById = _messages.indexWhere(
+                    (m) => m.id == incoming.id,
+                  );
+                  if (iById != -1) {
+                    _messages[iById] = incoming;
+                  } else {
+                    final iTmp = _messages.lastIndexWhere(
+                      (m) =>
+                          m.status == MessageStatus.sending &&
+                          m.senderId == incoming.senderId &&
+                          m.content == incoming.content,
+                    );
+                    if (iTmp != -1) {
+                      _messages[iTmp] = incoming;
+                    } else {
+                      _messages.add(incoming);
+                    }
+                  }
+                });
+                _scrollToBottom();
 
-  // mark seen when the other party's message arrives and user is signed in
-  if (me != null && incoming.senderId != me) {
-    await _supabase
-        .from('ride_messages')
-        .update({'seen_at': DateTime.now().toIso8601String()})
-        .eq('ride_match_id', widget.matchId)
-        .neq('sender_id', me); // <-- now non-null
+                // mark seen when the other party's message arrives and user is signed in
+                if (me != null && incoming.senderId != me) {
+                  await _supabase
+                      .from('ride_messages')
+                      .update({'seen_at': DateTime.now().toIso8601String()})
+                      .eq('ride_match_id', widget.matchId)
+                      .neq('sender_id', me); // <-- now non-null
+                }
+              },
+            )
+            // UPDATE: seen_at changes (and any other updates)
+            .onPostgresChanges(
+              schema: 'public',
+              table: 'ride_messages',
+              event: PostgresChangeEvent.update,
+              filter: PostgresChangeFilter(
+                type: PostgresChangeFilterType.eq,
+                column: 'ride_match_id',
+                value: widget.matchId,
+              ),
+              callback: (p) {
+                final rec = Map<String, dynamic>.from(p.newRecord);
+                final id = rec['id']?.toString();
+                if (id == null) return;
+
+                final seenRaw = rec['seen_at'];
+                final seenAt =
+                    seenRaw == null
+                        ? null
+                        : DateTime.tryParse(seenRaw.toString())?.toLocal();
+
+                final i = _messages.indexWhere((m) => m.id == id);
+                if (i != -1) {
+                  setState(() {
+                    _messages[i] = ChatMessage(
+                      id: _messages[i].id,
+                      senderId: _messages[i].senderId,
+                      content: _messages[i].content,
+                      createdAt: _messages[i].createdAt,
+                      status: _messages[i].status, // 'sent' means delivered
+                      seenAt: seenAt, // <-- flip to "seen" when not null
+                    );
+                  });
+                }
+              },
+            )
+            .subscribe();
   }
-},
-      )
-      // UPDATE: seen_at changes (and any other updates)
-      .onPostgresChanges(
-        schema: 'public',
-        table: 'ride_messages',
-        event: PostgresChangeEvent.update,
-        filter: PostgresChangeFilter(
-          type: PostgresChangeFilterType.eq,
-          column: 'ride_match_id',
-          value: widget.matchId,
-        ),
-        callback: (p) {
-          final rec = Map<String, dynamic>.from(p.newRecord);
-          final id = rec['id']?.toString();
-          if (id == null) return;
-
-          final seenRaw = rec['seen_at'];
-          final seenAt = seenRaw == null
-              ? null
-              : DateTime.tryParse(seenRaw.toString())?.toLocal();
-
-          final i = _messages.indexWhere((m) => m.id == id);
-          if (i != -1) {
-            setState(() {
-              _messages[i] = ChatMessage(
-                id: _messages[i].id,
-                senderId: _messages[i].senderId,
-                content: _messages[i].content,
-                createdAt: _messages[i].createdAt,
-                status: _messages[i].status, // 'sent' means delivered
-                seenAt: seenAt,              // <-- flip to "seen" when not null
-              );
-            });
-          }
-        },
-      )
-      .subscribe();
-}
-
 
   void _listenBroadcast() {
     _bcChannel =
@@ -218,94 +228,94 @@ class _ChatPageState extends State<ChatPage>
         .eq('ride_match_id', widget.matchId)
         .neq('sender_id', user.id);
   }
-Future<void> _fetchRideStatus() async {
-  try {
-    final res = await _supabase
-        .from('ride_matches')
-        .select('status')
-        .eq('id', widget.matchId)
-        .maybeSingle();
-    if (mounted) {
-      setState(() => _rideStatus = res?['status']);
-    }
-  } catch (e) {
-    print('Failed to fetch ride status: $e');
-  }
-}
 
-void _listenRideStatus() {
-  _supabase
-      .from('ride_matches')                 
-      .stream(primaryKey: ['id'])           
-      .eq('id', widget.matchId)             
-      .listen((rows) {
-        if (rows.isNotEmpty) {
-          final s = rows.first['status'] as String?;
-          if (mounted) setState(() => _rideStatus = s);
-        }
-      });
-}
+  Future<void> _fetchRideStatus() async {
+    try {
+      final res =
+          await _supabase
+              .from('ride_matches')
+              .select('status')
+              .eq('id', widget.matchId)
+              .maybeSingle();
+      if (mounted) {
+        setState(() => _rideStatus = res?['status']);
+      }
+    } catch (e) {
+      print('Failed to fetch ride status: $e');
+    }
+  }
+
+  void _listenRideStatus() {
+    _supabase
+        .from('ride_matches')
+        .stream(primaryKey: ['id'])
+        .eq('id', widget.matchId)
+        .listen((rows) {
+          if (rows.isNotEmpty) {
+            final s = rows.first['status'] as String?;
+            if (mounted) setState(() => _rideStatus = s);
+          }
+        });
+  }
 
   Future<void> _sendMessage() async {
-  if (_isChatLocked) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Chat is locked because the ride has been cancelled, declined, or completed.',
-        ),
-      ),
-    );
-    return;
-  }
-
-  final txt = _textCtrl.text.trim();
-  if (txt.isEmpty) return;
-  final user = _supabase.auth.currentUser;
-  if (user == null) return;
-
-  final temp = ChatMessage(
-    id: UniqueKey().toString(),
-    senderId: user.id,
-    content: txt,
-    createdAt: DateTime.now(),
-    status: MessageStatus.sending,
-  );
-
-  setState(() => _messages.add(temp));
-  _scrollToBottom();
-  _textCtrl.clear();
-
-  try {
-    await _supabase
-    .from('ride_messages')
-    .insert({
-      'ride_match_id': widget.matchId,
-      'sender_id': user.id,
-      'content': txt,
-    });
-
-setState(() {
-  // keep temp for now; realtime insert will replace it
-  temp.status = MessageStatus.sending;
-});
-  } on PostgrestException catch (e) {
-    if (e.code == '45000' ||
-        (e.message ?? '').toLowerCase().contains('cannot send messages')) {
+    if (_isChatLocked) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Chat is locked because the ride has been cancelled or completed.',
+            'Chat is locked because the ride has been cancelled, declined, or completed.',
           ),
         ),
       );
-      setState(() => _rideStatus = 'cancelled');
-    } else {
+      return;
+    }
+
+    final txt = _textCtrl.text.trim();
+    if (txt.isEmpty) return;
+    final user = _supabase.auth.currentUser;
+    if (user == null) return;
+
+    final temp = ChatMessage(
+      id: UniqueKey().toString(),
+      senderId: user.id,
+      content: txt,
+      createdAt: DateTime.now(),
+      status: MessageStatus.sending,
+    );
+
+    setState(() => _messages.add(temp));
+    _scrollToBottom();
+    _textCtrl.clear();
+
+    try {
+      await _supabase.from('ride_messages').insert({
+        'ride_match_id': widget.matchId,
+        'sender_id': user.id,
+        'content': txt,
+      });
+
+      setState(() {
+        // keep temp for now; realtime insert will replace it
+        temp.status = MessageStatus.sending;
+      });
+    } on PostgrestException catch (e) {
+      if (e.code == '45000' ||
+          (e.message ?? '').toLowerCase().contains('cannot send messages')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Chat is locked because the ride has been cancelled or completed.',
+            ),
+          ),
+        );
+        setState(() => _rideStatus = 'cancelled');
+      } else {
+        setState(() => temp.status = MessageStatus.failed);
+      }
+    } catch (_) {
       setState(() => temp.status = MessageStatus.failed);
     }
-  } catch (_) {
-    setState(() => temp.status = MessageStatus.failed);
   }
-}
 
   void _onTyping(String _) {
     final me = _supabase.auth.currentUser?.id;
@@ -346,20 +356,20 @@ setState(() {
       body: Column(
         children: [
           if (_isChatLocked)
-  Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(10),
-    margin: const EdgeInsets.only(top: 6),
-    decoration: BoxDecoration(
-      color: Colors.amber.shade50,
-      border: Border.all(color: Colors.amber.shade200),
-    ),
-    child: const Text(
-      'This conversation is read-only because the ride was cancelled, declined, or completed.',
-      textAlign: TextAlign.center,
-      style: TextStyle(fontSize: 12),
-    ),
-  ),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              margin: const EdgeInsets.only(top: 6),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade50,
+                border: Border.all(color: Colors.amber.shade200),
+              ),
+              child: const Text(
+                'This conversation is read-only because the ride was cancelled, declined, or completed.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12),
+              ),
+            ),
           Expanded(
             child: ListView(
               controller: _scrollCtrl,
@@ -393,38 +403,38 @@ setState(() {
           ),
           const Divider(height: 1),
           _isChatLocked
-    ? Container(
-        padding: const EdgeInsets.all(16),
-        color: Colors.grey.shade100,
-        width: double.infinity,
-        child: const Text(
-          'Chat unavailable — this ride has been cancelled, declined, or completed.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.black54),
-        ),
-      )
-    : Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _textCtrl,
-                onChanged: _onTyping,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration.collapsed(
-                  hintText: 'Type a message',
+              ? Container(
+                padding: const EdgeInsets.all(16),
+                color: Colors.grey.shade100,
+                width: double.infinity,
+                child: const Text(
+                  'Chat unavailable — this ride has been cancelled, declined, or completed.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.black54),
                 ),
-                onSubmitted: (_) => _sendMessage(),
+              )
+              : Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _textCtrl,
+                        onChanged: _onTyping,
+                        textCapitalization: TextCapitalization.sentences,
+                        decoration: const InputDecoration.collapsed(
+                          hintText: 'Type a message',
+                        ),
+                        onSubmitted: (_) => _sendMessage(),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.send),
+                      onPressed: _sendMessage,
+                    ),
+                  ],
+                ),
               ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.send),
-              onPressed: _sendMessage,
-            ),
-          ],
-        ),
-      ),
         ],
       ),
     );
@@ -465,18 +475,24 @@ setState(() {
                 Padding(
                   padding: const EdgeInsets.only(left: 4),
                   child: Icon(
-  // Seen? show double-check; otherwise show single-check when delivered (sent),
-  // or clock while sending; error stays the same.
-  msg.status == MessageStatus.failed
-      ? Icons.error_outline
-      : (msg.seenAt != null
-          ? Icons.done_all       // SEEN
-          : (msg.status == MessageStatus.sending
-              ? Icons.access_time // SENDING
-              : Icons.check)),    // DELIVERED (your 'sent' state)
-  size: 12,
-  color: msg.seenAt != null ? const Color(0xFF1B74E4) : Colors.grey,
-),
+                    // Seen? show double-check; otherwise show single-check when delivered (sent),
+                    // or clock while sending; error stays the same.
+                    msg.status == MessageStatus.failed
+                        ? Icons.error_outline
+                        : (msg.seenAt != null
+                            ? Icons
+                                .done_all // SEEN
+                            : (msg.status == MessageStatus.sending
+                                ? Icons
+                                    .access_time // SENDING
+                                : Icons
+                                    .check)), // DELIVERED (your 'sent' state)
+                    size: 12,
+                    color:
+                        msg.seenAt != null
+                            ? const Color(0xFF1B74E4)
+                            : Colors.grey,
+                  ),
                 ),
             ],
           ),
@@ -508,9 +524,10 @@ class ChatMessage {
     senderId: m['sender_id'] as String,
     content: m['content'] as String,
     createdAt: DateTime.parse(m['created_at'] as String).toLocal(),
-  status: MessageStatus.sent,
-  seenAt: m['seen_at'] != null
-      ? DateTime.parse(m['seen_at'] as String).toLocal()
-      : null,
+    status: MessageStatus.sent,
+    seenAt:
+        m['seen_at'] != null
+            ? DateTime.parse(m['seen_at'] as String).toLocal()
+            : null,
   );
 }
