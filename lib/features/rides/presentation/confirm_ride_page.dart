@@ -8,7 +8,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
-
+import 'package:godavao/core/weather_service.dart';
+import 'package:godavao/core/surge.dart';
 import 'package:godavao/core/osrm_service.dart';
 import 'package:godavao/core/fare_service.dart';
 import 'package:godavao/features/payments/data/payment_service.dart';
@@ -57,7 +58,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   bool _submitting = false;
   String? _error;
   bool _groupFlat = false;
-
+  String? _weatherDesc;
   final _map = MapController();
   Polyline? _routePolyline;
   double _distanceKm = 0;
@@ -217,11 +218,32 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
             ? PricingMode.pakyaw
             : (_groupFlat ? PricingMode.groupFlat : PricingMode.shared);
 
+    // 🌦 Detect weather via Open-Meteo + compute surge
+    bool raining = false;
+    double surgeMultiplier = 1.0;
+    String weatherDesc = 'Clear';
+
+    try {
+      final weather = await WeatherService.getWeatherAt(widget.pickup);
+      raining = weather.isRaining;
+      weatherDesc = weather.description;
+
+      final surgeConfig = DavaoSurgeConfig();
+      surgeMultiplier = surgeConfig.compose(
+        now: DateTime.now(),
+        isRaining: raining,
+      );
+    } catch (_) {
+      surgeMultiplier = 1.0;
+      weatherDesc = 'Unavailable';
+    }
+
     final fb = _fareService.estimateForDistance(
       distanceKm: _distanceKm,
       durationMin: _durationMin,
       seats: _effectiveSeats,
       carpoolSeats: seatsForDiscount,
+      surgeMultiplier: surgeMultiplier,
       mode: mode,
     );
 
@@ -229,7 +251,17 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     setState(() {
       _carpoolSeatsForDiscount = seatsForDiscount;
       _fare = fb;
+      _weatherDesc = weatherDesc;
     });
+
+    // Optional: show small banner or snackbar
+    if (raining && mounted) {
+      _snack(
+        '🌧️ Rain detected — surge ${surgeMultiplier.toStringAsFixed(2)}× applied',
+      );
+    } else if (surgeMultiplier > 1.0) {
+      _snack('⚡ Surge ${surgeMultiplier.toStringAsFixed(2)}× applied');
+    }
   }
 
   Future<void> _onChangeSeats(int v) async {
@@ -985,6 +1017,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
             _fareRow('Surge used', '${bx.surgeMultiplier.toStringAsFixed(2)}×'),
             const SizedBox(height: 6),
             _fareRow('Seats billed', '${bx.seatsBilled}'),
+            if (_weatherDesc != null) _fareRow('Weather', _weatherDesc!),
             _fareRow('Carpool seats (tier)', '$_carpoolSeatsForDiscount'),
             _fareRow(
               'Carpool discount',

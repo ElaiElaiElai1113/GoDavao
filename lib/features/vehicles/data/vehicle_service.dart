@@ -212,14 +212,7 @@ class VehiclesService {
   /* ───────────────────────── Default toggle ───────────────────────── */
 
   Future<void> setDefault(String vehicleId) async {
-    final uid = _requireUid();
-    await sb
-        .from('vehicles')
-        .update({'is_default': true})
-        .eq('id', vehicleId)
-        .eq('driver_id', uid);
-    // If you have a DB trigger to clear other defaults, great.
-    // If not, you could also clear others here in a second update.
+    await sb.rpc('set_default_vehicle', params: {'p_vehicle_id': vehicleId});
   }
 
   /* ─────────────────────────── Delete ────────────────────────────── */

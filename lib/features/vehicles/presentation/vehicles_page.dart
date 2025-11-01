@@ -155,6 +155,24 @@ class _VehicleCardState extends State<_VehicleCard> {
   bool _working = false;
 
   static const _purple = Color(0xFF6A27F7);
+  void _successSnack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle, size: 18, color: Colors.white),
+            const SizedBox(width: 8),
+            Expanded(child: Text(msg)),
+          ],
+        ),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.green.shade600,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(12),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
 
   Future<void> _upload(bool isOR) async {
     final picked = await ImagePicker().pickImage(
@@ -225,6 +243,8 @@ class _VehicleCardState extends State<_VehicleCard> {
     setState(() => _working = true);
     try {
       await widget.svc.setDefault(widget.v['id'] as String);
+      if (!mounted) return;
+      _successSnack('Default vehicle updated');
       widget.onChanged();
     } catch (e) {
       _toast('Failed: $e');
