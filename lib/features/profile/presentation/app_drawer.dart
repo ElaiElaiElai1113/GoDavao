@@ -28,21 +28,19 @@ class AppDrawer extends StatelessWidget {
       backgroundColor: _bg,
       child: SafeArea(
         child: FutureBuilder<Map<String, dynamic>?>(
-          future:
-              authUser == null
-                  ? Future.value(null)
-                  : sb
-                      .from('users')
-                      .select('id, name, phone, verification_status, is_admin')
-                      .eq('id', authUser.id)
-                      .maybeSingle(),
+          future: authUser == null
+              ? Future.value(null)
+              : sb
+                  .from('users')
+                  .select('id, name, phone, verification_status, is_admin')
+                  .eq('id', authUser.id)
+                  .maybeSingle(),
           builder: (ctx, snap) {
             final isLoading = snap.connectionState == ConnectionState.waiting;
             final userRow = (snap.data ?? const <String, dynamic>{});
-            final name =
-                authUser == null
-                    ? 'Not signed in'
-                    : (userRow['name'] as String?)?.trim().isNotEmpty == true
+            final name = authUser == null
+                ? 'Not signed in'
+                : (userRow['name'] as String?)?.trim().isNotEmpty == true
                     ? (userRow['name'] as String)
                     : 'GoDavao user';
             final email = authUser?.email ?? '';
@@ -75,63 +73,71 @@ class AppDrawer extends StatelessWidget {
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child:
-                            isLoading
-                                ? _HeaderSkeleton()
-                                : Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 18,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    if (email.isNotEmpty)
-                                      Text(
-                                        email,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          color: Colors.white.withOpacity(0.85),
-                                          fontSize: 12.5,
-                                        ),
-                                      ),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      children: [
-                                        if (uid != null)
-                                          VerifiedBadge(userId: uid, size: 18),
-                                        const SizedBox(width: 8),
-                                        _chip(
-                                          label:
-                                              verification == 'verified'
-                                                  ? 'Verified'
-                                                  : 'Unverified',
-                                          bg: Colors.white.withOpacity(0.18),
-                                          fg: Colors.white,
-                                          icon:
-                                              verification == 'verified'
-                                                  ? Icons.verified
-                                                  : Icons.shield_moon_outlined,
-                                        ),
-                                        if (isAdmin) ...[
-                                          const SizedBox(width: 6),
-                                          _chip(
-                                            label: 'Admin',
-                                            bg: Colors.white.withOpacity(0.18),
-                                            fg: Colors.white,
-                                            icon: Icons.admin_panel_settings,
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ],
-                                ),
+                        child: isLoading
+                            ? const _HeaderSkeleton()
+                            : Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [
+    // Name
+    Text(
+      name,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        fontWeight: FontWeight.w700,
+        fontSize: 18,
+        color: Colors.white,
+      ),
+    ),
+
+    // Email
+    if (email.isNotEmpty)
+      Text(
+        email,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: Colors.white.withOpacity(0.85),
+          fontSize: 12.5,
+        ),
+      ),
+
+    const SizedBox(height: 8),
+
+    // Chips row (left-aligned under the text above)
+    Align(
+      alignment: Alignment.centerLeft,
+      child: Wrap(
+        spacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          // Verified / Unverified chip
+          Builder(
+            builder: (context) {
+              final isVerified =
+                  verification == 'approved' || verification == 'verified';
+              return _chip(
+                label: isVerified ? 'Verified' : 'Unverified',
+                bg: Colors.white.withOpacity(0.18),
+                fg: Colors.white,
+                icon: isVerified ? Icons.verified : Icons.shield_moon_outlined,
+              );
+            },
+          ),
+
+          // Optional Admin chip
+          if (isAdmin)
+            _chip(
+              label: 'Admin',
+              bg: Colors.white.withOpacity(0.18),
+              fg: Colors.white,
+              icon: Icons.admin_panel_settings,
+            ),
+        ],
+      ),
+    ),
+  ],
+),
                       ),
                       IconButton(
                         icon: const Icon(Icons.close, color: Colors.white),
@@ -423,9 +429,7 @@ class AppDrawer extends StatelessWidget {
       leading: CircleAvatar(
         radius: 18,
         backgroundColor:
-            highlight
-                ? _purple.withOpacity(0.12)
-                : Colors.black.withOpacity(0.06),
+            highlight ? _purple.withOpacity(0.12) : Colors.black.withOpacity(0.06),
         child: Icon(
           icon,
           color: highlight ? _purple : Colors.black87,
@@ -440,10 +444,9 @@ class AppDrawer extends StatelessWidget {
           color: highlight ? _purple : Colors.black87,
         ),
       ),
-      subtitle:
-          subtitle != null
-              ? Text(subtitle, style: const TextStyle(color: _textDim))
-              : null,
+      subtitle: subtitle != null
+          ? Text(subtitle, style: const TextStyle(color: _textDim))
+          : null,
       onTap: onTap,
     );
   }
@@ -455,13 +458,13 @@ class _HeaderSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget bar(double w, {double h = 10}) => Container(
-      width: w,
-      height: h,
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.3),
-        borderRadius: BorderRadius.circular(4),
-      ),
-    );
+          width: w,
+          height: h,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(4),
+          ),
+        );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
