@@ -17,9 +17,7 @@ class FareRules {
   final double defaultPlatformFeeRate;
   final double minSurgeMultiplier;
   final double maxSurgeMultiplier;
-
   final Map<int, double> carpoolDiscountBySeats;
-
   final double groupFlatMultiplier;
   final double pakyawMultiplier;
 
@@ -142,8 +140,8 @@ class FareService {
     );
 
     int seatsBilled;
-    double carpoolDiscountPct;
     int seatsForDiscount;
+    double carpoolDiscountPct;
 
     if (mode == PricingMode.shared) {
       seatsBilled = _max(seats.toDouble(), 1).toInt();
@@ -154,19 +152,21 @@ class FareService {
       seatsForDiscount = _resolveSeatsForDiscount(carpoolSeats: carpoolSeats);
       carpoolDiscountPct = 0.0;
     } else {
-      seatsBilled = 1;
-      seatsForDiscount = 1;
-      carpoolDiscountPct = 0.0;
+      seatsBilled = _max(seats.toDouble(), 1).toInt();
+      seatsForDiscount = _resolveSeatsForDiscount(carpoolSeats: carpoolSeats);
+      carpoolDiscountPct = _lookupDiscountPct(seatsForDiscount);
     }
 
     double raw = (subtotal + nightSurcharge) * clampSurge * seatsBilled;
 
-    if (mode == PricingMode.shared) {
-      raw = raw * (1.0 - carpoolDiscountPct);
-    } else if (mode == PricingMode.groupFlat) {
+    if (mode == PricingMode.groupFlat) {
       raw = raw * rules.groupFlatMultiplier;
-    } else {
+    } else if (mode == PricingMode.pakyaw) {
       raw = raw * rules.pakyawMultiplier;
+    }
+
+    if (mode != PricingMode.groupFlat) {
+      raw = raw * (1.0 - carpoolDiscountPct);
     }
 
     final total = _roundPeso(raw);
@@ -232,14 +232,13 @@ class FareService {
     double lat1 = _deg2rad(a.latitude);
     double lat2 = _deg2rad(b.latitude);
     final h =
-        sin(dLat / 2) * sin(dLat / 2) +
-        sin(dLon / 2) * sin(dLon / 2) * cos(lat1) * cos(lat2);
+        sin(dLat / 2) * sin(dLon / 2) * cos(lat1) * cos(lat2) +
+        sin(dLon / 2) * sin(dLon / 2);
     final c = 2 * atan2(sqrt(h), sqrt(1 - h));
     return r * c;
   }
 
   double _deg2rad(double d) => d * pi / 180.0;
-
   bool _isNight(DateTime now) {
     final h = now.hour;
     if (rules.nightStartHour < rules.nightEndHour) {

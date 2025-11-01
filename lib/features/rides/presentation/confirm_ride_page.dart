@@ -210,7 +210,8 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     }
 
     final seatsForDiscount =
-        _pakyaw ? 1 : max(1, seatsExisting + _seatsRequested);
+        _pakyaw ? _effectiveSeats : max(1, seatsExisting + _seatsRequested);
+
     final mode =
         _pakyaw
             ? PricingMode.pakyaw
@@ -716,7 +717,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
           ),
           if (_pakyaw)
             Text(
-              'No sharing. Carpool discounts disabled.',
+              'Whole vehicle reserved. Discount tier uses your reserved seats.',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
         ],
