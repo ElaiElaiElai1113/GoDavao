@@ -2,6 +2,8 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:godavao/features/verify/data/verification_service.dart';
 
 /// Canonical, app-level verification states.
 /// (We normalize any DB string to one of these.)
@@ -27,7 +29,7 @@ VerificationStatus _parseStatus(dynamic raw) {
 String _statusToText(VerificationStatus s) {
   switch (s) {
     case VerificationStatus.verified:
-      return 'verified';
+      return 'approved';
     case VerificationStatus.rejected:
       return 'rejected';
     case VerificationStatus.pending:
@@ -141,13 +143,13 @@ class VerificationService {
 
     // 2) Mark user as pending in `users` (source of truth).
     await _sb
-        .from('users')
-        .update({
-          'verification_status': 'pending',
-          'verified_role': roleNorm,
-          'verified_at': DateTime.now().toIso8601String(),
-        })
-        .eq('id', _userId);
+    .from('users')
+    .update({
+      'verification_status': 'pending',
+      'verified_role': roleNorm,
+      'verified_at': null, // ← only set on approval
+    })
+    .eq('id', _userId);
 
     // 3) Fetch existing request so we can preserve file keys if not re-uploaded.
     final existing =
@@ -308,13 +310,12 @@ class VerificationService {
     final statusText = _statusToText(status);
 
     // 1) Update the user record (source of truth in the app).
-    await _sb
-        .from('users')
-        .update({
-          'verification_status': statusText,
-          'verified_at': DateTime.now().toIso8601String(),
-        })
-        .eq('id', userId);
+    await _sb.from('users').update({
+  'verification_status': statusText,
+  'verified_at': status == VerificationStatus.verified
+      ? DateTime.now().toIso8601String()
+      : null,
+}).eq('id', userId);
 
     // 2) Optionally annotate the latest verification request.
     if (requestId != null) {
