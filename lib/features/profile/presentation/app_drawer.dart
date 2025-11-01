@@ -8,6 +8,7 @@ import 'package:godavao/features/profile/presentation/profile_page.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
 import 'package:godavao/features/verify/presentation/admin_panel_page.dart';
 import 'package:godavao/features/profile/presentation/how_it_works_page.dart';
+import 'package:godavao/features/auth/presentation/auth_page.dart';
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
@@ -312,13 +313,27 @@ class AppDrawer extends StatelessWidget {
                       style: TextStyle(color: _textDim),
                     ),
                     onTap: () async {
-                      await Supabase.instance.client.auth.signOut();
-                      if (context.mounted) {
-                        Navigator.of(context)
-                          ..pop()
-                          ..popUntil((r) => r.isFirst);
-                      }
-                    },
+  final nav = Navigator.of(context);
+
+  // Close the drawer first so we don't try to use a disposed context later
+  nav.pop();
+
+  try {
+    // Also signs out from any OAuth providers
+    await Supabase.instance.client.auth.signOut(scope: SignOutScope.global);
+  } catch (_) {
+    // swallow — we’ll still route to Auth
+  }
+
+  if (!context.mounted) return;
+
+  // Go to Auth and clear the stack so no back navigation to Dashboard
+  nav.pushAndRemoveUntil(
+    MaterialPageRoute(builder: (_) => const AuthPage()),
+    (route) => false,
+  );
+},
+
                   ),
                 ),
                 const SizedBox(height: 16),
