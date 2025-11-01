@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
-// Existing routes
 import 'package:godavao/features/dashboard/presentation/dashboard_page.dart';
 import 'package:godavao/features/verify/presentation/admin_panel_page.dart';
 import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
+
+const _kAppDeepLink = 'io.supabase.godavao://reset-callback';
 
 class AuthPage extends StatefulWidget {
   const AuthPage({super.key});
@@ -60,8 +60,9 @@ class _AuthPageState extends State<AuthPage> {
     );
   }
 
+  // ----- Forgot Password -----
   Future<void> _forgotPassword() async {
-    final email = _emailCtrl.text.trim();
+    final email = _emailCtrl.text.trim().toLowerCase();
     if (email.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -70,11 +71,20 @@ class _AuthPageState extends State<AuthPage> {
       return;
     }
     try {
-      await _sb.auth.resetPasswordForEmail(email);
+      await _sb.auth.resetPasswordForEmail(email, redirectTo: _kAppDeepLink);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Password reset email sent.')),
+        const SnackBar(
+          content: Text(
+            'Password reset link sent! Open it on this device to continue.',
+          ),
+        ),
       );
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Reset failed: ${e.message}')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -83,21 +93,14 @@ class _AuthPageState extends State<AuthPage> {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Data helpers
-  // ---------------------------------------------------------------------------
-
-  /// **Idempotent** user row creation. On signup we seed a row with
-  /// verification_status='unverified' (or 'pending' if you prefer).
-  /// On login we DO NOT touch verification_status.
+  // ----- Data helpers -----
   Future<void> _ensureUserRow({
     required String userId,
     required String role,
     String? name,
     String? phone,
-    required bool isSignup, // still passed, but logic changes
+    required bool isSignup,
   }) async {
-    // read current row
     final existing =
         await _sb
             .from('users')
@@ -109,16 +112,14 @@ class _AuthPageState extends State<AuthPage> {
         (role == 'driver' || role == 'passenger') ? role : 'passenger';
 
     if (existing == null) {
-      // no row yet (e.g., trigger disabled) -> insert with pending
       await _sb.from('users').insert({
         'id': userId,
         'name': (name?.trim().isEmpty ?? true) ? 'EMPTY' : name!.trim(),
         'role': normalizedRole,
         'phone': phone?.trim().isEmpty == true ? null : phone!.trim(),
-        'verification_status': 'pending', // or omit to use DB default
+        'verification_status': 'pending',
       });
     } else {
-      // row exists (usually because the trigger created it) -> ALWAYS update fields
       final patch = <String, dynamic>{
         'role': normalizedRole,
         if (name != null && name.trim().isNotEmpty) 'name': name.trim(),
@@ -165,10 +166,7 @@ class _AuthPageState extends State<AuthPage> {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Submit (login / signup)
-  // ---------------------------------------------------------------------------
-
+  // ----- Submit (login / signup) -----
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_loading) return;
@@ -180,7 +178,6 @@ class _AuthPageState extends State<AuthPage> {
 
     try {
       if (_isLogin) {
-        // -------------------- LOGIN --------------------
         final res = await _sb.auth.signInWithPassword(
           email: _emailCtrl.text.trim().toLowerCase(),
           password: _passwordCtrl.text,
@@ -188,19 +185,13 @@ class _AuthPageState extends State<AuthPage> {
         final user = res.user;
         if (user == null) throw 'Login failed';
 
-        // Fetch role (fallback to passenger)
         final role = await _getRole(user.id) ?? 'passenger';
-
-        // Ensure row exists, but keep verification process(if it is still on going or verified)
         await _ensureUserRow(userId: user.id, role: role, isSignup: false);
 
-        // Check verification; if verified or not
         final v = (await _getVerificationStatus(user.id))?.toLowerCase();
         final isVerified = v == 'verified' || v == 'approved';
         final isAdminUser = await _isAdmin(user.id);
 
-        // For PASSENGERS: still prompt if not verified
-        // For DRIVERS: skip the verification prompt, the verification will be handled later on
         if (!isAdminUser && role == 'passenger' && !isVerified) {
           await _promptVerify(role);
         }
@@ -213,7 +204,6 @@ class _AuthPageState extends State<AuthPage> {
           MaterialPageRoute(builder: (_) => landing),
         );
       } else {
-        // -------------------- SIGNUP --------------------
         final email = _emailCtrl.text.trim().toLowerCase();
         final pwd = _passwordCtrl.text;
         final fullName = _nameCtrl.text.trim();
@@ -222,12 +212,12 @@ class _AuthPageState extends State<AuthPage> {
         final res = await _sb.auth.signUp(
           email: email,
           password: pwd,
+          emailRedirectTo: _kAppDeepLink, // verification email opens the app
           data: {'name': fullName, 'phone': phone, 'role': _role},
         );
         final user = res.user;
         if (user == null) throw 'Signup failed';
 
-        // Create users row (first time). Start unverified/pending.
         await _ensureUserRow(
           userId: user.id,
           role: _role,
@@ -236,15 +226,12 @@ class _AuthPageState extends State<AuthPage> {
           isSignup: true,
         );
 
-        // Passengers: prompt to verify now.
-        // Drivers: SKIP verification sheet; same as login
         if (_role == 'passenger') {
           await _promptVerify(_role);
         }
 
-        final isAdminUser = await _isAdmin(user.id);
-
         if (!mounted) return;
+        final isAdminUser = await _isAdmin(user.id);
         final landing =
             isAdminUser ? const AdminPanelPage() : const DashboardPage();
         Navigator.pushReplacement(
@@ -263,10 +250,7 @@ class _AuthPageState extends State<AuthPage> {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // UI
-  // ---------------------------------------------------------------------------
-
+  // ----- UI -----
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -311,12 +295,10 @@ class _AuthPageState extends State<AuthPage> {
                               ],
                             ),
                             child: Container(
-                              padding: const EdgeInsets.all(
-                                3,
-                              ), // thickness of outline
-                              decoration: BoxDecoration(
+                              padding: const EdgeInsets.all(3),
+                              decoration: const BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: Colors.white, // outline color
+                                color: Colors.white,
                               ),
                               child: const CircleAvatar(
                                 radius: 60,
@@ -353,13 +335,14 @@ class _AuthPageState extends State<AuthPage> {
                             controller: _emailCtrl,
                             keyboardType: TextInputType.emailAddress,
                             autofillHints: const [AutofillHints.email],
+                            textInputAction: TextInputAction.next,
                             style: const TextStyle(color: Colors.white),
                             decoration: _fieldDecor(
                               label: 'Email',
                               hint: 'you@example.com',
                             ),
                             validator: (v) {
-                              final s = v?.trim() ?? '';
+                              final s = (v ?? '').trim();
                               if (s.isEmpty) return 'Enter your email';
                               if (!s.contains('@'))
                                 return 'Enter a valid email';
@@ -372,8 +355,14 @@ class _AuthPageState extends State<AuthPage> {
                             controller: _passwordCtrl,
                             obscureText: _obscure,
                             autofillHints: const [AutofillHints.password],
+                            textInputAction:
+                                _isLogin
+                                    ? TextInputAction.done
+                                    : TextInputAction.next,
+                            onFieldSubmitted: (_) {
+                              if (_isLogin) _submit();
+                            },
                             style: const TextStyle(color: Colors.white),
-
                             decoration: _fieldDecor(
                               label: 'Password',
                               hint: 'Enter your password',
@@ -391,13 +380,13 @@ class _AuthPageState extends State<AuthPage> {
                               ),
                             ),
                             validator: (v) {
-                              if (v == null || v.isEmpty) {
-                                return 'Enter your password';
-                              }
-                              if (v.length < 6) return 'Password too short';
+                              final s = v ?? '';
+                              if (s.isEmpty) return 'Enter your password';
+                              if (s.length < 6) return 'Password too short';
                               return null;
                             },
                           ),
+
                           Align(
                             alignment: Alignment.centerRight,
                             child: TextButton(
@@ -413,27 +402,31 @@ class _AuthPageState extends State<AuthPage> {
                             const SizedBox(height: 8),
                             TextFormField(
                               controller: _nameCtrl,
+                              textInputAction: TextInputAction.next,
                               style: const TextStyle(color: Colors.white),
                               decoration: _fieldDecor(label: 'Full Name'),
-                              validator: (v) {
-                                if (_isLogin) return null;
-                                return (v == null || v.trim().isEmpty)
-                                    ? 'Enter your name'
-                                    : null;
-                              },
+                              validator:
+                                  (v) =>
+                                      _isLogin
+                                          ? null
+                                          : ((v ?? '').trim().isEmpty
+                                              ? 'Enter your name'
+                                              : null),
                             ),
                             const SizedBox(height: 12),
                             TextFormField(
                               controller: _phoneCtrl,
                               keyboardType: TextInputType.phone,
+                              textInputAction: TextInputAction.done,
                               style: const TextStyle(color: Colors.white),
                               decoration: _fieldDecor(label: 'Phone Number'),
-                              validator: (v) {
-                                if (_isLogin) return null;
-                                return (v == null || v.trim().isEmpty)
-                                    ? 'Enter your phone'
-                                    : null;
-                              },
+                              validator:
+                                  (v) =>
+                                      _isLogin
+                                          ? null
+                                          : ((v ?? '').trim().isEmpty
+                                              ? 'Enter your phone'
+                                              : null),
                             ),
                             const SizedBox(height: 12),
                             DropdownButtonFormField<String>(
@@ -443,19 +436,19 @@ class _AuthPageState extends State<AuthPage> {
                               iconEnabledColor: Colors.white,
                               iconDisabledColor: Colors.white54,
                               style: const TextStyle(color: Colors.white),
-                              items: [
+                              items: const [
                                 DropdownMenuItem(
                                   value: 'passenger',
                                   child: Text(
                                     'Passenger',
-                                    style: const TextStyle(color: Colors.white),
+                                    style: TextStyle(color: Colors.white),
                                   ),
                                 ),
                                 DropdownMenuItem(
                                   value: 'driver',
                                   child: Text(
                                     'Driver',
-                                    style: const TextStyle(color: Colors.white),
+                                    style: TextStyle(color: Colors.white),
                                   ),
                                 ),
                               ],
@@ -473,7 +466,6 @@ class _AuthPageState extends State<AuthPage> {
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(20),
                                 color: Colors.white,
-
                                 boxShadow: [
                                   BoxShadow(
                                     color: _purple.withOpacity(0.25),

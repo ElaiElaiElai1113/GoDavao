@@ -7,6 +7,8 @@ import 'package:godavao/features/vehicles/presentation/vehicles_page.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/services.dart';
 
 import 'features/auth/presentation/auth_page.dart';
 import 'features/dashboard/presentation/dashboard_page.dart';
@@ -15,21 +17,19 @@ import 'features/ride_status/presentation/driver_rides_page.dart';
 import 'features/ride_status/presentation/passenger_myrides_page.dart';
 import 'features/routes/presentation/pages/driver_route_page.dart';
 import 'features/verify/presentation/admin_panel_page.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'features/chat/data/chat_subscription_service.dart';
 import 'features/chat/data/chat_messages_service.dart';
-import 'package:flutter/services.dart';
+import 'core/auth_gate.dart';
 
 // Global local notifications plugin
 final FlutterLocalNotificationsPlugin localNotify =
     FlutterLocalNotificationsPlugin();
-
-// RouteObserver for listening to navigation events
 final RouteObserver<ModalRoute<void>> routeObserver =
     RouteObserver<ModalRoute<void>>();
-
-// Navigator Key for OSRM
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+// One source of truth for deep link used by reset + email verification
+const kAppDeepLink = 'io.supabase.godavao://reset-callback';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -100,7 +100,8 @@ class GoDavaoApp extends StatelessWidget {
         '/profile': (_) => const ProfilePage(),
         '/vehicles': (_) => const VehiclesPage(),
       },
-      home: const SessionRouter(),
+      // Wrap home with AuthGate so passwordRecovery works even on cold start
+      home: AuthGate(navigatorKey: navigatorKey, child: const SessionRouter()),
     );
   }
 }
