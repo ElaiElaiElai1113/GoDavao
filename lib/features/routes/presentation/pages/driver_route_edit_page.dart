@@ -92,16 +92,19 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
       final avail = (r['capacity_available'] as num?)?.toInt() ?? total;
       _capTotal.text = total.toString();
       _capAvail.text = avail.toString();
+
+      // Check if there are accepted/en_route matches
       try {
-  final matches = await _sb
-      .from('ride_matches')
-      .select('id')
-      .eq('driver_route_id', widget.routeId)
-      .inFilter('status', ['accepted', 'en_route']);
-  _hasActiveRide = (matches as List).isNotEmpty;
-} catch (_) {
-  _hasActiveRide = false; // fail-open for UI; DB trigger still protects
-}
+        final matches = await _sb
+            .from('ride_matches')
+            .select('id')
+            .eq('driver_route_id', widget.routeId)
+            .inFilter('status', ['accepted', 'en_route']);
+        _hasActiveRide = (matches as List).isNotEmpty;
+      } catch (_) {
+        _hasActiveRide = false; // fail-open for UI; DB guard still protects
+      }
+
       _dirty = false;
     } catch (e) {
       _error = 'Failed to load route: $e';
@@ -134,147 +137,237 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
   }
 
   // A small banner shown when this route has accepted/ongoing rides
-Widget _blockedBanner() {
-  return Container(
-    margin: const EdgeInsets.only(bottom: 10),
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(
-      color: const Color(0xFFFFF8E1), // soft amber
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: const Color(0xFFFFECB3)),
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: const [
-        Icon(Icons.lock_clock, color: Color(0xFFF57C00)),
-        SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            'This route has an accepted or ongoing ride. '
-            'You can’t deactivate it until the ride is completed or cancelled.',
-            style: TextStyle(color: Color(0xFF5D4037)),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-// Friendly bottom sheet to explain the block
-void _showBlockedSheet() {
-  showModalBottomSheet(
-    context: context,
-    showDragHandle: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
-    builder: (_) => Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.lock, size: 36),
-          const SizedBox(height: 10),
-          const Text(
-            'Route is in use',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'You can’t deactivate this route because at least one passenger '
-            'has already accepted the ride. Finish or cancel the active ride first.',
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            height: 44,
-            child: FilledButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Got it'),
+  Widget _blockedBanner() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E1), // soft amber
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFFECB3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const [
+          Icon(Icons.lock_clock, color: Color(0xFFF57C00)),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'This route has an accepted or ongoing ride. '
+              'You can’t deactivate it until the ride is completed or cancelled.',
+              style: TextStyle(color: Color(0xFF5D4037)),
             ),
           ),
         ],
       ),
-    ),
-  );
-}
-
-// Turn Postgres errors into friendly copy
-String _niceError(Object e) {
-  if (e is PostgrestException) {
-    final msg = (e.message ?? '').toString().toLowerCase();
-    final details = (e.details ?? '').toString().toLowerCase();
-
-    // Trigger error from our DB guard
-    if (e.code == '45000' || msg.contains('cannot deactivate route')) {
-      return 'You can’t deactivate this route while there’s an accepted or ongoing ride.';
-    }
-
-    // Capacity constraint from your table (chk_capacity_bounds)
-    if (details.contains('chk_capacity_bounds') || msg.contains('chk_capacity_bounds')) {
-      return 'You can’t deactivate this route while there’s an accepted or ongoing ride.';
-    }
-
-    // Other PG messages
-    return e.message ?? 'Save failed.';
+    );
   }
-  return 'Save failed. Please try again.';
-}
 
+  // Friendly bottom sheet to explain the block
+  void _showBlockedSheet() {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder:
+          (_) => Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.lock, size: 36),
+                const SizedBox(height: 10),
+                const Text(
+                  'Route is in use',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'You can’t deactivate this route because at least one passenger '
+                  'has already accepted the ride. Finish or cancel the active ride first.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Got it'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+    );
+  }
+
+  // Turn Postgres errors into friendly copy
+  String _niceError(Object e) {
+    if (e is PostgrestException) {
+      final msg = (e.message ?? '').toString().toLowerCase();
+      final details = (e.details ?? '').toString().toLowerCase();
+
+      // Trigger/guard error
+      if (e.code == '45000' ||
+          msg.contains('cannot deactivate') ||
+          msg.contains('cannot deactivate route')) {
+        return 'You can’t deactivate this route while there’s an accepted or ongoing ride.';
+      }
+
+      // Capacity constraint
+      if (details.contains('chk_capacity_bounds') ||
+          msg.contains('chk_capacity_bounds')) {
+        return 'Seat capacity is invalid.';
+      }
+
+      // Other PG messages
+      return e.message ?? 'Save failed.';
+    }
+    return 'Save failed. Please try again.';
+  }
 
   Future<void> _save() async {
-  if (!_form.currentState!.validate()) return;
+    if (!_form.currentState!.validate()) return;
+    setState(() => _saving = true);
 
-  setState(() => _saving = true);
-  try {
-    final total = int.parse(_capTotal.text.trim());
-    final avail = int.parse(_capAvail.text.trim());
-    final fixedAvail = avail.clamp(0, total);
+    try {
+      final total = int.parse(_capTotal.text.trim());
+      final avail = int.parse(_capAvail.text.trim());
+      final fixedAvail = avail.clamp(0, total);
 
-    await _sb
-        .from('driver_routes')
-        .update({
-          'name': _name.text.trim().isEmpty ? null : _name.text.trim(),
-          'notes': _notes.text.trim().isEmpty ? null : _notes.text.trim(),
-          'is_active': _isActive,
-          'route_mode': _routeMode,
-          'vehicle_id': _vehicleId,
-          'capacity_total': total,
-          'capacity_available': fixedAvail,
-        })
-        .eq('id', widget.routeId)
-        .select()
-        .single(); // surface errors here
+      // If driver turns Active → OFF: run Cancel + Notify RPC.
+      if (!_isActive) {
+        // Confirm action with the driver
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder:
+              (_) => AlertDialog(
+                title: const Text('Deactivate Route?'),
+                content: const Text(
+                  'This will cancel any pending or accepted rides and notify passengers. Continue?',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('No'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Yes, deactivate'),
+                  ),
+                ],
+              ),
+        );
 
-    if (!mounted) return;
-    _dirty = false;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Route updated')),
-    );
-    Navigator.pop(context, true);
-  } on PostgrestException catch (e) {
-    final msg = _niceError(e);
+        if (confirm != true) {
+          if (mounted) setState(() => _isActive = true);
+          setState(() => _saving = false);
+          return;
+        }
 
-    // If DB blocked deactivation, show nicer UI + revert toggle
-    if (e.code == '45000' ||
-        (e.message ?? '').toLowerCase().contains('cannot deactivate route')) {
+        // If UI detected an active/ongoing ride, show a friendlier explanation up-front.
+        // (DB still protects en_route.)
+        if (_hasActiveRide) {
+          // You can allow force-cancel accepted here if your RPC does it.
+          // For now we still proceed and let the RPC handle the correct logic.
+        }
+
+        // Call the Cancel + Notify RPC
+        final res =
+            await _sb
+                .rpc(
+                  'driver_cancel_route',
+                  params: {
+                    'p_route': widget.routeId,
+                    'p_reason': 'Driver manually deactivated this route',
+                  },
+                )
+                .select();
+
+        // Count how many were cancelled
+        int cancelledCount = 0;
+        if (res is List && res.isNotEmpty) {
+          final map = res.first as Map<String, dynamic>;
+          cancelledCount = (map['cancelled_count'] as int?) ?? 0;
+        }
+
+        // Save other editable fields (name/notes/capacity/vehicle/mode) after
+        await _sb
+            .from('driver_routes')
+            .update({
+              'name': _name.text.trim().isEmpty ? null : _name.text.trim(),
+              'notes': _notes.text.trim().isEmpty ? null : _notes.text.trim(),
+              'route_mode': _routeMode,
+              'vehicle_id': _vehicleId,
+              'capacity_total': total,
+              'capacity_available': fixedAvail,
+              // no need to set is_active: RPC already deactivated it
+            })
+            .eq('id', widget.routeId)
+            .select()
+            .single();
+
+        if (!mounted) return;
+        _dirty = false;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Route deactivated — $cancelledCount passenger(s) notified.',
+            ),
+          ),
+        );
+        Navigator.pop(context, true);
+        return;
+      }
+
+      // Otherwise: normal update (including Active → ON or metadata changes)
+      await _sb
+          .from('driver_routes')
+          .update({
+            'name': _name.text.trim().isEmpty ? null : _name.text.trim(),
+            'notes': _notes.text.trim().isEmpty ? null : _notes.text.trim(),
+            'is_active': _isActive,
+            'route_mode': _routeMode,
+            'vehicle_id': _vehicleId,
+            'capacity_total': total,
+            'capacity_available': fixedAvail,
+          })
+          .eq('id', widget.routeId)
+          .select()
+          .single();
+
       if (!mounted) return;
-      setState(() => _isActive = true);
-      _showBlockedSheet(); // pretty explanation
-    } else {
+      _dirty = false;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Route updated')));
+      Navigator.pop(context, true);
+    } on PostgrestException catch (e) {
+      final msg = _niceError(e);
+      // If DB blocked deactivation due to an ongoing trip, show nicer UI + revert toggle
+      if (e.code == '45000' ||
+          (e.message ?? '').toLowerCase().contains('cannot deactivate')) {
+        if (!mounted) return;
+        setState(() => _isActive = true);
+        _showBlockedSheet();
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(msg)));
+      }
+    } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_niceError(e))));
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
-  } catch (e) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(_niceError(e))),
-    );
-  } finally {
-    if (mounted) setState(() => _saving = false);
   }
-}
 
   Future<void> _openGeometryEditor() async {
     final updated = await Navigator.push<bool>(
@@ -283,7 +376,6 @@ String _niceError(Object e) {
         builder: (_) => DriverRouteGeometryPage(routeId: widget.routeId),
       ),
     );
-    // If geometry was saved, reload the route (route_mode/anything else may have changed)
     if (updated == true && mounted) {
       await _load();
       ScaffoldMessenger.of(
@@ -326,6 +418,7 @@ String _niceError(Object e) {
                     key: _form,
                     child: ListView(
                       children: [
+                        if (_hasActiveRide && _isActive) _blockedBanner(),
                         _section('Basics', [
                           TextFormField(
                             controller: _name,
@@ -341,31 +434,22 @@ String _niceError(Object e) {
                             ),
                             maxLines: 3,
                           ),
-                          // Wrap to allow onTap when switch is disabled
-GestureDetector(
-  onTap: (_hasActiveRide && _isActive) ? _showBlockedSheet : null,
-  child: AbsorbPointer(
-    absorbing: (_hasActiveRide && _isActive), // so the disabled switch won't toggle
-    child: SwitchListTile.adaptive(
-      contentPadding: EdgeInsets.zero,
-      title: const Text('Active'),
-      subtitle: _hasActiveRide
-          ? const Text(
-              'This route has an accepted or ongoing ride. '
-              'You can’t deactivate it until the ride is completed or cancelled.',
-              style: TextStyle(fontSize: 12),
-            )
-          : null,
-      value: _isActive,
-      onChanged: (v) {
-        setState(() {
-          _isActive = v;
-          _dirty = true;
-        });
-      },
-    ),
-  ),
-),
+                          // Turn off to deactivate (will run RPC)
+                          SwitchListTile.adaptive(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('Active'),
+                            subtitle: const Text(
+                              'Turn off to deactivate this route (cancels rides and notifies passengers).',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                            value: _isActive,
+                            onChanged: (v) {
+                              setState(() {
+                                _isActive = v;
+                                _dirty = true;
+                              });
+                            },
+                          ),
                         ]),
                         const SizedBox(height: 10),
                         _section('Vehicle', [
@@ -481,8 +565,6 @@ GestureDetector(
                           ),
                         ]),
                         const SizedBox(height: 10),
-
-                        // ⬇️ New Geometry section
                         _section('Geometry', [
                           const Text(
                             'Edit the start & end points on a map.',
@@ -501,7 +583,6 @@ GestureDetector(
                             ),
                           ),
                         ]),
-
                         const SizedBox(height: 16),
                         SizedBox(
                           height: 48,
