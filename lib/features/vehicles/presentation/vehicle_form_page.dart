@@ -106,7 +106,7 @@ class _VehicleFormState extends State<VehicleForm> {
         year:
             _year.text.trim().isEmpty ? null : int.tryParse(_year.text.trim()),
         seats: _seats,
-        isDefault: _isDefault,
+
         orNumber: _orNumber.text.trim().isEmpty ? null : _orNumber.text.trim(),
         crNumber: _crNumber.text.trim().isEmpty ? null : _crNumber.text.trim(),
       );
@@ -171,7 +171,7 @@ class _VehicleFormState extends State<VehicleForm> {
         year:
             _year.text.trim().isEmpty ? null : int.tryParse(_year.text.trim()),
         seats: _seats,
-        isDefault: _isDefault,
+
         orNumber: _orNumber.text.trim(),
         crNumber: _crNumber.text.trim(),
       );

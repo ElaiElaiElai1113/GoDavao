@@ -101,7 +101,8 @@ class VehiclesService {
 
   /* ─────────────────────────── Create/Update ──────────────────────── */
 
-  /// Create vehicle and RETURN its id so UI can immediately use it (e.g., to upload OR/CR).
+  /// Create vehicle. Always creates as non-default.
+  /// If user has no default yet, we set this one as default afterward.
   Future<String> createVehicle({
     required String make,
     required String model,
@@ -109,13 +110,16 @@ class VehiclesService {
     String? color,
     int? year,
     required int seats,
-    bool isDefault = false,
     String? orNumber,
     String? crNumber,
   }) async {
     final uid = _requireUid();
 
     try {
+      // check if user already has a default
+      final currentDefault = await getDefaultVehicle();
+
+      // insert as non-default
       final inserted =
           await sb
               .from('vehicles')
@@ -127,7 +131,7 @@ class VehiclesService {
                 'color': _nullIfBlank(color),
                 'year': year,
                 'seats': seats,
-                'is_default': isDefault,
+                'is_default': false,
                 if (_nullIfBlank(orNumber) != null)
                   'or_number': _nullIfBlank(orNumber),
                 if (_nullIfBlank(crNumber) != null)
@@ -140,6 +144,12 @@ class VehiclesService {
       if (id.isEmpty) {
         throw Exception('Vehicle created but id not returned.');
       }
+
+      // if user has no default yet, make this one default
+      if (currentDefault == null) {
+        await setDefault(id);
+      }
+
       return id;
     } on PostgrestException catch (e) {
       throw _friendlyVehicleError(e);
@@ -163,7 +173,7 @@ class VehiclesService {
     put('color', _nullIfBlank(patch['color'] as String?));
     put('year', patch['year']);
     put('seats', patch['seats']);
-    if (patch.containsKey('is_default')) put('is_default', patch['is_default']);
+    // we don’t let callers arbitrarily set is_default here
     if (patch.containsKey('or_number') || patch.containsKey('orNumber')) {
       put('or_number', _nullIfBlank(patch['or_number'] ?? patch['orNumber']));
     }
@@ -192,7 +202,6 @@ class VehiclesService {
     String? color,
     int? year,
     required int seats,
-    bool? isDefault,
     String? orNumber,
     String? crNumber,
   }) {
@@ -203,7 +212,6 @@ class VehiclesService {
       'color': color,
       'year': year,
       'seats': seats,
-      if (isDefault != null) 'is_default': isDefault,
       if (orNumber != null) 'or_number': orNumber,
       if (crNumber != null) 'cr_number': crNumber,
     });
@@ -211,8 +219,32 @@ class VehiclesService {
 
   /* ───────────────────────── Default toggle ───────────────────────── */
 
+  /// Make exactly one vehicle default for this driver.
+  /// 1) unset current default for driver
+  /// 2) set the given vehicle as default
   Future<void> setDefault(String vehicleId) async {
-    await sb.rpc('set_default_vehicle', params: {'p_vehicle_id': vehicleId});
+    final uid = _requireUid();
+
+    // 1) unset current default (if any)
+    await sb
+        .from('vehicles')
+        .update({'is_default': false})
+        .eq('driver_id', uid)
+        .eq('is_default', true);
+
+    // 2) set the chosen one
+    final res =
+        await sb
+            .from('vehicles')
+            .update({'is_default': true})
+            .eq('driver_id', uid)
+            .eq('id', vehicleId)
+            .select('id')
+            .maybeSingle();
+
+    if (res == null) {
+      throw Exception('Vehicle not found or not owned by user.');
+    }
   }
 
   /* ─────────────────────────── Delete ────────────────────────────── */
@@ -248,12 +280,10 @@ class VehiclesService {
     final fileName = 'or_${const Uuid().v4()}.$ext';
     final key = '$uid/$vehicleId/$fileName';
 
-    // Upload
     await sb.storage
         .from(_bucket)
         .upload(key, file, fileOptions: const FileOptions(upsert: true));
 
-    // Update DB + mark pending (review restarts)
     await sb
         .from('vehicles')
         .update({
@@ -330,7 +360,6 @@ class VehiclesService {
 
   /* ───────────────────────── Verification ───────────────────────── */
 
-  /// Requires both OR and CR (or legacy ORCR) before marking as pending.
   Future<void> submitForVerificationBoth(String vehicleId) async {
     final uid = _requireUid();
     final v =

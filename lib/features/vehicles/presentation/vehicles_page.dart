@@ -1067,7 +1067,7 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
         year:
             _year.text.trim().isEmpty ? null : int.tryParse(_year.text.trim()),
         seats: int.parse(_seats.text.trim()),
-        isDefault: _isDefault,
+
         orNumber: _orNumber.text.trim().isEmpty ? null : _orNumber.text.trim(),
         crNumber: _crNumber.text.trim().isEmpty ? null : _crNumber.text.trim(),
       );
