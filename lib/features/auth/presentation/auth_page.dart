@@ -192,6 +192,7 @@ class _AuthPageState extends State<AuthPage> {
         final isVerified = v == 'verified' || v == 'approved';
         final isAdminUser = await _isAdmin(user.id);
 
+        // maybe show verify sheet
         if (!isAdminUser && role == 'passenger' && !isVerified) {
           await _promptVerify(role);
         }
@@ -199,11 +200,15 @@ class _AuthPageState extends State<AuthPage> {
         if (!mounted) return;
         final landing =
             isAdminUser ? const AdminPanelPage() : const DashboardPage();
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => landing),
-        );
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Navigator.of(
+            context,
+          ).pushReplacement(MaterialPageRoute(builder: (_) => landing));
+        });
       } else {
+        // SIGNUP
         final email = _emailCtrl.text.trim().toLowerCase();
         final pwd = _passwordCtrl.text;
         final fullName = _nameCtrl.text.trim();
@@ -212,7 +217,7 @@ class _AuthPageState extends State<AuthPage> {
         final res = await _sb.auth.signUp(
           email: email,
           password: pwd,
-          emailRedirectTo: _kAppDeepLink, // verification email opens the app
+          emailRedirectTo: _kAppDeepLink,
           data: {'name': fullName, 'phone': phone, 'role': _role},
         );
         final user = res.user;
@@ -234,10 +239,14 @@ class _AuthPageState extends State<AuthPage> {
         final isAdminUser = await _isAdmin(user.id);
         final landing =
             isAdminUser ? const AdminPanelPage() : const DashboardPage();
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => landing),
-        );
+
+        // ✅ same trick for signup
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Navigator.of(
+            context,
+          ).pushReplacement(MaterialPageRoute(builder: (_) => landing));
+        });
       }
     } on AuthException catch (e) {
       setState(() => _error = e.message);
