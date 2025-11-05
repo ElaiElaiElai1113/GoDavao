@@ -96,7 +96,7 @@ class _ChatPageState extends State<ChatPage>
           .eq('ride_match_id', widget.matchId)
           .order('created_at', ascending: true);
 
-      print('Fetched rows: $rows'); // 👈 Add this
+      print('Fetched rows: $rows');
       setState(() {
         _messages =
             (rows as List)

@@ -8,12 +8,19 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
+
 import 'package:godavao/core/weather_service.dart';
 import 'package:godavao/core/surge.dart';
 import 'package:godavao/core/osrm_service.dart';
 import 'package:godavao/core/fare_service.dart';
 import 'package:godavao/features/payments/data/payment_service.dart';
 import 'package:godavao/main.dart' show localNotify;
+
+// ratings
+import 'package:godavao/features/ratings/data/ratings_service.dart';
+import 'package:godavao/features/ratings/presentation/rating_details_sheet.dart';
+// ❌ we remove this because we’ll define a local StarRatings below
+// import 'package:godavao/features/ratings/presentation/star_ratings.dart';
 
 class ConfirmRidePage extends StatefulWidget {
   final LatLng pickup;
@@ -78,9 +85,15 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
 
   final _noteCtrl = TextEditingController();
 
+  // ratings
+  double? _driverRating;
+  int _driverRatingCount = 0;
+  late final RatingsService _ratingsService;
+
   @override
   void initState() {
     super.initState();
+    _ratingsService = RatingsService(_sb);
     _bootstrap();
   }
 
@@ -98,12 +111,33 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       _didFit = false;
     });
     try {
-      await Future.wait([_loadRouteGeometryAndMetrics(), _loadCapacity()]);
+      await Future.wait([
+        _loadRouteGeometryAndMetrics(),
+        _loadCapacity(),
+        _loadDriverRating(),
+      ]);
       await _refreshCarpoolAndFare();
     } catch (_) {
       _error ??= 'Something went wrong.';
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadDriverRating() async {
+    try {
+      final agg = await _ratingsService.fetchUserAggregate(widget.driverId);
+      if (!mounted) return;
+      setState(() {
+        _driverRating = agg['avg_rating'] as double?;
+        _driverRatingCount = agg['rating_count'] as int? ?? 0;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _driverRating = null;
+        _driverRatingCount = 0;
+      });
     }
   }
 
@@ -218,7 +252,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
             ? PricingMode.pakyaw
             : (_groupFlat ? PricingMode.groupFlat : PricingMode.shared);
 
-    // 🌦 Detect weather via Open-Meteo + compute surge
     bool raining = false;
     double surgeMultiplier = 1.0;
     String weatherDesc = 'Clear';
@@ -254,7 +287,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       _weatherDesc = weatherDesc;
     });
 
-    // Optional: show small banner or snackbar
     if (raining && mounted) {
       _snack(
         '🌧️ Rain detected — surge ${surgeMultiplier.toStringAsFixed(2)}× applied',
@@ -534,6 +566,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 await _loadRouteGeometryAndMetrics();
                 await _loadCapacity();
                 await _refreshCarpoolAndFare();
+                await _loadDriverRating();
               },
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
@@ -543,6 +576,8 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                     title: '${_distanceKm.toStringAsFixed(2)} km',
                     subtitle: '${_durationMin.toStringAsFixed(0)} min (est.)',
                   ),
+                  const SizedBox(height: 10),
+                  _buildCard(child: _driverRatingCard()),
                   const SizedBox(height: 10),
                   _buildCard(child: _pakyawCard()),
                   if (!_pakyaw) ...[
@@ -715,6 +750,105 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       child: Icon(icon, color: color, size: 20),
     ),
   );
+
+  Widget _driverRatingCard() {
+    if (_driverRating == null) {
+      return Row(
+        children: [
+          const Icon(Icons.person, color: _purple),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Driver rating',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  height: 10,
+                  width: 120,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    return InkWell(
+      onTap: () {
+        showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+          ),
+
+          builder:
+              (_) => RatingDetailsSheet(
+                userId: widget.driverId,
+                title: 'Driver feedback',
+              ),
+        );
+      },
+      child: Row(
+        children: [
+          const CircleAvatar(
+            backgroundColor: Color(0xFF6A27F7),
+            child: Icon(Icons.person, color: Colors.white),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Driver rating',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    // use local star widget
+                    StarRatings(rating: _driverRating ?? 0, size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      (_driverRating ?? 0).toStringAsFixed(1),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '($_driverRatingCount)',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Tap to view feedback',
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right, color: Colors.grey),
+        ],
+      ),
+    );
+  }
 
   Widget _pakyawCard() {
     final capAvail = _capacityAvailable ?? 0;
@@ -1140,6 +1274,8 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
   );
 }
 
+// ------- helper widgets (unchanged) --------
+
 class _Card extends StatelessWidget {
   final Widget child;
   const _Card({required this.child});
@@ -1319,6 +1455,33 @@ class _RoundIconBtn extends StatelessWidget {
           size: 20,
         ),
       ),
+    );
+  }
+}
+
+// 👇 local star widget so analyzer stops complaining
+class StarRatings extends StatelessWidget {
+  final double rating; // 0..5
+  final double size;
+  const StarRatings({super.key, required this.rating, this.size = 16});
+
+  @override
+  Widget build(BuildContext context) {
+    final full = rating.floor();
+    final half = (rating - full) >= 0.5;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (i) {
+        IconData icon;
+        if (i < full) {
+          icon = Icons.star;
+        } else if (i == full && half) {
+          icon = Icons.star_half;
+        } else {
+          icon = Icons.star_border;
+        }
+        return Icon(icon, size: size, color: Colors.amber.shade600);
+      }),
     );
   }
 }

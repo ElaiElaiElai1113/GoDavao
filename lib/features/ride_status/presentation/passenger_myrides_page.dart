@@ -7,7 +7,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:godavao/core/reverse_geocoder.dart';
 import 'package:godavao/core/osrm_service.dart';
-
 import 'package:godavao/features/ride_status/presentation/passenger_ride_status_page.dart';
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
 import 'package:godavao/features/ratings/presentation/rate_user.dart';
@@ -56,6 +55,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
       _loading = true;
       _error = null;
     });
+
     final me = sb.auth.currentUser;
     if (me == null) {
       setState(() {
@@ -69,10 +69,11 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
       final rows = await sb.rpc('passenger_rides_for_user').select();
       final list =
           (rows as List).map((e) => Map<String, dynamic>.from(e)).toList();
-      await _ingestFromView(list);
+      _applyRidesToState(list);
       await _refreshRatedFlagsForCompleted(list);
-    } catch (e) {
-      setState(() => _error = 'Failed to load rides.');
+      _backfillAddresses(list);
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Failed to load rides.');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -103,9 +104,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
               .cast<String>()
               .toSet()
               .toList();
-      if (rideIds.isNotEmpty) {
-        await _refreshRides(rideIds);
-      }
+      if (rideIds.isNotEmpty) await _refreshRides(rideIds);
     });
   }
 
@@ -123,63 +122,128 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
       final list =
           (rows as List).map((e) => Map<String, dynamic>.from(e)).toList();
 
-      await _ingestFromView(list);
+      _applyRidesToState(list);
       await _refreshRatedFlagsForCompleted(list);
+      _backfillAddresses(list);
     } catch (_) {}
   }
 
-  Future<void> _ingestFromView(List<Map<String, dynamic>> rows) async {
-    Future<String> geotext(double lat, double lng) async {
-      final key = '${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}';
-      if (_addr.containsKey(key)) return _addr[key]!;
-      final t = await reverseGeocodeText(lat, lng);
-      _addr[key] = t;
-      return t;
-    }
-
-    final enriched = await Future.wait(
-      rows.map((r) async {
-        final pLat = (r['pickup_lat'] as num).toDouble();
-        final pLng = (r['pickup_lng'] as num).toDouble();
-        final dLat = (r['destination_lat'] as num).toDouble();
-        final dLng = (r['destination_lng'] as num).toDouble();
-
-        return {
-          ...r,
-          'pickup_address': await geotext(pLat, pLng),
-          'destination_address': await geotext(dLat, dLng),
-        };
-      }),
-    );
-
-    enriched.sort(
-      (a, b) => DateTime.parse(
-        b['created_at'].toString(),
-      ).compareTo(DateTime.parse(a['created_at'].toString())),
-    );
+  void _applyRidesToState(List<Map<String, dynamic>> rows) {
+    rows.sort((a, b) {
+      final ad =
+          DateTime.tryParse(a['created_at']?.toString() ?? '') ??
+          DateTime.now();
+      final bd =
+          DateTime.tryParse(b['created_at']?.toString() ?? '') ??
+          DateTime.now();
+      return bd.compareTo(ad);
+    });
 
     const up = ['pending', 'accepted', 'en_route'];
     const hist = ['completed', 'declined', 'canceled', 'cancelled'];
 
+    final upcoming = <Map<String, dynamic>>[];
+    final history = <Map<String, dynamic>>[];
+
+    for (final r in rows) {
+      final s = (r['effective_status'] as String?)?.toLowerCase() ?? '';
+      if (up.contains(s)) {
+        upcoming.add(r);
+      } else if (hist.contains(s)) {
+        history.add(r);
+      } else {
+        history.add(r);
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _upcoming = _mergeWithExisting(_upcoming, upcoming);
+      _history = _mergeWithExisting(_history, history);
+    });
+  }
+
+  List<Map<String, dynamic>> _mergeWithExisting(
+    List<Map<String, dynamic>> existing,
+    List<Map<String, dynamic>> incoming,
+  ) {
+    final byId = {for (final e in existing) e['id'].toString(): e};
+    for (final inc in incoming) {
+      final id = inc['id'].toString();
+      if (byId.containsKey(id)) {
+        byId[id] = {...byId[id]!, ...inc};
+      } else {
+        byId[id] = inc;
+      }
+    }
+    final list = byId.values.toList();
+    list.sort((a, b) {
+      final ad =
+          DateTime.tryParse(a['created_at']?.toString() ?? '') ??
+          DateTime.now();
+      final bd =
+          DateTime.tryParse(b['created_at']?.toString() ?? '') ??
+          DateTime.now();
+      return bd.compareTo(ad);
+    });
+    return list;
+  }
+
+  void _backfillAddresses(List<Map<String, dynamic>> rows) {
+    for (final r in rows) {
+      _fillAddressForRide(r);
+    }
+  }
+
+  Future<void> _fillAddressForRide(Map<String, dynamic> r) async {
+    final pLat = (r['pickup_lat'] as num?)?.toDouble();
+    final pLng = (r['pickup_lng'] as num?)?.toDouble();
+    final dLat = (r['destination_lat'] as num?)?.toDouble();
+    final dLng = (r['destination_lng'] as num?)?.toDouble();
+    if (pLat == null || pLng == null || dLat == null || dLng == null) return;
+
+    final pickupAddr = await _safeReverse(pLat, pLng);
+    final destAddr = await _safeReverse(dLat, dLng);
+
     if (!mounted) return;
     setState(() {
       _upcoming =
-          enriched
-              .where(
-                (r) => up.contains(
-                  (r['effective_status'] as String).toLowerCase(),
-                ),
-              )
-              .toList();
+          _upcoming.map((ride) {
+            if (ride['id'] == r['id']) {
+              return {
+                ...ride,
+                'pickup_address': pickupAddr,
+                'destination_address': destAddr,
+              };
+            }
+            return ride;
+          }).toList();
       _history =
-          enriched
-              .where(
-                (r) => hist.contains(
-                  (r['effective_status'] as String).toLowerCase(),
-                ),
-              )
-              .toList();
+          _history.map((ride) {
+            if (ride['id'] == r['id']) {
+              return {
+                ...ride,
+                'pickup_address': pickupAddr,
+                'destination_address': destAddr,
+              };
+            }
+            return ride;
+          }).toList();
     });
+  }
+
+  Future<String> _safeReverse(double lat, double lng) async {
+    final key = '${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}';
+    if (_addr.containsKey(key)) return _addr[key]!;
+    final label = await reverseGeocodeText(
+      lat,
+      lng,
+    ).timeout(const Duration(seconds: 4));
+    if (label != 'Unknown location') {
+      _addr[key] = label;
+      return label;
+    }
+    return '(${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)})';
   }
 
   Future<void> _refreshRatedFlagsForCompleted(
@@ -322,25 +386,24 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
   String _peso(num? v) =>
       v == null ? '₱0.00' : '₱${v.toDouble().toStringAsFixed(2)}';
 
-  Widget _rideCard(Map<String, dynamic> ride, {required bool upcoming}) {
-    final status = (ride['effective_status'] as String).toLowerCase();
-    DateTime _toLocalTs(dynamic v) {
-  // v can be a DateTime or an ISO string; handles nulls safely.
-  if (v == null) return DateTime.now();
-  final dt = v is DateTime ? v : DateTime.tryParse(v.toString());
-  if (dt == null) return DateTime.now();
-  return dt.toLocal(); // <-- convert from UTC to device local time
-}
+  DateTime _toLocalTs(dynamic v) {
+    if (v == null) return DateTime.now();
+    final dt = v is DateTime ? v : DateTime.tryParse(v.toString());
+    if (dt == null) return DateTime.now();
+    return dt.toLocal();
+  }
 
-final createdLocal = _toLocalTs(ride['created_at']);
-final created = DateFormat('MMM d, y • h:mm a').format(createdLocal);
+  Widget _rideCard(Map<String, dynamic> ride, {required bool upcoming}) {
+    final status = (ride['effective_status'] as String? ?? '').toLowerCase();
+    final createdLocal = _toLocalTs(ride['created_at']);
+    final created = DateFormat('MMM d, y • h:mm a').format(createdLocal);
 
     final fare = (ride['fare'] as num?)?.toDouble();
 
-    final pLat = (ride['pickup_lat'] as num).toDouble();
-    final pLng = (ride['pickup_lng'] as num).toDouble();
-    final dLat = (ride['destination_lat'] as num).toDouble();
-    final dLng = (ride['destination_lng'] as num).toDouble();
+    final pLat = (ride['pickup_lat'] as num?)?.toDouble();
+    final pLng = (ride['pickup_lng'] as num?)?.toDouble();
+    final dLat = (ride['destination_lat'] as num?)?.toDouble();
+    final dLng = (ride['destination_lng'] as num?)?.toDouble();
 
     final rideId = ride['id'].toString();
     final driverId = ride['driver_id'] as String?;
@@ -350,6 +413,20 @@ final created = DateFormat('MMM d, y • h:mm a').format(createdLocal);
         status == 'completed' &&
         driverId != null &&
         !_ratedRideIds.contains(rideId);
+
+    final pickupAddress = ride['pickup_address']?.toString();
+    final destinationAddress = ride['destination_address']?.toString();
+
+    final pickupText =
+        pickupAddress ??
+        (pLat != null && pLng != null
+            ? '(${pLat.toStringAsFixed(4)}, ${pLng.toStringAsFixed(4)})'
+            : 'Pickup');
+    final destText =
+        destinationAddress ??
+        (dLat != null && dLng != null
+            ? '(${dLat.toStringAsFixed(4)}, ${dLng.toStringAsFixed(4)})'
+            : 'Destination');
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
@@ -361,73 +438,78 @@ final created = DateFormat('MMM d, y • h:mm a').format(createdLocal);
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: SizedBox(
-                height: 120,
-                child: FutureBuilder<Polyline>(
-                  future: fetchOsrmRoute(
-                    start: LatLng(pLat, pLng),
-                    end: LatLng(dLat, dLng),
-                  ),
-                  builder: (ctx, snap) {
-                    final polylines = <Polyline>[
-                      if (snap.hasData && snap.data != null)
-                        snap.data!
-                      else
-                        Polyline(
-                          points: [LatLng(pLat, pLng), LatLng(dLat, dLng)],
-                          strokeWidth: 3,
-                          color: _purpleDark.withOpacity(.9),
+            if (pLat != null && pLng != null && dLat != null && dLng != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  height: 120,
+                  child: FutureBuilder<Polyline>(
+                    future: fetchOsrmRoute(
+                      start: LatLng(pLat, pLng),
+                      end: LatLng(dLat, dLng),
+                    ),
+                    builder: (ctx, snap) {
+                      final polylines = <Polyline>[
+                        if (snap.hasData && snap.data != null)
+                          snap.data!
+                        else
+                          Polyline(
+                            points: [LatLng(pLat, pLng), LatLng(dLat, dLng)],
+                            strokeWidth: 3,
+                            color: _purpleDark.withOpacity(.9),
+                          ),
+                      ];
+                      return FlutterMap(
+                        options: MapOptions(
+                          initialCenter: LatLng(
+                            (pLat + dLat) / 2,
+                            (pLng + dLng) / 2,
+                          ),
+                          initialZoom: 13,
+                          interactionOptions: const InteractionOptions(
+                            flags: InteractiveFlag.none,
+                          ),
                         ),
-                    ];
-                    return FlutterMap(
-                      options: MapOptions(
-                        initialCenter: LatLng(
-                          (pLat + dLat) / 2,
-                          (pLng + dLng) / 2,
-                        ),
-                        initialZoom: 13,
-                        interactionOptions: const InteractionOptions(
-                          flags: InteractiveFlag.none,
-                        ),
-                      ),
-                      children: [
-                        TileLayer(
-                          urlTemplate:
-                              'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                          subdomains: const ['a', 'b', 'c'],
-                          userAgentPackageName: 'com.godavao.app',
-                        ),
-                        PolylineLayer(polylines: polylines),
-                        MarkerLayer(
-                          markers: [
-                            Marker(
-                              point: LatLng(pLat, pLng),
-                              width: 28,
-                              height: 28,
-                              child: const Icon(
-                                Icons.location_on,
-                                color: Colors.green,
+                        children: [
+                          TileLayer(
+                            urlTemplate:
+                                'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            subdomains: const ['a', 'b', 'c'],
+                            userAgentPackageName: 'com.godavao.app',
+                          ),
+                          PolylineLayer(polylines: polylines),
+                          MarkerLayer(
+                            markers: [
+                              Marker(
+                                point: LatLng(pLat, pLng),
+                                width: 28,
+                                height: 28,
+                                child: const Icon(
+                                  Icons.location_on,
+                                  color: Colors.green,
+                                ),
                               ),
-                            ),
-                            Marker(
-                              point: LatLng(dLat, dLng),
-                              width: 28,
-                              height: 28,
-                              child: const Icon(Icons.flag, color: Colors.red),
-                            ),
-                          ],
-                        ),
-                      ],
-                    );
-                  },
+                              Marker(
+                                point: LatLng(dLat, dLng),
+                                width: 28,
+                                height: 28,
+                                child: const Icon(
+                                  Icons.flag,
+                                  color: Colors.red,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      );
+                    },
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 10),
+            if (pLat != null && pLng != null && dLat != null && dLng != null)
+              const SizedBox(height: 10),
             Text(
-              '${ride['pickup_address']} → ${ride['destination_address']}',
+              '$pickupText → $destText',
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontWeight: FontWeight.w800),
@@ -624,6 +706,7 @@ final created = DateFormat('MMM d, y • h:mm a').format(createdLocal);
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+
     if (_error != null) {
       return Scaffold(
         backgroundColor: _bg,

@@ -4,6 +4,7 @@ import 'dart:collection';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:godavao/features/ratings/presentation/rating_details_sheet.dart';
 import 'package:intl/intl.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
@@ -15,9 +16,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/features/chat/presentation/chat_page.dart';
 import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
+
+// ⭐ these 3 are important for ratings
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
 import 'package:godavao/features/ratings/presentation/rate_user.dart';
 import 'package:godavao/features/ratings/data/ratings_service.dart';
+
 import 'package:godavao/features/payments/presentation/payment_status_chip.dart';
 import 'package:godavao/features/ride_status/presentation/driver_ride_status_page.dart';
 import 'package:godavao/features/live_tracking/data/live_subscriber.dart';
@@ -932,7 +936,25 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                       UserRatingBadge(userId: m.passengerId!, iconSize: 14),
                     ],
                     const SizedBox(width: 8),
-                    _ratingChip(m.ratingAvg, m.ratingCount),
+                    GestureDetector(
+                      onTap: () {
+                        showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          shape: const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.vertical(
+                              top: Radius.circular(18),
+                            ),
+                          ),
+                          builder:
+                              (_) => RatingDetailsSheet(
+                                userId: m.passengerId!,
+                                title: 'Passenger feedback',
+                              ),
+                        );
+                      },
+                      child: _ratingChip(m.ratingAvg, m.ratingCount),
+                    ),
                   ],
                 ),
               ],
@@ -1138,6 +1160,25 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     )
                     : const SizedBox.shrink(),
             trailingStatusColor: _statusColor(m.status),
+            onTapRating:
+                m.passengerId == null
+                    ? null
+                    : () {
+                      showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        shape: const RoundedRectangleBorder(
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(18),
+                          ),
+                        ),
+                        builder:
+                            (_) => RatingDetailsSheet(
+                              userId: m.passengerId!,
+                              title: 'Passenger feedback',
+                            ),
+                      );
+                    },
           );
         }),
       ];
@@ -2318,6 +2359,7 @@ class _MatchListTile extends StatelessWidget {
     required this.buildRatingChip,
     required this.mapThumb,
     required this.trailingStatusColor,
+    this.onTapRating,
   });
 
   final MatchCard m;
@@ -2333,6 +2375,7 @@ class _MatchListTile extends StatelessWidget {
   final Widget mapThumb;
 
   final Color trailingStatusColor;
+  final VoidCallback? onTapRating;
 
   @override
   Widget build(BuildContext context) {
@@ -2426,7 +2469,10 @@ class _MatchListTile extends StatelessWidget {
                               iconSize: 14,
                             ),
                           ],
-                          buildRatingChip(m.ratingAvg, m.ratingCount),
+                          GestureDetector(
+                            onTap: onTapRating,
+                            child: buildRatingChip(m.ratingAvg, m.ratingCount),
+                          ),
                         ],
                       ),
                     ],

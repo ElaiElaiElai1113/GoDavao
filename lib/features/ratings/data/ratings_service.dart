@@ -8,7 +8,7 @@ class RatingsService {
     required String rideId,
     required String raterUserId,
     required String rateeUserId,
-    required int rating, // 1..5 from UI
+    required int rating, // 1..5
     required String rateeRole, // 'driver' | 'passenger'
     String? comment,
     List<String>? tags,
@@ -18,7 +18,7 @@ class RatingsService {
       'rater_user_id': raterUserId,
       'ratee_user_id': rateeUserId,
       'ratee_role': rateeRole,
-      'score': rating, // <- your column is `score`
+      'score': rating,
       'comment': (comment?.isEmpty ?? true) ? null : comment,
       'tags': tags ?? <String>[],
     });
@@ -40,19 +40,24 @@ class RatingsService {
     return row == null ? null : Map<String, dynamic>.from(row as Map);
   }
 
-  // Single round-trip: avg + count using SQL aliases (works on all Supabase Dart versions)
+  // 👇 safer version: get all scores for that user and compute in Dart
   Future<Map<String, dynamic>> fetchUserAggregate(String userId) async {
-    final row =
-        await supabase
-            .from('ratings')
-            .select('avg:avg(score), cnt:count(*)')
-            .eq('ratee_user_id', userId)
-            .single(); // ensures a single map is returned
+    final rows = await supabase
+        .from('ratings')
+        .select('score')
+        .eq('ratee_user_id', userId);
 
-    final map = Map<String, dynamic>.from(row as Map);
-    final avg = (map['avg'] as num?)?.toDouble();
-    final cnt = (map['cnt'] as num?)?.toInt() ?? 0;
-    return {'avg_rating': avg, 'rating_count': cnt};
+    if (rows is! List || rows.isEmpty) {
+      return {'avg_rating': null, 'rating_count': 0};
+    }
+
+    double sum = 0;
+    for (final r in rows) {
+      sum += (r['score'] as num).toDouble();
+    }
+    final count = rows.length;
+    final avg = sum / count;
+    return {'avg_rating': avg, 'rating_count': count};
   }
 
   Future<Map<int, int>> fetchDistribution(

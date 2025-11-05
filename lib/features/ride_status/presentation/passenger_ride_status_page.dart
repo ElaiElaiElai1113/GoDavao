@@ -46,6 +46,11 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   Map<String, dynamic>? _payment;
   String? _passengerNote;
 
+  // NEW: pricing extras saved at confirm time
+  double? _fareBasis; // ride_requests.fare_basis
+  double? _carpoolDiscountPctActual; // ride_requests.carpool_discount_pct
+  String? _weatherDesc; // ride_requests.weather_desc (if you saved it)
+
   // Live tracking (publisher = THIS passenger; subscribers = driver + passenger echo)
   LivePublisher? _publisher;
   LiveSubscriber? _driverSub;
@@ -147,7 +152,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     });
     try {
       await Future.wait([
-        _loadPassengerNoteOnly(),
+        _loadPassengerNoteAndPricingExtras(),
         _loadRideComposite(),
         _loadPayment(),
         _loadMatchFacts(),
@@ -185,21 +190,49 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     setState(() {
       _ride = m;
       _passengerNote = (m['passenger_note'] as String?);
+      // if the RPC already returns them, capture them here too
+      _fareBasis = (m['fare_basis'] as num?)?.toDouble() ?? _fareBasis;
+      _carpoolDiscountPctActual =
+          (m['carpool_discount_pct'] as num?)?.toDouble() ??
+          _carpoolDiscountPctActual;
+      _weatherDesc = m['weather_desc']?.toString() ?? _weatherDesc;
     });
-    if (_passengerNote == null) {
-      await _loadPassengerNoteOnly();
+    // fallback to dedicated load if RPC didn't return these
+    if (_passengerNote == null ||
+        _fareBasis == null ||
+        _carpoolDiscountPctActual == null) {
+      await _loadPassengerNoteAndPricingExtras();
     }
   }
 
-  Future<void> _loadPassengerNoteOnly() async {
+  /// pulls passenger_note + pricing extras from ride_requests in case RPC
+  /// didn’t include them
+  Future<void> _loadPassengerNoteAndPricingExtras() async {
     final rr =
         await _sb
             .from('ride_requests')
-            .select('passenger_note')
+            .select(
+              'passenger_note, fare_basis, carpool_discount_pct, weather_desc, surge_multiplier, fare',
+            )
             .eq('id', widget.rideId)
             .maybeSingle();
     if (!mounted) return;
-    setState(() => _passengerNote = (rr?['passenger_note'] as String?));
+    setState(() {
+      _passengerNote = (rr?['passenger_note'] as String?) ?? _passengerNote;
+      _fareBasis = (rr?['fare_basis'] as num?)?.toDouble() ?? _fareBasis;
+      _carpoolDiscountPctActual =
+          (rr?['carpool_discount_pct'] as num?)?.toDouble() ??
+          _carpoolDiscountPctActual;
+      _weatherDesc = rr?['weather_desc']?.toString() ?? _weatherDesc;
+      // we already read surge in _estimateFare via _ride, but this keeps it fresh
+      if (_ride != null && rr?['surge_multiplier'] != null) {
+        _ride!['surge_multiplier'] =
+            (rr?['surge_multiplier'] as num?)?.toDouble();
+      }
+      if (_ride != null && rr?['fare'] != null) {
+        _ride!['fare'] = (rr?['fare'] as num?)?.toDouble();
+      }
+    });
   }
 
   Future<void> _loadPayment() async {
@@ -302,6 +335,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     await _loadPayment();
     await _loadMatchFacts();
     await _loadCarpoolSeatSnapshot();
+    await _loadPassengerNoteAndPricingExtras();
     _syncPassengerPublisherToStatus();
 
     // Driver might have been matched just now → ensure live subscribers
@@ -311,7 +345,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
 
     await _estimateFare();
     await _maybePromptRatingIfCompleted();
-    await _loadPassengerNoteOnly();
     if (mounted) setState(() {});
   }
 
@@ -387,7 +420,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
       _disposeAndNullDriverSubscriber();
       return;
     }
-    // Idempotent create+listen
     _driverSub?.dispose();
     _driverSub = LiveSubscriber(
       _sb,
@@ -440,7 +472,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   void _kickWatchdog() {
     _cancelWatchdog();
     _liveWatchdog = Timer.periodic(_watchdogPeriod, (_) {
-      // If streams go quiet too long, recreate subscribers
       final now = DateTime.now();
       final driverQuiet =
           _driverLastAt == null ||
@@ -709,6 +740,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                   await _loadMatchFacts();
                   await _loadPlatformFeeRate();
                   await _loadCarpoolSeatSnapshot();
+                  await _loadPassengerNoteAndPricingExtras();
                   _syncPassengerPublisherToStatus();
                   _ensureDriverSubscriber();
                   _ensureSelfSubscriber();
@@ -803,6 +835,9 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                             label:
                                 'Booking: ${((_ride?['booking_type'] as String?) ?? 'shared').toUpperCase()}',
                           ),
+                          // optional: show weather reason at top as well
+                          if ((_weatherDesc ?? '').isNotEmpty)
+                            _Chip(icon: Icons.cloud, label: _weatherDesc!),
                         ],
                       ),
                     ),
@@ -823,9 +858,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                                   zoom: 13,
                                   onMapReady:
                                       () => setState(() => _mapReady = true),
-                                  onTap: (_, __) {
-                                    // no-op; keeps interaction alive
-                                  },
+                                  onTap: (_, __) {},
                                 ),
                                 children: [
                                   TileLayer(
@@ -991,6 +1024,9 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                           peso: _peso,
                           estimating: _estimatingFare,
                           seatsBilledOverride: _seatsBilled,
+                          fareBasis: _fareBasis,
+                          carpoolDiscountPctActual: _carpoolDiscountPctActual,
+                          weatherDesc: _weatherDesc,
                         ),
                       )
                     else if (fare != null)
@@ -1039,7 +1075,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     );
   }
 
-  // Debounce map move to avoid jank if frequent updates arrive
+  // Debounce map move
   void _moveDebounced(LatLng p, double zoom) {
     if (_debouncingMove) return;
     _debouncingMove = true;
@@ -1155,7 +1191,16 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                     ? '—'
                     : _passengerNote!.trim(),
               ),
-              if (fare != null) _detailRow('Fare', _peso(fare)),
+              if (fare != null) _detailRow('Fare (server)', _peso(fare)),
+              if (_fareBasis != null)
+                _detailRow('Fare basis (stored)', _peso(_fareBasis)),
+              if (_carpoolDiscountPctActual != null)
+                _detailRow(
+                  'Carpool discount (stored)',
+                  '${(_carpoolDiscountPctActual! * 100).toStringAsFixed(0)}%',
+                ),
+              if ((_weatherDesc ?? '').isNotEmpty)
+                _detailRow('Weather factor', _weatherDesc!),
               const SizedBox(height: 12),
               if (_payment != null)
                 PaymentStatusChip(
@@ -1169,11 +1214,11 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     );
   }
 
-  Widget _detailRow(String label, String value) {
+  Widget _detailRow(String label, String? value) {
     return Row(
       children: [
         SizedBox(
-          width: 120,
+          width: 140,
           child: Text(
             label,
             style: const TextStyle(color: Colors.black54, fontSize: 13),
@@ -1181,7 +1226,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
         ),
         Expanded(
           child: Text(
-            value,
+            value ?? '—',
             style: const TextStyle(fontWeight: FontWeight.w600),
             overflow: TextOverflow.ellipsis,
           ),
@@ -1387,11 +1432,20 @@ class _FareBreakdownPro extends StatelessWidget {
   final String Function(num?) peso;
   final bool estimating;
   final int? seatsBilledOverride;
+
+  // NEW transparency fields
+  final double? fareBasis;
+  final double? carpoolDiscountPctActual;
+  final String? weatherDesc;
+
   const _FareBreakdownPro({
     required this.bx,
     required this.peso,
     this.estimating = false,
     this.seatsBilledOverride,
+    this.fareBasis,
+    this.carpoolDiscountPctActual,
+    this.weatherDesc,
   });
   @override
   Widget build(BuildContext context) {
@@ -1444,11 +1498,19 @@ class _FareBreakdownPro extends StatelessWidget {
         const SizedBox(height: 6),
         row('Seats billed', '$seatsBilled'),
         row(
-          'Carpool discount',
+          'Carpool discount (recalc)',
           '${(bx.carpoolDiscountPct * 100).toStringAsFixed(0)}%',
         ),
         row('Night surcharge', peso(bx.nightSurcharge)),
         row('Surge used', '${bx.surgeMultiplier.toStringAsFixed(2)}×'),
+        if (fareBasis != null) row('Fare basis (stored)', peso(fareBasis!)),
+        if (carpoolDiscountPctActual != null)
+          row(
+            'Carpool discount (stored)',
+            '${(carpoolDiscountPctActual! * 100).toStringAsFixed(0)}%',
+          ),
+        if (weatherDesc != null && weatherDesc!.isNotEmpty)
+          row('Weather factor', weatherDesc!),
         const Divider(height: 18),
         row('Subtotal', peso(bx.subtotal)),
         row('Per seat (approx.)', peso(perSeat)),
