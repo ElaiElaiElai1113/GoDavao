@@ -1222,6 +1222,66 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     );
   }
 
+//   Widget _carpoolPreviewTable() {
+//   final cap = _capacityTotal ?? 4;
+//   final maxSeatsTier = cap.clamp(1, 5);
+//   final rows = <TableRow>[];
+
+//   for (int seatsTier = 1; seatsTier <= maxSeatsTier; seatsTier++) {
+//     final fb = _fareService.estimateForDistance(
+//       distanceKm: _distanceKm,
+//       durationMin: _durationMin,
+//       seats: _seatsRequested,
+//       carpoolSeats: seatsTier,
+//       mode: PricingMode.shared,
+//     );
+//     final perSeat =
+//         _seatsRequested > 0 ? (fb.total / _seatsRequested) : fb.total;
+//     rows.add(_tableRow(['$seatsTier', _peso(fb.total), _peso(perSeat)]));
+//   }
+
+//   return _Card(
+//     child: LayoutBuilder(
+//       builder: (context, constraints) {
+//         return Column(
+//           crossAxisAlignment: CrossAxisAlignment.start,
+//           children: [
+//             const _CardTitle(
+//               icon: Icons.ssid_chart_outlined,
+//               text: 'Carpool savings preview (by total seats)',
+//             ),
+//             const SizedBox(height: 6),
+//             Text(
+//               'See how price changes as more seats are taken on this route.',
+//               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+//             ),
+//             const SizedBox(height: 10),
+//             SingleChildScrollView(
+//               scrollDirection: Axis.horizontal,
+//               child: ConstrainedBox(
+//                 // ✅ use the actual width of the card, not the screen
+//                 constraints: BoxConstraints(minWidth: constraints.maxWidth),
+//                 child: Table(
+//                   columnWidths: const {
+//                     0: FlexColumnWidth(1.2),
+//                     1: FlexColumnWidth(1.2),
+//                     2: FlexColumnWidth(1.2),
+//                   },
+//                   defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+//                   children: [
+//                     _tableHeader(['Seats (total)', 'Total (₱)', 'Per seat (₱)']),
+//                     ...rows,
+//                   ],
+//                 ),
+//               ),
+//             ),
+//           ],
+//         );
+//       },
+//     ),
+//   );
+// }
+
   TableRow _tableHeader(List<String> cols) => TableRow(
     decoration: BoxDecoration(color: Colors.grey.shade100),
     children:
@@ -1301,6 +1361,26 @@ class _Card extends StatelessWidget {
   }
 }
 
+// class _CardTitle extends StatelessWidget {
+//   final IconData icon;
+//   final String text;
+//   const _CardTitle({required this.icon, required this.text});
+
+//   @override
+//   Widget build(BuildContext context) {
+//     return Row(
+//       children: [
+//         Icon(icon, color: const Color(0xFF6A27F7)),
+//         const SizedBox(width: 8),
+//         Text(
+//           text,
+//           style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+//         ),
+//       ],
+//     );
+//   }
+// }
+
 class _CardTitle extends StatelessWidget {
   final IconData icon;
   final String text;
@@ -1309,12 +1389,21 @@ class _CardTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(icon, color: const Color(0xFF6A27F7)),
         const SizedBox(width: 8),
-        Text(
-          text,
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+        // ✅ let the text wrap / ellipsize
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 16,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       ],
     );
