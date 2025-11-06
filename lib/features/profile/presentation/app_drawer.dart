@@ -1,19 +1,18 @@
-// lib/features/profile/presentation/app_drawer.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:godavao/features/dashboard/presentation/dashboard_page.dart';
 import 'package:godavao/features/history/presentation/booking_history_page.dart';
 import 'package:godavao/features/profile/presentation/profile_page.dart';
-import 'package:godavao/features/verify/presentation/verified_badge.dart';
 import 'package:godavao/features/verify/presentation/admin_panel_page.dart';
 import 'package:godavao/features/profile/presentation/how_it_works_page.dart';
 import 'package:godavao/features/auth/presentation/auth_page.dart';
 
+import 'package:godavao/features/ratings/presentation/rating_details_sheet.dart';
+
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
 
-  // Theme constants
   static const _bg = Color(0xFFF7F7FB);
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
@@ -54,7 +53,7 @@ class AppDrawer extends StatelessWidget {
 
             return Column(
               children: [
-                // Header with gradient, with skeleton for loading
+                // HEADER
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.fromLTRB(16, 16, 8, 16),
@@ -82,7 +81,6 @@ class AppDrawer extends StatelessWidget {
                                 : Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    // Name
                                     Text(
                                       name,
                                       maxLines: 1,
@@ -93,8 +91,6 @@ class AppDrawer extends StatelessWidget {
                                         color: Colors.white,
                                       ),
                                     ),
-
-                                    // Email
                                     if (email.isNotEmpty)
                                       Text(
                                         email,
@@ -105,10 +101,7 @@ class AppDrawer extends StatelessWidget {
                                           fontSize: 12.5,
                                         ),
                                       ),
-
                                     const SizedBox(height: 8),
-
-                                    // Chips row (left-aligned under the text above)
                                     Align(
                                       alignment: Alignment.centerLeft,
                                       child: Wrap(
@@ -116,31 +109,25 @@ class AppDrawer extends StatelessWidget {
                                         crossAxisAlignment:
                                             WrapCrossAlignment.center,
                                         children: [
-                                          // Verified / Unverified chip
-                                          Builder(
-                                            builder: (context) {
-                                              final isVerified =
-                                                  verification == 'approved' ||
-                                                  verification == 'verified';
-                                              return _chip(
-                                                label:
-                                                    isVerified
-                                                        ? 'Verified'
-                                                        : 'Unverified',
-                                                bg: Colors.white.withOpacity(
-                                                  0.18,
-                                                ),
-                                                fg: Colors.white,
-                                                icon:
-                                                    isVerified
-                                                        ? Icons.verified
-                                                        : Icons
-                                                            .shield_moon_outlined,
-                                              );
-                                            },
+                                          // verification chip
+                                          _chip(
+                                            label:
+                                                (verification == 'approved' ||
+                                                        verification ==
+                                                            'verified')
+                                                    ? 'Verified'
+                                                    : 'Unverified',
+                                            bg: Colors.white.withOpacity(0.18),
+                                            fg: Colors.white,
+                                            icon:
+                                                (verification == 'approved' ||
+                                                        verification ==
+                                                            'verified')
+                                                    ? Icons.verified
+                                                    : Icons
+                                                        .shield_moon_outlined,
                                           ),
-
-                                          // Optional Admin chip
+                                          // admin chip
                                           if (isAdmin)
                                             _chip(
                                               label: 'Admin',
@@ -165,7 +152,7 @@ class AppDrawer extends StatelessWidget {
                   ),
                 ),
 
-                // Quick Actions row
+                // QUICK ACTIONS
                 if (!isLoading)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
@@ -218,7 +205,7 @@ class AppDrawer extends StatelessWidget {
 
                 const SizedBox(height: 4),
 
-                // Menu items
+                // MAIN LIST
                 Expanded(
                   child: ListView(
                     padding: EdgeInsets.zero,
@@ -286,6 +273,31 @@ class AppDrawer extends StatelessWidget {
                         },
                       ),
 
+                      // 👇 NEW: My ratings & feedback
+                      if (uid != null)
+                        _item(
+                          icon: Icons.star_rate_rounded,
+                          label: 'My ratings & feedback',
+                          subtitle: 'See how other users rated you',
+                          onTap: () {
+                            Navigator.pop(context);
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              shape: const RoundedRectangleBorder(
+                                borderRadius: BorderRadius.vertical(
+                                  top: Radius.circular(18),
+                                ),
+                              ),
+                              builder:
+                                  (_) => RatingDetailsSheet(
+                                    userId: uid,
+                                    title: 'My ratings',
+                                  ),
+                            );
+                          },
+                        ),
+
                       if (isAdmin) ...[
                         const Divider(height: 24),
                         _sectionTitle("Admin"),
@@ -308,7 +320,7 @@ class AppDrawer extends StatelessWidget {
                   ),
                 ),
 
-                // Logout
+                // LOGOUT
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: ListTile(
@@ -330,22 +342,14 @@ class AppDrawer extends StatelessWidget {
                     ),
                     onTap: () async {
                       final nav = Navigator.of(context);
-
-                      // Close the drawer first so we don't try to use a disposed context later
+                      // close drawer
                       nav.pop();
-
                       try {
-                        // Also signs out from any OAuth providers
                         await Supabase.instance.client.auth.signOut(
                           scope: SignOutScope.global,
                         );
-                      } catch (_) {
-                        // swallow — we’ll still route to Auth
-                      }
-
+                      } catch (_) {}
                       if (!context.mounted) return;
-
-                      // Go to Auth and clear the stack so no back navigation to Dashboard
                       nav.pushAndRemoveUntil(
                         MaterialPageRoute(builder: (_) => const AuthPage()),
                         (route) => false,
@@ -361,6 +365,8 @@ class AppDrawer extends StatelessWidget {
       ),
     );
   }
+
+  // ─────────────────── helpers ───────────────────
 
   static Widget _chip({
     required String label,
