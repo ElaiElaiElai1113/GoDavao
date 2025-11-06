@@ -587,20 +587,6 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                         onPressed: () => _confirmCancel(rideId),
                       ),
                     ),
-                  if (status == 'accepted' || status == 'en_route') ...[
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _primaryButton(
-                        label: 'Contact Driver',
-                        icon: Icons.phone,
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Contacting driver…')),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
                 ],
               ),
             if (!upcoming && needsRating)
