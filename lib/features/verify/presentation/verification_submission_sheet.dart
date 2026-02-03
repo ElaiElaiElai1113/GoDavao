@@ -16,7 +16,6 @@ class VerificationSubmissionSheet extends StatelessWidget {
   final VoidCallback? onReject;
   final bool busy;
 
-  static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
 
   bool _isImage(Map d) {

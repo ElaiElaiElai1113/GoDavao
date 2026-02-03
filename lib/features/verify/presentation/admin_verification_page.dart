@@ -4,7 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/admin_service.dart';
 
 String getPublicUrl(String key) {
-  if (key == null || key.isEmpty) return '';
+  if (key.isEmpty) return '';
   final supabase = Supabase.instance.client;
   return supabase.storage.from('verifications').getPublicUrl(key);
 }
