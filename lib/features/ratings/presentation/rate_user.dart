@@ -199,7 +199,7 @@ Row(
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
-                child: ElevatedButton.icon(
+                child: FilledButton.icon(
                   icon:
                       _submitting
                           ? const SizedBox(

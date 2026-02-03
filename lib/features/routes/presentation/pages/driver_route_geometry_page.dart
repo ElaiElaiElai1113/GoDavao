@@ -320,7 +320,7 @@ class _DriverRouteGeometryPageState extends State<DriverRouteGeometryPage> {
                 padding: const EdgeInsets.all(12),
                 child: Row(
                   children: [
-                    ElevatedButton.icon(
+                    FilledButton.icon(
                       icon: const Icon(Icons.undo),
                       label: const Text('Undo'),
                       onPressed: () {
@@ -350,10 +350,6 @@ class _DriverRouteGeometryPageState extends State<DriverRouteGeometryPage> {
                           _debouncedReverseGeocode();
                         }
                       },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _purple,
-                        foregroundColor: Colors.white,
-                      ),
                     ),
                     const SizedBox(width: 8),
                     OutlinedButton.icon(

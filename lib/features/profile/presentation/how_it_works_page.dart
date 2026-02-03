@@ -81,47 +81,23 @@ class HowItWorksPage extends StatelessWidget {
             const SizedBox(height: 16),
             SizedBox(
               height: 52,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  gradient: const LinearGradient(
-                    colors: [_purple, _purpleDark],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black26,
-                      blurRadius: 10,
-                      offset: Offset(0, 4),
-                    ),
-                  ],
+              child: FilledButton.icon(
+                onPressed: () {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute<void>(builder: (_) => const DashboardPage()),
+                  );
+                },
+                icon: const Icon(
+                  Icons.dashboard_customize_outlined,
+                  color: Colors.white,
                 ),
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.transparent,
-                    shadowColor: Colors.transparent,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  onPressed: () {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute<void>(builder: (_) => const DashboardPage()),
-                    );
-                  },
-                  icon: const Icon(
-                    Icons.dashboard_customize_outlined,
+                label: const Text(
+                  'Start using GoDavao',
+                  style: TextStyle(
                     color: Colors.white,
-                  ),
-                  label: const Text(
-                    'Start using GoDavao',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
-                    ),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
                   ),
                 ),
               ),

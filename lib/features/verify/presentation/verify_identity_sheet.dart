@@ -142,7 +142,6 @@ class _VerifyIdentitySheetState extends State<VerifyIdentitySheet> {
               onPressed: onPick,
               icon: const Icon(Icons.add_a_photo_outlined, size: 18),
               label: Text(file == null ? 'Add' : 'Retake'),
-              style: TextButton.styleFrom(foregroundColor: _purple),
             ),
           ],
         ),

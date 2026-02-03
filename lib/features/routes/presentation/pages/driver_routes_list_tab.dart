@@ -392,25 +392,15 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
     required IconData icon,
     required VoidCallback onPressed,
   }) {
-    // Using your original gradient style; if taps ever get swallowed, swap to Material+Ink as discussed.
     return SizedBox(
       height: 44,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          gradient: const LinearGradient(colors: [_purple, _purpleDark]),
-          boxShadow: [BoxShadow(color: _purple.withValues(alpha: .25), blurRadius: 12, offset: Offset(0, 6))],
-        ),
-        child: ElevatedButton.icon(
-          onPressed: onPressed,
-          icon: Icon(icon, color: Colors.white, size: 18),
-          label: Text(label, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
-          style: ElevatedButton.styleFrom(
-            elevation: 0,
-            backgroundColor: Colors.transparent,
-            shadowColor: Colors.transparent,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
+      child: FilledButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, color: Colors.white, size: 18),
+        label: Text(
+          label,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
         ),
       ),
     );

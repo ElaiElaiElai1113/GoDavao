@@ -152,7 +152,7 @@ class _GcashProofSheetState extends State<GcashProofSheet> {
               SizedBox(
                 width: double.infinity,
                 height: 48,
-                child: ElevatedButton(
+                child: FilledButton(
                   onPressed: _loading ? null : _submit,
                   child:
                       _loading

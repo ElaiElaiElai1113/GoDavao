@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/common/app_colors.dart';
 import 'package:godavao/core/reverse_geocoder.dart';
 import 'package:godavao/core/osrm_service.dart';
+import 'package:godavao/features/maps/passenger_map_page.dart';
 import 'package:godavao/features/ride_status/presentation/passenger_ride_status_page.dart';
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
 import 'package:godavao/features/ratings/presentation/rate_user.dart';
@@ -662,7 +663,6 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                     ),
                   );
                 },
-                style: TextButton.styleFrom(foregroundColor: _purple),
               ),
             ),
           ],
@@ -738,44 +738,23 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
   }) {
     return SizedBox(
       height: 44,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          gradient: const LinearGradient(
-            colors: [_purple, _purpleDark],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+      child: FilledButton.icon(
+        onPressed: onPressed,
+        icon:
+            icon == null
+                ? const SizedBox.shrink()
+                : Icon(icon, color: Colors.white, size: 18),
+        label: Text(
+          label,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
           ),
-          boxShadow: [
-            BoxShadow(
-              color: _purple.withValues(alpha: 0.25),
-              blurRadius: 12,
-              offset: const Offset(0, 6),
-            ),
-          ],
         ),
-        child: ElevatedButton.icon(
-          onPressed: onPressed,
-          icon:
-              icon == null
-                  ? const SizedBox.shrink()
-                  : Icon(icon, color: Colors.white, size: 18),
-          label: Text(
-            label,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          style: ElevatedButton.styleFrom(
-            elevation: 0,
-            backgroundColor: Colors.transparent,
-            shadowColor: Colors.transparent,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
+        style: FilledButton.styleFrom(
+          backgroundColor: _purple,
+          foregroundColor: Colors.white,
         ),
       ),
     );
@@ -920,9 +899,24 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                       children: [
                         _filterChips(upcoming: true),
                         const SizedBox(height: 6),
-                        ..._filterRides(_upcoming, upcoming: true).map(
-                          (r) => _rideCard(r, upcoming: true),
-                        ),
+                        ...() {
+                          final list =
+                              _filterRides(_upcoming, upcoming: true);
+                          if (list.isEmpty) {
+                            return [
+                              const SizedBox(height: 24),
+                              _EmptyRides(
+                                title: 'No upcoming rides',
+                                subtitle:
+                                    'Book a ride to see it appear here.',
+                                showCta: true,
+                              ),
+                            ];
+                          }
+                          return list.map(
+                            (r) => _rideCard(r, upcoming: true),
+                          );
+                        }(),
                       ],
                     ),
                   ),
@@ -933,9 +927,23 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                       children: [
                         _filterChips(upcoming: false),
                         const SizedBox(height: 6),
-                        ..._filterRides(_history, upcoming: false).map(
-                          (r) => _rideCard(r, upcoming: false),
-                        ),
+                        ...() {
+                          final list =
+                              _filterRides(_history, upcoming: false);
+                          if (list.isEmpty) {
+                            return [
+                              const SizedBox(height: 24),
+                              const _EmptyRides(
+                                title: 'No ride history yet',
+                                subtitle:
+                                    'Completed rides will show up here.',
+                              ),
+                            ];
+                          }
+                          return list.map(
+                            (r) => _rideCard(r, upcoming: false),
+                          );
+                        }(),
                       ],
                     ),
                   ),
@@ -944,6 +952,59 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _EmptyRides extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final bool showCta;
+  const _EmptyRides({
+    required this.title,
+    required this.subtitle,
+    this.showCta = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.event_note, color: Colors.grey.shade500, size: 36),
+          const SizedBox(height: 8),
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+          ),
+          if (showCta) ...[
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              onPressed:
+                  () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const PassengerMapPage(),
+                    ),
+                  ),
+              icon: const Icon(Icons.map_outlined),
+              label: const Text('Book a ride'),
+            ),
+          ],
+        ],
       ),
     );
   }

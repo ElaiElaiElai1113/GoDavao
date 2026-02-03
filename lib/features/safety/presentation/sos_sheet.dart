@@ -138,10 +138,10 @@ class _SosSheetState extends State<SosSheet> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
-            ElevatedButton.icon(
+            FilledButton.icon(
               onPressed: _sending ? null : _sendSOS,
               icon: const Icon(Icons.warning),
-              style: ElevatedButton.styleFrom(
+              style: FilledButton.styleFrom(
                 backgroundColor: Colors.red,
                 minimumSize: const Size.fromHeight(48),
               ),

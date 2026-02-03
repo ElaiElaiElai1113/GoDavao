@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:godavao/common/app_colors.dart';
+import 'package:godavao/core/osrm_service.dart';
 import 'package:godavao/features/chat/presentation/chat_page.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
@@ -41,6 +42,10 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   bool _didFitOnce = false;
   bool _debouncingMove = false;
   bool _followDriver = true;
+  Polyline? _routeLine;
+  LatLng? _routeStart;
+  LatLng? _routeEnd;
+  bool _routeLoading = false;
 
   // Ride + payment
   Map<String, dynamic>? _ride;
@@ -171,6 +176,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
       _kickWatchdog();
 
       await _estimateFare();
+      await _loadRouteLine();
       await _maybePromptRatingIfCompleted();
     } catch (e) {
       if (mounted) setState(() => _error = 'Failed to load: $e');
@@ -198,6 +204,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
           _carpoolDiscountPctActual;
       _weatherDesc = m['weather_desc']?.toString() ?? _weatherDesc;
     });
+    await _loadRouteLine();
     // fallback to dedicated load if RPC didn't return these
     if (_passengerNote == null ||
         _fareBasis == null ||
@@ -476,6 +483,29 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     if (target != null) _moveDebounced(target, 15);
   }
 
+  Future<void> _loadRouteLine() async {
+    final p = _pickup;
+    final d = _dropoff;
+    if (p == null || d == null) return;
+    if (_routeStart == p && _routeEnd == d && _routeLine != null) return;
+    if (_routeLoading) return;
+    setState(() => _routeLoading = true);
+    try {
+      final r = await fetchOsrmRouteDetailed(start: p, end: d);
+      if (!mounted) return;
+      setState(() {
+        _routeStart = p;
+        _routeEnd = d;
+        _routeLine = r.toPolyline(
+          color: _purpleDark.withValues(alpha: .6),
+          width: 4,
+        );
+      });
+    } finally {
+      if (mounted) setState(() => _routeLoading = false);
+    }
+  }
+
   bool get _driverStale {
     final last = _driverLastAt;
     if (last == null) return true;
@@ -489,6 +519,17 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     if (diff.inSeconds < 60) return 'Updated ${diff.inSeconds}s ago';
     if (diff.inMinutes < 60) return 'Updated ${diff.inMinutes}m ago';
     return 'Updated ${diff.inHours}h ago';
+  }
+
+  int? _etaMinutes() {
+    final d = _driverLive;
+    final target =
+        (_status == 'en_route') ? _dropoff : _pickup;
+    if (d == null || target == null) return null;
+    final meters = const Distance().as(LengthUnit.Meter, d, target);
+    // Assume 25 km/h city average
+    final seconds = meters / (25 * 1000 / 3600);
+    return seconds.isFinite ? (seconds / 60).ceil() : null;
   }
 
   void _kickWatchdog() {
@@ -821,6 +862,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _StatusTimeline(status: _status),
+                          const SizedBox(height: 8),
+                          _StatusBanner(status: _status, driverId: driverId),
                           const SizedBox(height: 10),
                           Wrap(
                             spacing: 8,
@@ -900,6 +943,18 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                                           ? Colors.amber.shade900
                                           : Colors.green.shade700,
                                 ),
+                                if (_etaMinutes() != null) ...[
+                                  const SizedBox(width: 6),
+                                  _Chip(
+                                    icon: Icons.schedule,
+                                    label:
+                                        _status == 'en_route'
+                                            ? 'ETA drop-off: ${_etaMinutes()} min'
+                                            : 'ETA pickup: ${_etaMinutes()} min',
+                                    color: _purple.withValues(alpha: .12),
+                                    textColor: _purpleDark,
+                                  ),
+                                ],
                                 const Spacer(),
                                 TextButton.icon(
                                   onPressed: () {
@@ -915,18 +970,12 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                                   label: Text(
                                     _followDriver ? 'Follow on' : 'Follow off',
                                   ),
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: _purple,
-                                  ),
                                 ),
                                 const SizedBox(width: 6),
                                 TextButton.icon(
                                   onPressed: _recenter,
                                   icon: const Icon(Icons.center_focus_strong),
                                   label: const Text('Recenter'),
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: _purple,
-                                  ),
                                 ),
                               ],
                             ),
@@ -954,6 +1003,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                                         'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                                     userAgentPackageName: 'com.godavao.app',
                                   ),
+                                  if (_routeLine != null)
+                                    PolylineLayer(polylines: [_routeLine!]),
                                   MarkerLayer(
                                     markers: [
                                       if (_pickup != null)
@@ -1043,11 +1094,25 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                                 onPressed: _fitImportant,
                                 icon: const Icon(Icons.fullscreen),
                                 label: const Text('Fit'),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: _purple,
-                                ),
                               ),
                             ],
+                          ),
+                          const SizedBox(height: 6),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Wrap(
+                              spacing: 10,
+                              runSpacing: 6,
+                              children: [
+                                _LegendDot(color: Colors.green, label: 'Pickup'),
+                                _LegendDot(color: Colors.red, label: 'Drop-off'),
+                                _LegendDot(
+                                  color: _purpleDark,
+                                  label: 'Driver',
+                                ),
+                                _LegendDot(color: _purple, label: 'You'),
+                              ],
+                            ),
                           ),
                         ],
                       ),
@@ -1096,6 +1161,31 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                         ],
                       ),
                     ),
+                    if (driverId == null) ...[
+                      const SizedBox(height: 8),
+                      _SectionCard(
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              color: Colors.amber.shade800,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Matching in progress. You can cancel anytime before pickup.',
+                                style: TextStyle(
+                                  color: Colors.amber.shade900,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
 
                     // Passenger note
@@ -1146,9 +1236,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                         icon: const Icon(Icons.star),
                         label: const Text('Rate your driver'),
                         onPressed: _maybePromptRatingIfCompleted,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _purple,
-                        ),
                       ),
                     ],
                   ],
@@ -1208,7 +1295,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                       driverName: driverName,
                       fare: fare,
                     ),
-                style: OutlinedButton.styleFrom(foregroundColor: _purple),
               ),
             ),
             const SizedBox(width: 10),
@@ -1279,6 +1365,11 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                     ? '—'
                     : _passengerNote!.trim(),
               ),
+              if (_etaMinutes() != null)
+                _detailRow(
+                  _status == 'en_route' ? 'ETA (drop-off)' : 'ETA (pickup)',
+                  '${_etaMinutes()} min',
+                ),
               if (fare != null) _detailRow('Fare (server)', _peso(fare)),
               if (_fareBasis != null)
                 _detailRow('Fare basis (stored)', _peso(_fareBasis)),
@@ -1391,8 +1482,6 @@ class _MiniAction extends StatelessWidget {
       style: OutlinedButton.styleFrom(
         visualDensity: VisualDensity.compact,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        foregroundColor: _PassengerRideStatusPageState._purple,
-        side: const BorderSide(color: _PassengerRideStatusPageState._purple),
       ),
       onPressed: onPressed,
       icon: Icon(icon, size: 16),
@@ -1823,6 +1912,108 @@ class _StatusTimeline extends StatelessWidget {
           ),
         );
       }),
+    );
+  }
+}
+
+class _StatusBanner extends StatelessWidget {
+  final String status;
+  final String? driverId;
+  const _StatusBanner({required this.status, required this.driverId});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = status.toLowerCase();
+    if (s == 'canceled' || s == 'cancelled' || s == 'declined') {
+      return _banner(
+        icon: Icons.cancel,
+        text: 'This ride was canceled.',
+        color: Colors.red.shade700,
+        bg: Colors.red.withValues(alpha: .08),
+      );
+    }
+    if (s == 'completed') {
+      return _banner(
+        icon: Icons.verified,
+        text: 'Ride completed. Please rate your driver.',
+        color: Colors.green.shade700,
+        bg: Colors.green.withValues(alpha: .08),
+      );
+    }
+    if (s == 'en_route') {
+      return _banner(
+        icon: Icons.directions_car,
+        text: 'Your driver is on the way.',
+        color: Colors.orange.shade800,
+        bg: Colors.orange.withValues(alpha: .08),
+      );
+    }
+    if (s == 'accepted' && driverId != null) {
+      return _banner(
+        icon: Icons.check_circle,
+        text: 'Driver matched. Preparing for pickup.',
+        color: Colors.blue.shade700,
+        bg: Colors.blue.withValues(alpha: .08),
+      );
+    }
+    return _banner(
+      icon: Icons.hourglass_top,
+      text: 'Searching for a driver...',
+      color: Colors.grey.shade700,
+      bg: Colors.grey.withValues(alpha: .08),
+    );
+  }
+
+  Widget _banner({
+    required IconData icon,
+    required String text,
+    required Color color,
+    required Color bg,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: .2)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(color: color, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+  const _LegendDot({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(label, style: const TextStyle(fontSize: 12)),
+      ],
     );
   }
 }

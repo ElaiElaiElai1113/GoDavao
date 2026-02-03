@@ -594,10 +594,6 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
                         SizedBox(
                           height: 48,
                           child: FilledButton.icon(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: _purple,
-                              foregroundColor: Colors.white,
-                            ),
                             onPressed: _saving ? null : _save,
                             icon: const Icon(Icons.save),
                             label: Text(_saving ? 'Saving…' : 'Save changes'),

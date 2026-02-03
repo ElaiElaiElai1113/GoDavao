@@ -623,22 +623,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       bottomNavigationBar: SafeArea(
         child: Container(
           margin: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [_purple.withValues(alpha: 0.9), _purple],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: [
-              BoxShadow(
-                color: _purple.withValues(alpha: 0.4),
-                blurRadius: 10,
-                offset: Offset(0, 5),
-              ),
-            ],
-          ),
-          child: ElevatedButton.icon(
+          child: FilledButton.icon(
             icon: const Icon(Icons.check_circle_outline, color: Colors.white),
             label: Padding(
               padding: const EdgeInsets.symmetric(vertical: 14),
@@ -657,10 +642,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 ),
               ),
             ),
-            style: ElevatedButton.styleFrom(
-              elevation: 0,
-              backgroundColor: Colors.transparent,
-              shadowColor: Colors.transparent,
+            style: FilledButton.styleFrom(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(18),
               ),

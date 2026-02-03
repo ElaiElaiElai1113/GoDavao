@@ -470,8 +470,8 @@ class _VehicleCardState extends State<_VehicleCard> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
                     backgroundColor: isDefault ? Colors.grey.shade300 : _purple,
                     foregroundColor: isDefault ? Colors.black54 : Colors.white,
                   ),
@@ -483,13 +483,11 @@ class _VehicleCardState extends State<_VehicleCard> {
                   icon: const Icon(Icons.edit),
                   label: const Text('Edit'),
                   onPressed: _working ? null : widget.onEdit,
-                  style: OutlinedButton.styleFrom(foregroundColor: _purple),
                 ),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.delete),
                   label: const Text('Delete'),
                   onPressed: _working ? null : _deleteVehicle,
-                  style: OutlinedButton.styleFrom(foregroundColor: _purple),
                 ),
               ],
             ),
@@ -535,9 +533,6 @@ class _VehicleCardState extends State<_VehicleCard> {
                           icon: const Icon(Icons.upload_file),
                           label: Text(hasOR ? 'Replace OR' : 'Upload OR'),
                           onPressed: _working ? null : () => _upload(true),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: _purple,
-                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -546,9 +541,6 @@ class _VehicleCardState extends State<_VehicleCard> {
                           icon: const Icon(Icons.upload_file),
                           label: Text(hasCR ? 'Replace CR' : 'Upload CR'),
                           onPressed: _working ? null : () => _upload(false),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: _purple,
-                          ),
                         ),
                       ),
                     ],
@@ -1014,13 +1006,20 @@ class _Empty extends StatelessWidget {
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
         ),
+        const SizedBox(height: 6),
+        Center(
+          child: Text(
+            'Add your vehicle and upload OR/CR to start accepting rides.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+          ),
+        ),
         const SizedBox(height: 8),
         Center(
           child: OutlinedButton.icon(
             onPressed: onAdd,
             icon: const Icon(Icons.add),
             label: const Text('Add a vehicle'),
-            style: OutlinedButton.styleFrom(foregroundColor: Color(0xFF6A27F7)),
           ),
         ),
       ],

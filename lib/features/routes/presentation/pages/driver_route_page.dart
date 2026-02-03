@@ -381,7 +381,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                 padding: const EdgeInsets.all(12),
                 child: Row(
                   children: [
-                    ElevatedButton.icon(
+                    FilledButton.icon(
                       icon: const Icon(Icons.undo),
                       label: const Text('Undo'),
                       onPressed: () async {
@@ -402,10 +402,6 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                           await _recomputeFareEstimate();
                         }
                       },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _purple,
-                        foregroundColor: Colors.white,
-                      ),
                     ),
                     const SizedBox(width: 8),
                     OutlinedButton.icon(
@@ -420,14 +416,12 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                         });
                         await _recomputeFareEstimate();
                       },
-                      style: OutlinedButton.styleFrom(foregroundColor: _purple),
                     ),
                     const Spacer(),
                     TextButton.icon(
                       icon: const Icon(Icons.check),
                       label: const Text('Done'),
                       onPressed: () => Navigator.pop(context),
-                      style: TextButton.styleFrom(foregroundColor: _purple),
                     ),
                   ],
                 ),

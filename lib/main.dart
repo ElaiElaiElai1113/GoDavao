@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
+import 'package:godavao/common/app_theme.dart';
 
 import 'features/auth/presentation/auth_page.dart';
 import 'features/dashboard/presentation/dashboard_page.dart';
@@ -84,10 +85,7 @@ class GoDavaoApp extends StatelessWidget {
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       navigatorObservers: [routeObserver],
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.purple),
-      ),
+      theme: AppTheme.light(),
       initialRoute: showDisclaimer ? '/disclaimer' : '/',
       routes: {
         '/dashboard': (_) => const DashboardPage(),

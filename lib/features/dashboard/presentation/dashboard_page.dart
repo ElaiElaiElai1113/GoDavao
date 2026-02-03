@@ -558,7 +558,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                     ),
                                   ),
                                   const SizedBox(width: 12),
-                                  ElevatedButton(
+                                  FilledButton(
                                     onPressed: () {
                                       Navigator.push(
                                         context,
@@ -569,10 +569,6 @@ class _DashboardPageState extends State<DashboardPage> {
                                         ),
                                       ).then((_) => _loadOverview());
                                     },
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.indigo,
-                                      foregroundColor: Colors.white,
-                                    ),
                                     child: const Text('Set up'),
                                   ),
                                 ],
@@ -697,6 +693,85 @@ class _DashboardPageState extends State<DashboardPage> {
                                   child: Column(
                                     children: steps,
                                   ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+                            );
+                          },
+                        ),
+
+                        // GETTING STARTED CHECKLIST
+                        Builder(
+                          builder: (context) {
+                            final items = <_ChecklistItem>[];
+                            if (isDriver) {
+                              items.add(
+                                _ChecklistItem(
+                                  label: 'Verify your identity',
+                                  done: isVerified,
+                                ),
+                              );
+                              items.add(
+                                _ChecklistItem(
+                                  label: 'Add at least one vehicle',
+                                  done: (_vehicleCount ?? 0) > 0,
+                                ),
+                              );
+                              items.add(
+                                _ChecklistItem(
+                                  label: 'Set an active route',
+                                  done: (_driverActiveRoutes ?? 0) > 0,
+                                ),
+                              );
+                              items.add(
+                                _ChecklistItem(
+                                  label: 'Add trusted contacts',
+                                  done: (_trustedCount ?? 0) > 0,
+                                ),
+                              );
+                            } else {
+                              final hasRide =
+                                  (_passengerUpcoming ?? 0) > 0 ||
+                                  (_passengerHistory ?? 0) > 0;
+                              items.add(
+                                _ChecklistItem(
+                                  label: 'Complete your first ride',
+                                  done: hasRide,
+                                ),
+                              );
+                              items.add(
+                                _ChecklistItem(
+                                  label: 'Add trusted contacts',
+                                  done: (_trustedCount ?? 0) > 0,
+                                ),
+                              );
+                            }
+
+                            if (items.isEmpty) return const SizedBox.shrink();
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                  ),
+                                  child: Text(
+                                    'Getting Started',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                  ),
+                                  child: _ChecklistCard(items: items),
                                 ),
                                 const SizedBox(height: 16),
                               ],
@@ -1210,6 +1285,96 @@ class _NextStepCard extends StatelessWidget {
           TextButton(
             onPressed: onTap,
             child: Text(cta),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChecklistItem {
+  final String label;
+  final bool done;
+  _ChecklistItem({required this.label, required this.done});
+}
+
+class _ChecklistCard extends StatelessWidget {
+  final List<_ChecklistItem> items;
+  const _ChecklistCard({required this.items});
+
+  @override
+  Widget build(BuildContext context) {
+    final done = items.where((i) => i.done).length;
+    final total = items.length;
+    final pct = total == 0 ? 0.0 : done / total;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                '$done of $total completed',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const Spacer(),
+              Text(
+                '${(pct * 100).toStringAsFixed(0)}%',
+                style: TextStyle(color: Colors.grey.shade700),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: pct,
+              minHeight: 6,
+              backgroundColor: Colors.grey.shade200,
+              color: AppColors.purple,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...items.map(
+            (i) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  Icon(
+                    i.done ? Icons.check_circle : Icons.radio_button_unchecked,
+                    size: 18,
+                    color: i.done ? Colors.green.shade700 : Colors.grey.shade500,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      i.label,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color:
+                            i.done
+                                ? Colors.black87
+                                : Colors.grey.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
