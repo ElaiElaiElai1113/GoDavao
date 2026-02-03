@@ -181,7 +181,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
             table: 'app_settings',
             event: PostgresChangeEvent.insert,
             callback: (payload) {
-              final rec = payload.newRecord as Map?;
+              final rec = payload.newRecord as Map<String, dynamic>?;
               if (rec == null) return;
               if (rec['key']?.toString() != 'platform_fee_rate') return;
               final rate = _parseFeeRate(rec);
@@ -196,7 +196,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
             table: 'app_settings',
             event: PostgresChangeEvent.update,
             callback: (payload) {
-              final rec = payload.newRecord as Map?;
+              final rec = payload.newRecord as Map<String, dynamic>?;
               if (rec == null) return;
               if (rec['key']?.toString() != 'platform_fee_rate') return;
               final rate = _parseFeeRate(rec);
@@ -209,7 +209,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
           ..subscribe();
   }
 
-  double? _parseFeeRate(Map? row) {
+  double? _parseFeeRate(Map<String, dynamic>? row) {
     if (row == null) return null;
     final num? n = row['value_num'] as num? ?? row['value'] as num?;
     if (n != null) return n.toDouble();
@@ -366,7 +366,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
   double _smooth(double prev, double next, [double a = 0.20]) =>
       prev + a * (next - prev);
 
-  void _consumeDriverLocation(Map rec) {
+  void _consumeDriverLocation(Map<dynamic, dynamic> rec) {
     final lat = (rec['lat'] as num?)?.toDouble();
     final lng = (rec['lng'] as num?)?.toDouble();
     if (lat == null || lng == null) return;

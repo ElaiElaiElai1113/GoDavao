@@ -31,7 +31,6 @@ class NotificationService {
         .filter('read_at', 'is', null); // instead of .is_()
 
     // rows is a List<dynamic>; return its length safely
-    if (rows is List) return rows.length;
-    return 0;
+    return rows.length;
   }
 }

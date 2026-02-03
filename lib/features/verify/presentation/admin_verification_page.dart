@@ -101,7 +101,7 @@ class _AdminVerificationPageState extends State<AdminVerificationPage>
           .toLowerCase()] ??
       Colors.grey.shade600;
 
-  Future<void> _approve(Map r) async {
+  Future<void> _approve(Map<String, dynamic> r) async {
     final ok = await _confirm(
       'Approve verification?',
       'Mark this user as verified?',
@@ -120,7 +120,7 @@ class _AdminVerificationPageState extends State<AdminVerificationPage>
     }
   }
 
-  Future<void> _reject(Map r) async {
+  Future<void> _reject(Map<String, dynamic> r) async {
     final notes = await _inputDialog(
       'Reject verification?',
       'Reason (optional)',

@@ -102,7 +102,7 @@ class AdminVerificationService {
   // -------------------- Queries --------------------
 
   Future<List<Map<String, dynamic>>> fetch({String? status}) async {
-    final List data =
+    final List<dynamic> data =
         status == null
             ? await client
                 .from('verification_requests')
@@ -134,7 +134,7 @@ class AdminVerificationService {
   }) async {
     final cleanedNotes = (notes?.trim().isEmpty ?? true) ? null : notes!.trim();
 
-    await client.rpc(
+    await client.rpc<void>(
       'process_verification_request',
       params: {
         'p_request_id': requestId,

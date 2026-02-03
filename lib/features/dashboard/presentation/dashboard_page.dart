@@ -20,8 +20,6 @@ import 'package:godavao/features/verify/presentation/pending_banner.dart'; // �
 
 import 'package:godavao/features/safety/presentation/trusted_contacts_page.dart';
 
-import 'package:postgrest/postgrest.dart' show PostgrestException;
-
 
 // 🟣 Coach marks
 import 'package:godavao/common/tutorial/coach_overlay.dart';
@@ -117,7 +115,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
     if (!mounted) return;
 
-    final row = (res as Map<String, dynamic>?) ??
+    final row = res ??
         {
           'id': u.id,
           'name': (u.userMetadata?['full_name'] ??
@@ -167,25 +165,18 @@ class _DashboardPageState extends State<DashboardPage> {
       setState(() => _verifStatus = s);
     });
 
-  } on PostgrestException catch (e) {
-    if (!mounted) return;
-    setState(() {
-      _error = 'Profile query failed: ${e.message}';
-      _loading = false;
-      _loadingOverview = false;
-    });
-    return;
   } catch (e) {
     if (!mounted) return;
+    final message = (e is PostgrestException) ? e.message : e.toString();
     setState(() {
-      _error = 'Failed to load profile: $e';
+      _error = 'Profile query failed: $message';
       _loading = false;
       _loadingOverview = false;
     });
     return;
   }
 
-  // Run overview separately so errors here don’t show as “profile failed”
+  // Run overview separately so errors here don't show as "profile failed"
   await _loadOverview();
 
   // Decide if we show tutorial (after first frame)
@@ -202,7 +193,7 @@ class _DashboardPageState extends State<DashboardPage> {
     return;
   }
 
-  int _len(dynamic res) => (res is List) ? res.length : 0;
+  int len(dynamic res) => (res is List) ? res.length : 0;
 
   try {
     final role = (_user?['role'] as String?) ?? 'passenger';
@@ -222,8 +213,8 @@ class _DashboardPageState extends State<DashboardPage> {
 
       if (!mounted) return;
       setState(() {
-        _driverActiveRoutes = _len(activeRoutes);
-        _driverPendingRequests = _len(pendingReqs);
+        _driverActiveRoutes = len(activeRoutes);
+        _driverPendingRequests = len(pendingReqs);
       });
     } else {
   // PASSENGER
@@ -239,7 +230,7 @@ class _DashboardPageState extends State<DashboardPage> {
         .rpc<List<Map<String, dynamic>>>('passenger_rides_for_user')
         .select('id, effective_status');
 
-    final list = (rows as List).cast<Map>();
+    final list = rows;
     for (final r in list) {
       final s = (r['effective_status']?.toString() ?? '').toLowerCase();
       if (up.contains(s)) {
@@ -260,8 +251,8 @@ class _DashboardPageState extends State<DashboardPage> {
         .select('id')
         .eq('passenger_id', _sb.auth.currentUser!.id)
         .inFilter('status', hist);
-    upcomingCount = (upRows is List) ? upRows.length : 0;
-    pastCount     = (hiRows is List) ? hiRows.length : 0;
+    upcomingCount = upRows.length;
+    pastCount     = hiRows.length;
   }
 
   if (!mounted) return;
@@ -277,7 +268,7 @@ class _DashboardPageState extends State<DashboardPage> {
           .from('trusted_contacts')
           .select('id')
           .eq('user_id', uid);
-      if (mounted) setState(() => _trustedCount = _len(tcs));
+      if (mounted) setState(() => _trustedCount = len(tcs));
     } catch (_) {/* ignore */}
 
   } catch (_) {

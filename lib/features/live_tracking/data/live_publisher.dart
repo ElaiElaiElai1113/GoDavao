@@ -112,7 +112,7 @@ class LivePublisher {
           lastError = e;
         }
       },
-      onError: (e, _) => lastError = e,
+      onError: (Object e, _) => lastError = e,
       cancelOnError: false,
     );
   }

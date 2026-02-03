@@ -258,17 +258,10 @@ class DriverRideService {
               .eq('ratee_user_id', passengerId)
               .single();
 
-          if (ratingData != null) {
-            result[passengerId] = {
-              'avg': (ratingData['avg'] as num?)?.toDouble(),
-              'count': (ratingData['count'] as num?)?.toInt() ?? 0,
-            };
-          } else {
-            result[passengerId] = {
-              'avg': null,
-              'count': 0,
-            };
-          }
+          result[passengerId] = {
+            'avg': (ratingData['avg'] as num?)?.toDouble(),
+            'count': (ratingData['count'] as num?)?.toInt() ?? 0,
+          };
         } catch (_) {
           // If a passenger has no ratings yet
           result[passengerId] = {

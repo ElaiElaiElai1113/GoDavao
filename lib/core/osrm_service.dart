@@ -68,7 +68,7 @@ Future<OsrmRouteDetailed> fetchOsrmRouteDetailed({
 
     final r0 = routes.first as Map<String, dynamic>;
     final geom = (r0['geometry'] as Map<String, dynamic>?) ?? const {};
-    final coords = (geom['coordinates'] as List?)?.cast<List>();
+    final coords = (geom['coordinates'] as List<dynamic>?)?.cast<List<dynamic>>();
     if (coords == null || coords.isEmpty) return null;
 
     final pts =

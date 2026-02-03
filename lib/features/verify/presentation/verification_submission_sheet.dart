@@ -18,7 +18,7 @@ class VerificationSubmissionSheet extends StatelessWidget {
 
   static const _purpleDark = Color(0xFF4B18C9);
 
-  bool _isImage(Map d) {
+  bool _isImage(Map<String, dynamic> d) {
     final mime = (d['mime'] ?? '').toString().toLowerCase();
     final url = (d['url'] ?? '').toString().toLowerCase();
     return mime.startsWith('image/') ||

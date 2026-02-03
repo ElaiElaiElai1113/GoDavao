@@ -47,7 +47,7 @@ class RatingsService {
         .select('score')
         .eq('ratee_user_id', userId);
 
-    if (rows is! List || rows.isEmpty) {
+    if (rows.isEmpty) {
       return {'avg_rating': null, 'rating_count': 0};
     }
 

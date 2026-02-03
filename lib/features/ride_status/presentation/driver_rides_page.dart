@@ -220,7 +220,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           ..subscribe();
   }
 
-  double? _parseFeeRate(Map? row) {
+  double? _parseFeeRate(Map<dynamic, dynamic>? row) {
     if (row == null) return null;
     final num? n = row['value_num'] as num? ?? row['value'] as num?;
     if (n != null) return n.toDouble();

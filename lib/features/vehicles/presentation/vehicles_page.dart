@@ -798,12 +798,11 @@ class _FullScreenImageViewerState extends State<_FullScreenImageViewer> {
           if (pos == null) return;
 
           const zoom = 2.5;
-          final matrix =
-              _controller.value.isIdentity()
-                  ? (Matrix4.identity()
-                    ..leftTranslate(-pos.dx * (zoom - 1), -pos.dy * (zoom - 1))
-                    ..scale(zoom, zoom))
-                  : Matrix4.identity();
+          final translation = Matrix4.translationValues(-pos.dx * (zoom - 1), -pos.dy * (zoom - 1), 0.0);
+          final scaling = Matrix4.diagonal3Values(zoom, zoom, 1.0);
+          final matrix = _controller.value.isIdentity()
+              ? (scaling * translation) as Matrix4
+              : Matrix4.identity();
 
           _controller.value = matrix;
         },
