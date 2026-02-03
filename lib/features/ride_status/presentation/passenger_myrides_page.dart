@@ -68,7 +68,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
     try {
       final rows = await sb.rpc('passenger_rides_for_user').select();
       final list =
-          (rows as List).map((e) => Map<String, dynamic>.from(e)).toList();
+          (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
       _applyRidesToState(list);
       await _refreshRatedFlagsForCompleted(list);
       _backfillAddresses(list);
@@ -120,7 +120,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
           .inFilter('id', rideIds);
 
       final list =
-          (rows as List).map((e) => Map<String, dynamic>.from(e)).toList();
+          (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
 
       _applyRidesToState(list);
       await _refreshRatedFlagsForCompleted(list);
@@ -373,7 +373,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: c.withOpacity(.12),
+        color: c.withValues(alpha: .12),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -456,7 +456,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                           Polyline(
                             points: [LatLng(pLat, pLng), LatLng(dLat, dLng)],
                             strokeWidth: 3,
-                            color: _purpleDark.withOpacity(.9),
+                            color: _purpleDark.withValues(alpha: .9),
                           ),
                       ];
                       return FlutterMap(
@@ -654,7 +654,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
           ),
           boxShadow: [
             BoxShadow(
-              color: _purple.withOpacity(0.25),
+              color: _purple.withValues(alpha: 0.25),
               blurRadius: 12,
               offset: const Offset(0, 6),
             ),
@@ -700,7 +700,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
           flexibleSpace: Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [_purple.withOpacity(0.4), Colors.transparent],
+                colors: [_purple.withValues(alpha: 0.4), Colors.transparent],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
               ),
@@ -712,7 +712,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
           leading: Padding(
             padding: const EdgeInsets.only(left: 12),
             child: CircleAvatar(
-              backgroundColor: Colors.white.withOpacity(0.9),
+              backgroundColor: Colors.white.withValues(alpha: 0.9),
               child: IconButton(
                 icon: const Icon(
                   Icons.arrow_back_ios_new,
@@ -744,7 +744,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
           flexibleSpace: Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [_purple.withOpacity(0.4), Colors.transparent],
+                colors: [_purple.withValues(alpha: 0.4), Colors.transparent],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
               ),
@@ -756,7 +756,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
           leading: Padding(
             padding: const EdgeInsets.only(left: 12),
             child: CircleAvatar(
-              backgroundColor: Colors.white.withOpacity(0.9),
+              backgroundColor: Colors.white.withValues(alpha: 0.9),
               child: IconButton(
                 icon: const Icon(
                   Icons.arrow_back_ios_new,
@@ -787,7 +787,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                     borderRadius: BorderRadius.circular(999),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
+                        color: Colors.black.withValues(alpha: 0.05),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),

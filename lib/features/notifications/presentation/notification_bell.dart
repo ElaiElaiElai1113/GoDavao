@@ -107,8 +107,8 @@ class _NotificationsSheet extends StatelessWidget {
                         final n = notifs[i];
                         return ListTile(
                           leading: const Icon(Icons.notifications),
-                          title: Text(n['title'] ?? ''),
-                          subtitle: Text(n['body'] ?? ''),
+                          title: Text(n['title'] as String? ?? ''),
+                          subtitle: Text(n['body'] as String? ?? ''),
                           dense: true,
                         );
                       },

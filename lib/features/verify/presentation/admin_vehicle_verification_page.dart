@@ -348,7 +348,7 @@ class _VehicleFilterPanel extends StatelessWidget {
                 ),
                 selected: docFilter == f.$1,
                 onSelected: (_) => onFilterChanged(f.$1),
-                selectedColor: const Color(0xFF6A27F7).withOpacity(.18),
+                selectedColor: const Color(0xFF6A27F7).withValues(alpha: .18),
                 labelStyle: TextStyle(
                   color:
                       docFilter == f.$1
@@ -651,7 +651,7 @@ class _VehicleTag extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
     decoration: BoxDecoration(
-      color: color.withOpacity(.12),
+      color: color.withValues(alpha: .12),
       borderRadius: BorderRadius.circular(999),
     ),
     child: Text(

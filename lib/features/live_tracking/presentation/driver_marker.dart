@@ -55,7 +55,7 @@ class DriverMarker extends StatelessWidget {
         children: [
           if (active)
             _PulsingRing(
-              color: color.withOpacity(0.25),
+              color: color.withValues(alpha: 0.25),
               maxRadius: size * 0.9,
               minRadius: size * 0.7,
               duration: const Duration(seconds: 2),
@@ -177,7 +177,7 @@ class _PulsingRingState extends State<_PulsingRing>
           width: r,
           height: r,
           decoration: BoxDecoration(
-            color: widget.color.withOpacity(opacity),
+            color: widget.color.withValues(alpha: opacity),
             shape: BoxShape.circle,
           ),
         );

@@ -334,7 +334,7 @@ class _StatCard extends StatelessWidget {
           gradient: _gradient,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: Colors.black.withValues(alpha: 0.06),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -409,7 +409,7 @@ class _AdminTile extends StatelessWidget {
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: Colors.black.withValues(alpha: 0.06),
               blurRadius: 12,
               offset: const Offset(0, 6),
             ),
@@ -454,7 +454,7 @@ class _AdminTile extends StatelessWidget {
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: _purple.withOpacity(.10),
+                          color: _purple.withValues(alpha: .10),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
@@ -473,7 +473,7 @@ class _AdminTile extends StatelessWidget {
                     description,
                     style: TextStyle(
                       fontSize: 13,
-                      color: Colors.black.withOpacity(0.6),
+                      color: Colors.black.withValues(alpha: 0.6),
                     ),
                   ),
                 ],
@@ -511,7 +511,7 @@ class _SectionHeader extends StatelessWidget {
         Text(
           subtitle,
           style: TextStyle(
-            color: Colors.black.withOpacity(0.55),
+            color: Colors.black.withValues(alpha: 0.55),
             fontSize: 12,
             height: 1.4,
           ),
@@ -530,7 +530,7 @@ class _LogoutButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return ElevatedButton.icon(
       style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.red.withOpacity(0.12),
+        backgroundColor: Colors.red.withValues(alpha: 0.12),
         foregroundColor: Colors.red.shade700,
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 18),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -557,9 +557,9 @@ class _ErrorBanner extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Colors.red.withOpacity(0.08),
+        color: Colors.red.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.red.withOpacity(0.2)),
+        border: Border.all(color: Colors.red.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

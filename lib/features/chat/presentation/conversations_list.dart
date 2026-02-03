@@ -43,8 +43,8 @@ class _ConversationsListState extends State<ConversationsList> {
         final m = _matches[i];
         final unread = chatSvc.unreadCounts[m['id']] ?? 0;
         return ListTile(
-          title: Text(m['other_user_name']),
-          subtitle: Text(m['last_message'] ?? ''),
+          title: Text(m['other_user_name'] as String? ?? 'Unknown'),
+          subtitle: Text(m['last_message'] as String? ?? ''),
           trailing:
               unread > 0
                   ? CircleAvatar(

@@ -25,9 +25,9 @@ class VehicleStatusChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: c.withOpacity(.12),
+        color: c.withValues(alpha: .12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: c.withOpacity(.3)),
+        border: Border.all(color: c.withValues(alpha: .3)),
       ),
       child: Text(
         text,

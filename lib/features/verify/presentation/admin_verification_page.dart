@@ -547,7 +547,7 @@ class _Tag extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
     decoration: BoxDecoration(
-      color: color.withOpacity(.12),
+      color: color.withValues(alpha: .12),
       borderRadius: BorderRadius.circular(99),
     ),
     child: Text(
@@ -606,7 +606,7 @@ class _FilterPanel extends StatelessWidget {
                 ),
                 selected: roleFilter == r.$1,
                 onSelected: (_) => onRoleChanged(r.$1),
-                selectedColor: const Color(0xFF6A27F7).withOpacity(.18),
+                selectedColor: const Color(0xFF6A27F7).withValues(alpha: .18),
                 labelStyle: TextStyle(
                   color:
                       roleFilter == r.$1

@@ -90,6 +90,8 @@ class RatingsService {
         .order('created_at', ascending: false)
         .limit(limit);
 
-    return (rows as List).map((e) => Map<String, dynamic>.from(e)).toList();
+    return (rows as List)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
   }
 }

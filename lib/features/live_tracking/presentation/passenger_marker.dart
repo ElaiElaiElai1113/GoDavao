@@ -117,7 +117,7 @@ class _RippleState extends State<_Ripple> with SingleTickerProviderStateMixin {
             width: 24,
             height: 24,
             decoration: BoxDecoration(
-              color: widget.color.withOpacity(opacity),
+              color: widget.color.withValues(alpha: opacity),
               shape: BoxShape.circle,
             ),
           ),

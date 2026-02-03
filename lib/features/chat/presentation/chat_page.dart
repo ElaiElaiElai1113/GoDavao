@@ -238,7 +238,7 @@ class _ChatPageState extends State<ChatPage>
               .eq('id', widget.matchId)
               .maybeSingle();
       if (mounted) {
-        setState(() => _rideStatus = res?['status']);
+        setState(() => _rideStatus = res?['status'] as String?);
       }
     } catch (e) {
       print('Failed to fetch ride status: $e');

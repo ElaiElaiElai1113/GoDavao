@@ -136,9 +136,9 @@ class _ProfilePageState extends State<ProfilePage> {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  purple.withOpacity(0.95),
-                  purple.withOpacity(0.6),
-                  purple.withOpacity(0.25),
+                  purple.withValues(alpha: 0.95),
+                  purple.withValues(alpha: 0.6),
+                  purple.withValues(alpha: 0.25),
                   Colors.transparent,
                 ],
                 stops: const [0.0, 0.22, 0.45, 1.0],

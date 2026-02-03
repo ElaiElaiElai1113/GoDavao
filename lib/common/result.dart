@@ -173,7 +173,7 @@ extension ResultTryExtensions<T> on T Function() {
 extension AsyncResultTryExtensions<T> on Future<T> Function() {
   Future<Result<T, Exception>> tryGet() async {
     try {
-      final result = await();
+      final result = await this();
       return Success(result);
     } catch (e) {
       return Failure(e is Exception ? e : Exception(e.toString()));

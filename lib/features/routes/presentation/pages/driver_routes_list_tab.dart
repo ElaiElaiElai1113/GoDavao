@@ -297,7 +297,7 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: (isActive ? Colors.green : Colors.red).withOpacity(0.1),
+                    color: (isActive ? Colors.green : Colors.red).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
@@ -399,7 +399,7 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
           gradient: const LinearGradient(colors: [_purple, _purpleDark]),
-          boxShadow: [BoxShadow(color: _purple.withOpacity(.25), blurRadius: 12, offset: Offset(0, 6))],
+          boxShadow: [BoxShadow(color: _purple.withValues(alpha: .25), blurRadius: 12, offset: Offset(0, 6))],
         ),
         child: ElevatedButton.icon(
           onPressed: onPressed,
@@ -421,7 +421,7 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
     return AppBar(
       flexibleSpace: Container(
         decoration: BoxDecoration(
-          gradient: LinearGradient(colors: [_purple.withOpacity(0.4), Colors.transparent], begin: Alignment.topCenter, end: Alignment.bottomCenter),
+          gradient: LinearGradient(colors: [_purple.withValues(alpha: 0.4), Colors.transparent], begin: Alignment.topCenter, end: Alignment.bottomCenter),
         ),
       ),
       backgroundColor: const Color.fromARGB(3, 0, 0, 0),
@@ -432,7 +432,7 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
       leading: Padding(
         padding: const EdgeInsets.only(left: 12),
         child: CircleAvatar(
-          backgroundColor: Colors.white.withOpacity(0.9),
+          backgroundColor: Colors.white.withValues(alpha: 0.9),
           child: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new, color: _purple, size: 18),
             onPressed: () => Navigator.pop(context),

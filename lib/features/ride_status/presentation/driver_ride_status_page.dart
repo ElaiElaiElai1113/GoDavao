@@ -499,7 +499,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: c.withOpacity(.12),
+        color: c.withValues(alpha: .12),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -588,7 +588,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
         flexibleSpace: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [_purple.withOpacity(0.4), Colors.transparent],
+              colors: [_purple.withValues(alpha: 0.4), Colors.transparent],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
@@ -600,7 +600,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
         leading: Padding(
           padding: const EdgeInsets.only(left: 12),
           child: CircleAvatar(
-            backgroundColor: Colors.white.withOpacity(0.9),
+            backgroundColor: Colors.white.withValues(alpha: 0.9),
             child: IconButton(
               icon: const Icon(
                 Icons.arrow_back_ios_new,
@@ -693,7 +693,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                     Polyline(
                       points: [pickup, dest],
                       strokeWidth: 5,
-                      color: _purpleDark.withOpacity(.9),
+                      color: _purpleDark.withValues(alpha: .9),
                     ),
                   ],
                 ),
@@ -763,9 +763,9 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.12),
+                    color: Colors.red.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.red.withOpacity(0.25)),
+                    border: Border.all(color: Colors.red.withValues(alpha: 0.25)),
                   ),
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
@@ -869,10 +869,10 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.09),
+                          color: Colors.orange.withValues(alpha: 0.09),
                           borderRadius: BorderRadius.circular(999),
                           border: Border.all(
-                            color: Colors.orange.withOpacity(0.25),
+                            color: Colors.orange.withValues(alpha: 0.25),
                           ),
                         ),
                         child: Row(
@@ -988,7 +988,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
         flexibleSpace: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [_purple.withOpacity(0.4), Colors.transparent],
+              colors: [_purple.withValues(alpha: 0.4), Colors.transparent],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
@@ -1000,7 +1000,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
         leading: Padding(
           padding: const EdgeInsets.only(left: 12),
           child: CircleAvatar(
-            backgroundColor: Colors.white.withOpacity(0.9),
+            backgroundColor: Colors.white.withValues(alpha: 0.9),
             child: IconButton(
               icon: const Icon(
                 Icons.arrow_back_ios_new,

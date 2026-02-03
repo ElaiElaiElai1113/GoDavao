@@ -290,7 +290,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
           .eq('driver_route_id', routeId);
       final activeStatuses = {'pending', 'accepted', 'en_route'};
       final active =
-          (rows as List).map((e) => Map<String, dynamic>.from(e)).where((r) {
+          (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).where((r) {
             final s =
                 (r['ride_requests']?['status'] as String?)?.toLowerCase() ?? '';
             return activeStatuses.contains(s);
@@ -661,7 +661,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
         flexibleSpace: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [_purple.withOpacity(0.4), Colors.transparent],
+              colors: [_purple.withValues(alpha: 0.4), Colors.transparent],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
@@ -673,7 +673,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
         leading: Padding(
           padding: const EdgeInsets.only(left: 12),
           child: CircleAvatar(
-            backgroundColor: Colors.white.withOpacity(0.9),
+            backgroundColor: Colors.white.withValues(alpha: 0.9),
             child: IconButton(
               icon: const Icon(
                 Icons.arrow_back_ios_new,
@@ -755,9 +755,9 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(.08),
+                          color: Colors.red.withValues(alpha: .08),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.red.withOpacity(.2)),
+                          border: Border.all(color: Colors.red.withValues(alpha: .2)),
                         ),
                         child: const Row(
                           children: [
@@ -802,7 +802,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                           _Chip(
                             icon: Icons.info_outline,
                             label: _status.toUpperCase(),
-                            color: _statusColor(_status).withOpacity(.10),
+                            color: _statusColor(_status).withValues(alpha: .10),
                             textColor: _statusColor(_status),
                           ),
                           if (fare != null)
@@ -854,8 +854,8 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                               child: FlutterMap(
                                 mapController: _map,
                                 options: MapOptions(
-                                  center: center,
-                                  zoom: 13,
+                                  initialCenter: center,
+                                  initialZoom: 13,
                                   onMapReady:
                                       () => setState(() => _mapReady = true),
                                   onTap: (_, __) {},
@@ -1101,7 +1101,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
           borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black26.withOpacity(0.06),
+              color: Colors.black26.withValues(alpha: 0.06),
               blurRadius: 12,
               offset: const Offset(0, -4),
             ),
@@ -1274,10 +1274,10 @@ class _SectionCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.black12.withOpacity(.06)),
+        border: Border.all(color: Colors.black12.withValues(alpha: .06)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black12.withOpacity(.06),
+            color: Colors.black12.withValues(alpha: .06),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -1558,7 +1558,7 @@ class _CarpoolBreakdownTable extends StatelessWidget {
       rows.add(
         TableRow(
           decoration: BoxDecoration(
-            color: isCurrent ? Colors.indigo.withOpacity(.05) : null,
+            color: isCurrent ? Colors.indigo.withValues(alpha: .05) : null,
           ),
           children: [
             _cell('$tierSeats', bold: isCurrent),

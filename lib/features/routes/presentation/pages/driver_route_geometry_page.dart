@@ -145,7 +145,7 @@ class _DriverRouteGeometryPageState extends State<DriverRouteGeometryPage> {
           _manualRoute = Polyline(
             points: List.of(_manualPoints),
             strokeWidth: 4,
-            color: _purpleDark.withOpacity(.9),
+            color: _purpleDark.withValues(alpha: .9),
           );
           // derive addresses from endpoints if missing
           _start ??= _manualPoints.first;
@@ -253,7 +253,7 @@ class _DriverRouteGeometryPageState extends State<DriverRouteGeometryPage> {
       _manualRoute = Polyline(
         points: List.of(_manualPoints),
         strokeWidth: 4,
-        color: _purpleDark.withOpacity(.9),
+        color: _purpleDark.withValues(alpha: .9),
       );
       _manualKm = _distanceKm(_manualPoints);
       _dirty = true;
@@ -334,7 +334,7 @@ class _DriverRouteGeometryPageState extends State<DriverRouteGeometryPage> {
                                     ? Polyline(
                                       points: List.of(_manualPoints),
                                       strokeWidth: 4,
-                                      color: _purpleDark.withOpacity(.9),
+                                      color: _purpleDark.withValues(alpha: .9),
                                     )
                                     : null;
                             _start =
@@ -539,8 +539,15 @@ class _DriverRouteGeometryPageState extends State<DriverRouteGeometryPage> {
             ? _manualPoints.first
             : const LatLng(7.1907, 125.4553));
 
-    return WillPopScope(
-      onWillPop: _onWillPop,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final shouldPop = await _onWillPop();
+        if (shouldPop && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Edit Geometry'),
@@ -708,7 +715,7 @@ class _DriverRouteGeometryPageState extends State<DriverRouteGeometryPage> {
                                 Polyline(
                                   points: _osrmRoute!.points,
                                   strokeWidth: 4,
-                                  color: _purpleDark.withOpacity(.9),
+                                  color: _purpleDark.withValues(alpha: .9),
                                 ),
                               ],
                             ),
@@ -719,7 +726,7 @@ class _DriverRouteGeometryPageState extends State<DriverRouteGeometryPage> {
                                 Polyline(
                                   points: _manualRoute!.points,
                                   strokeWidth: 4,
-                                  color: _purpleDark.withOpacity(.9),
+                                  color: _purpleDark.withValues(alpha: .9),
                                 ),
                               ],
                             ),
@@ -821,7 +828,7 @@ class _ModeToggle extends StatelessWidget {
         border: Border.all(color: Colors.black12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 10,
             offset: const Offset(0, 3),
           ),
@@ -853,12 +860,12 @@ class _ModeToggle extends StatelessWidget {
                       color:
                           selected
                               ? Colors.transparent
-                              : _purple.withOpacity(0.3),
+                              : _purple.withValues(alpha: 0.3),
                     ),
                     boxShadow: [
                       if (selected)
                         BoxShadow(
-                          color: _purple.withOpacity(0.28),
+                          color: _purple.withValues(alpha: 0.28),
                           blurRadius: 12,
                           offset: const Offset(0, 6),
                         ),

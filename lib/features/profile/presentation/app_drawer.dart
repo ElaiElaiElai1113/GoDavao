@@ -97,7 +97,7 @@ class AppDrawer extends StatelessWidget {
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
-                                          color: Colors.white.withOpacity(0.85),
+                                          color: Colors.white.withValues(alpha: 0.85),
                                           fontSize: 12.5,
                                         ),
                                       ),
@@ -117,7 +117,7 @@ class AppDrawer extends StatelessWidget {
                                                             'verified')
                                                     ? 'Verified'
                                                     : 'Unverified',
-                                            bg: Colors.white.withOpacity(0.18),
+                                            bg: Colors.white.withValues(alpha: 0.18),
                                             fg: Colors.white,
                                             icon:
                                                 (verification == 'approved' ||
@@ -131,8 +131,8 @@ class AppDrawer extends StatelessWidget {
                                           if (isAdmin)
                                             _chip(
                                               label: 'Admin',
-                                              bg: Colors.white.withOpacity(
-                                                0.18,
+                                              bg: Colors.white.withValues(
+                                                alpha: 0.18,
                                               ),
                                               fg: Colors.white,
                                               icon: Icons.admin_panel_settings,
@@ -327,7 +327,7 @@ class AppDrawer extends StatelessWidget {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    tileColor: Colors.red.withOpacity(0.08),
+                    tileColor: Colors.red.withValues(alpha: 0.08),
                     leading: const Icon(Icons.logout, color: Colors.red),
                     title: const Text(
                       'Logout',
@@ -463,13 +463,13 @@ class AppDrawer extends StatelessWidget {
   }) {
     return ListTile(
       minTileHeight: 54,
-      tileColor: highlight ? _purple.withOpacity(0.08) : null,
+      tileColor: highlight ? _purple.withValues(alpha: 0.08) : null,
       leading: CircleAvatar(
         radius: 18,
         backgroundColor:
             highlight
-                ? _purple.withOpacity(0.12)
-                : Colors.black.withOpacity(0.06),
+                ? _purple.withValues(alpha: 0.12)
+                : Colors.black.withValues(alpha: 0.06),
         child: Icon(
           icon,
           color: highlight ? _purple : Colors.black87,
@@ -502,7 +502,7 @@ class _HeaderSkeleton extends StatelessWidget {
       width: w,
       height: h,
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.3),
+        color: Colors.white.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(4),
       ),
     );

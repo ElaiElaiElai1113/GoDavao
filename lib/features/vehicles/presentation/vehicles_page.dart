@@ -62,7 +62,7 @@ class _VehiclesPageState extends State<VehiclesPage> {
         flexibleSpace: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [_purple.withOpacity(0.4), Colors.transparent],
+              colors: [_purple.withValues(alpha: 0.4), Colors.transparent],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
@@ -74,7 +74,7 @@ class _VehiclesPageState extends State<VehiclesPage> {
         leading: Padding(
           padding: const EdgeInsets.only(left: 12),
           child: CircleAvatar(
-            backgroundColor: Colors.white.withOpacity(0.9),
+            backgroundColor: Colors.white.withValues(alpha: 0.9),
             child: IconButton(
               icon: const Icon(
                 Icons.arrow_back_ios_new,
@@ -320,7 +320,7 @@ class _VehicleCardState extends State<_VehicleCard> {
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 12,
             offset: const Offset(0, 6),
           ),
@@ -338,7 +338,7 @@ class _VehicleCardState extends State<_VehicleCard> {
               children: [
                 CircleAvatar(
                   radius: 22,
-                  backgroundColor: _purple.withOpacity(.08),
+                  backgroundColor: _purple.withValues(alpha: .08),
                   child: Icon(
                     isDefault ? Icons.star : Icons.directions_car,
                     color: _purple,
@@ -512,7 +512,7 @@ class _DocChip extends StatelessWidget {
   const _DocChip({required this.label, required this.hasIt});
   @override
   Widget build(BuildContext context) {
-    final bg = hasIt ? Colors.green.withOpacity(.12) : Colors.grey.shade200;
+    final bg = hasIt ? Colors.green.withValues(alpha: .12) : Colors.grey.shade200;
     final fg = hasIt ? Colors.green.shade700 : Colors.grey.shade700;
     final icon = hasIt ? Icons.check_circle : Icons.error_outline;
     return Container(
@@ -545,7 +545,7 @@ class _StatusChip extends StatelessWidget {
     switch (status) {
       case 'approved':
         v = (
-          Colors.green.withOpacity(.12),
+          Colors.green.withValues(alpha: .12),
           Colors.green.shade700,
           Icons.verified,
           'Approved',
@@ -553,7 +553,7 @@ class _StatusChip extends StatelessWidget {
         break;
       case 'rejected':
         v = (
-          Colors.red.withOpacity(.12),
+          Colors.red.withValues(alpha: .12),
           Colors.red.shade700,
           Icons.error_outline,
           'Rejected',
@@ -562,7 +562,7 @@ class _StatusChip extends StatelessWidget {
       case 'pending':
       default:
         v = (
-          Colors.orange.withOpacity(.12),
+          Colors.orange.withValues(alpha: .12),
           Colors.orange.shade700,
           Icons.hourglass_top,
           'Pending',
@@ -599,9 +599,9 @@ class _NoteBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.red.withOpacity(.06),
+        color: Colors.red.withValues(alpha: .06),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.red.withOpacity(.2)),
+        border: Border.all(color: Colors.red.withValues(alpha: .2)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -784,7 +784,7 @@ class _FullScreenImageViewerState extends State<_FullScreenImageViewer> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black.withOpacity(0.98),
+      backgroundColor: Colors.black.withValues(alpha: 0.98),
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
@@ -923,7 +923,7 @@ class _Empty extends StatelessWidget {
         Icon(
           Icons.directions_car_filled,
           size: 64,
-          color: Colors.black.withOpacity(.3),
+          color: Colors.black.withValues(alpha: .3),
         ),
         const SizedBox(height: 12),
         const Center(

@@ -147,7 +147,7 @@ class _HolePainter extends CustomPainter {
     // Soft highlight ring
     final ring =
         Paint()
-          ..color = Colors.white.withOpacity(0.25)
+          ..color = Colors.white.withValues(alpha: 0.25)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2.0;
     canvas.drawRRect(rrect, ring);

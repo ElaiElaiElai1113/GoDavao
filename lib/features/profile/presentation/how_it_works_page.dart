@@ -54,7 +54,7 @@ class HowItWorksPage extends StatelessWidget {
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [_purple.withOpacity(0.06), Colors.white],
+            colors: [_purple.withValues(alpha: 0.06), Colors.white],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -248,7 +248,7 @@ class _StepCard extends StatelessWidget {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              color: _purple.withOpacity(0.12),
+              color: _purple.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
             ),
             alignment: Alignment.center,

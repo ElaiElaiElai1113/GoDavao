@@ -289,7 +289,7 @@ class _BookingHistoryPageState extends State<BookingHistoryPage> {
                             horizontal: 8,
                           ),
                           decoration: BoxDecoration(
-                            color: _statusColor(status).withOpacity(0.1),
+                            color: _statusColor(status).withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(

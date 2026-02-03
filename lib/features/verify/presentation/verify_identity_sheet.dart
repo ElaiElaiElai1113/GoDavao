@@ -110,11 +110,11 @@ class _VerifyIdentitySheetState extends State<VerifyIdentitySheet> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.black12.withOpacity(.08)),
+        border: Border.all(color: Colors.black12.withValues(alpha: .08)),
       ),
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: _purple.withOpacity(.12),
+          backgroundColor: _purple.withValues(alpha: .12),
           child: Icon(
             file == null ? Icons.upload_file : Icons.image,
             color: _purple,

@@ -46,7 +46,7 @@ class _AuthPageState extends State<AuthPage> {
       labelText: label,
       labelStyle: const TextStyle(color: Colors.white70),
       filled: true,
-      fillColor: Colors.white.withOpacity(0.15),
+      fillColor: Colors.white.withValues(alpha: 0.15),
       hintStyle: const TextStyle(color: Colors.white54),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -439,7 +439,7 @@ class _AuthPageState extends State<AuthPage> {
                             ),
                             const SizedBox(height: 12),
                             DropdownButtonFormField<String>(
-                              value: _role,
+                              initialValue: _role,
                               decoration: _fieldDecor(label: 'Role'),
                               dropdownColor: _purpleDark,
                               iconEnabledColor: Colors.white,
@@ -477,7 +477,7 @@ class _AuthPageState extends State<AuthPage> {
                                 color: Colors.white,
                                 boxShadow: [
                                   BoxShadow(
-                                    color: _purple.withOpacity(0.25),
+                                    color: _purple.withValues(alpha: 0.25),
                                     blurRadius: 16,
                                     offset: const Offset(0, 10),
                                   ),

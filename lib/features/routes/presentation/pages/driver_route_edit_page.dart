@@ -387,8 +387,15 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
   @override
   Widget build(BuildContext context) {
     final title = 'Edit Route';
-    return WillPopScope(
-      onWillPop: _onWillPop,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final shouldPop = await _onWillPop();
+        if (shouldPop && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
       child: Scaffold(
         appBar: AppBar(
           title: Text(title),
@@ -454,7 +461,7 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
                         const SizedBox(height: 10),
                         _section('Vehicle', [
                           DropdownButtonFormField<String?>(
-                            value: _vehicleId,
+                            initialValue: _vehicleId,
                             decoration: const InputDecoration(
                               labelText: 'Select vehicle',
                             ),
@@ -535,7 +542,7 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
                         const SizedBox(height: 10),
                         _section('Routing', [
                           DropdownButtonFormField<String>(
-                            value: _routeMode,
+                            initialValue: _routeMode,
                             decoration: const InputDecoration(
                               labelText: 'Route mode',
                             ),
@@ -609,11 +616,11 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border.all(color: Colors.black12.withOpacity(.08)),
+        border: Border.all(color: Colors.black12.withValues(alpha: .08)),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black12.withOpacity(.06),
+            color: Colors.black12.withValues(alpha: .06),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),

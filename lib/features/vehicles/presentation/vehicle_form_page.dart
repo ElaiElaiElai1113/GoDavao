@@ -482,7 +482,7 @@ class _VehicleFormState extends State<VehicleForm> {
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: _purple.withOpacity(0.25),
+                                color: _purple.withValues(alpha: 0.25),
                                 blurRadius: 16,
                                 offset: const Offset(0, 10),
                               ),

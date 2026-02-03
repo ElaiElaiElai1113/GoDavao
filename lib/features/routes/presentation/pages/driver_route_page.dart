@@ -331,7 +331,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
         _manualRoute = Polyline(
           points: List.of(_manualPoints),
           strokeWidth: 4,
-          color: _purpleDark.withOpacity(.9),
+          color: _purpleDark.withValues(alpha: .9),
         );
       });
       await _recomputeFareEstimate();
@@ -404,7 +404,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                                     ? Polyline(
                                       points: List.of(_manualPoints),
                                       strokeWidth: 4,
-                                      color: _purpleDark.withOpacity(.9),
+                                      color: _purpleDark.withValues(alpha: .9),
                                     )
                                     : null;
                           });
@@ -600,7 +600,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
         flexibleSpace: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [_purple.withOpacity(0.4), Colors.transparent],
+              colors: [_purple.withValues(alpha: 0.4), Colors.transparent],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
@@ -612,7 +612,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
         leading: Padding(
           padding: const EdgeInsets.only(left: 12),
           child: CircleAvatar(
-            backgroundColor: Colors.white.withOpacity(0.9),
+            backgroundColor: Colors.white.withValues(alpha: 0.9),
             child: IconButton(
               icon: const Icon(
                 Icons.arrow_back_ios_new,
@@ -674,7 +674,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                         child: Container(
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: _purple.withOpacity(.15),
+                            color: _purple.withValues(alpha: .15),
                           ),
                           alignment: Alignment.center,
                           child: Container(
@@ -696,7 +696,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                       Polyline(
                         points: _osrmRoute!.points,
                         strokeWidth: 4,
-                        color: _purpleDark.withOpacity(.9),
+                        color: _purpleDark.withValues(alpha: .9),
                       ),
                     ],
                   ),
@@ -707,7 +707,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                       Polyline(
                         points: _manualRoute!.points,
                         strokeWidth: 4,
-                        color: _purpleDark.withOpacity(.9),
+                        color: _purpleDark.withValues(alpha: .9),
                       ),
                     ],
                   ),
@@ -990,16 +990,16 @@ class _ModeSegment extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.4),
+        color: Colors.white.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(999),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
         ],
-        border: Border.all(color: Colors.white.withOpacity(0.4)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.4)),
         backgroundBlendMode: BlendMode.overlay,
       ),
       child: Row(
@@ -1022,8 +1022,8 @@ class _ModeSegment extends StatelessWidget {
                             )
                             : LinearGradient(
                               colors: [
-                                Colors.white.withOpacity(0.8),
-                                Colors.white.withOpacity(0.6),
+                                Colors.white.withValues(alpha: 0.8),
+                                Colors.white.withValues(alpha: 0.6),
                               ],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
@@ -1033,14 +1033,14 @@ class _ModeSegment extends StatelessWidget {
                         selected
                             ? [
                               BoxShadow(
-                                color: _purple.withOpacity(0.35),
+                                color: _purple.withValues(alpha: 0.35),
                                 blurRadius: 12,
                                 offset: const Offset(0, 6),
                               ),
                             ]
                             : [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
+                                color: Colors.black.withValues(alpha: 0.05),
                                 blurRadius: 6,
                                 offset: const Offset(0, 3),
                               ),
@@ -1049,7 +1049,7 @@ class _ModeSegment extends StatelessWidget {
                       color:
                           selected
                               ? Colors.transparent
-                              : _purple.withOpacity(0.3),
+                              : _purple.withValues(alpha: 0.3),
                       width: 1.2,
                     ),
                   ),
@@ -1095,7 +1095,7 @@ class _HintPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(.95),
+        color: Colors.white.withValues(alpha: .95),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: Colors.black12),
       ),
@@ -1377,7 +1377,7 @@ class _InfoChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(.96),
+        color: Colors.white.withValues(alpha: .96),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.black12),
         boxShadow: const [
@@ -1437,8 +1437,8 @@ class _GlassFab extends StatelessWidget {
                 )
                 : LinearGradient(
                   colors: [
-                    Colors.white.withOpacity(0.9),
-                    Colors.white.withOpacity(0.7),
+                    Colors.white.withValues(alpha: 0.9),
+                    Colors.white.withValues(alpha: 0.7),
                   ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -1448,8 +1448,8 @@ class _GlassFab extends StatelessWidget {
           BoxShadow(
             color:
                 active
-                    ? _purple.withOpacity(0.35)
-                    : Colors.black.withOpacity(0.05),
+                    ? _purple.withValues(alpha: 0.35)
+                    : Colors.black.withValues(alpha: 0.05),
             blurRadius: active ? 12 : 8,
             offset: const Offset(0, 4),
           ),
@@ -1457,8 +1457,8 @@ class _GlassFab extends StatelessWidget {
         border: Border.all(
           color:
               active
-                  ? _purpleDark.withOpacity(0.4)
-                  : Colors.grey.withOpacity(0.15),
+                  ? _purpleDark.withValues(alpha: 0.4)
+                  : Colors.grey.withValues(alpha: 0.15),
           width: 1.2,
         ),
       ),

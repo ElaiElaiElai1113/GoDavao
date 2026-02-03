@@ -288,7 +288,7 @@ class VerificationSubmissionSheet extends StatelessWidget {
   static Widget _chip(String text, Color color) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
     decoration: BoxDecoration(
-      color: color.withOpacity(.12),
+      color: color.withValues(alpha: .12),
       borderRadius: BorderRadius.circular(99),
     ),
     child: Text(

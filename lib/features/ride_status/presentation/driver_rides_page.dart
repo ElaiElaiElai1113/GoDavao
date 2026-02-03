@@ -90,9 +90,9 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.amber.withOpacity(0.12),
+        color: Colors.amber.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.amber.withOpacity(0.35)),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.35)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -757,12 +757,12 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: baseColor.withOpacity(0.08),
+        color: baseColor.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: baseColor.withOpacity(0.18)),
+        border: Border.all(color: baseColor.withValues(alpha: 0.18)),
         boxShadow: [
           BoxShadow(
-            color: baseColor.withOpacity(0.06),
+            color: baseColor.withValues(alpha: 0.06),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -772,7 +772,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 14, color: baseColor.withOpacity(0.95)),
+            Icon(icon, size: 14, color: baseColor.withValues(alpha: 0.95)),
             const SizedBox(width: 6),
           ],
           Text(
@@ -780,7 +780,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             style: TextStyle(
               fontSize: 12.5,
               fontWeight: FontWeight.w700,
-              color: baseColor.withOpacity(0.95),
+              color: baseColor.withValues(alpha: 0.95),
               letterSpacing: 0.2,
             ),
           ),
@@ -805,7 +805,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: Colors.black12.withOpacity(0.06)),
+        side: BorderSide(color: Colors.black12.withValues(alpha: 0.06)),
       ),
       color: Colors.white,
       child: Padding(
@@ -1142,15 +1142,15 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         borderRadius: BorderRadius.circular(24),
         gradient: LinearGradient(
           colors: [
-            Colors.white.withOpacity(0.8),
-            Colors.white.withOpacity(0.6),
+            Colors.white.withValues(alpha: 0.8),
+            Colors.white.withValues(alpha: 0.6),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -1160,7 +1160,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         borderRadius: BorderRadius.circular(24),
         child: ExpansionTile(
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          collapsedBackgroundColor: Colors.white.withOpacity(0.9),
+          collapsedBackgroundColor: Colors.white.withValues(alpha: 0.9),
           backgroundColor: Colors.white,
           leading: const Icon(Icons.alt_route, color: _purple),
           title: Text(
@@ -1406,7 +1406,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         Polyline(
           points: [p, d],
           strokeWidth: 3,
-          color: _purpleDark.withOpacity(.85),
+          color: _purpleDark.withValues(alpha: .85),
           isDotted: true,
         ),
       );
@@ -1545,7 +1545,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         flexibleSpace: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [_purple.withOpacity(0.4), Colors.transparent],
+              colors: [_purple.withValues(alpha: 0.4), Colors.transparent],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
@@ -1557,7 +1557,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         leading: Padding(
           padding: const EdgeInsets.only(left: 12),
           child: CircleAvatar(
-            backgroundColor: Colors.white.withOpacity(0.9),
+            backgroundColor: Colors.white.withValues(alpha: 0.9),
             child: IconButton(
               icon: const Icon(
                 Icons.arrow_back_ios_new,
@@ -1596,12 +1596,12 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             child: Container(
               height: 52,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.75),
+                color: Colors.white.withValues(alpha: 0.75),
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: Colors.white.withOpacity(0.6)),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
+                    color: Colors.black.withValues(alpha: 0.06),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   ),
@@ -1620,7 +1620,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     borderRadius: BorderRadius.circular(999),
                     boxShadow: [
                       BoxShadow(
-                        color: _purple.withOpacity(0.25),
+                        color: _purple.withValues(alpha: 0.25),
                         blurRadius: 10,
                         offset: const Offset(0, 3),
                       ),
@@ -1742,7 +1742,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.95),
+        color: Colors.white.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: Colors.black12),
       ),
@@ -1825,7 +1825,7 @@ class _TabWithBadge extends StatelessWidget {
                 borderRadius: BorderRadius.circular(999),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.red.withOpacity(0.35),
+                    color: Colors.red.withValues(alpha: 0.35),
                     blurRadius: 8,
                     offset: const Offset(0, 3),
                   ),
@@ -1873,7 +1873,7 @@ class _MapThumb extends StatelessWidget {
         decoration: BoxDecoration(
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: Colors.black.withValues(alpha: 0.04),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -1892,7 +1892,7 @@ class _MapThumb extends StatelessWidget {
                   ),
                   initialCenter: bounds.center,
                   initialZoom: 13,
-                  bounds: bounds,
+                  initialCameraFit: CameraFit.bounds(bounds: bounds),
                 ),
                 children: [
                   TileLayer(
@@ -1905,7 +1905,7 @@ class _MapThumb extends StatelessWidget {
                       Polyline(
                         points: [pickup, destination],
                         strokeWidth: 3,
-                        color: purpleDark.withOpacity(.9),
+                        color: purpleDark.withValues(alpha: .9),
                       ),
                     ],
                   ),
@@ -2062,7 +2062,7 @@ class _LiveMapSheetState extends State<_LiveMapSheet> {
         Polyline(
           points: widget.routePolylinePoints,
           strokeWidth: 4,
-          color: widget.purple.withOpacity(0.9),
+          color: widget.purple.withValues(alpha: 0.9),
         ),
       ...widget.extraPolylines,
     ];
@@ -2105,7 +2105,7 @@ class _LiveMapSheetState extends State<_LiveMapSheet> {
               options: MapOptions(
                 initialCenter: widget.bounds.center,
                 initialZoom: 13,
-                bounds: widget.bounds,
+                initialCameraFit: CameraFit.bounds(bounds: widget.bounds),
               ),
               children: [
                 TileLayer(
@@ -2121,7 +2121,7 @@ class _LiveMapSheetState extends State<_LiveMapSheet> {
                     padding: const EdgeInsets.all(8),
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.92),
+                        color: Colors.white.withValues(alpha: 0.92),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: Colors.black12),
                       ),
@@ -2154,7 +2154,7 @@ class _LiveMapSheetState extends State<_LiveMapSheet> {
                   constraints: const BoxConstraints(maxHeight: 140),
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.9),
+                    color: Colors.white.withValues(alpha: 0.9),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: Colors.black12),
                   ),
@@ -2187,12 +2187,12 @@ class _LiveMapSheetState extends State<_LiveMapSheet> {
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.92),
+                  color: Colors.white.withValues(alpha: 0.92),
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(color: Colors.black12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.06),
+                      color: Colors.black.withValues(alpha: 0.06),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -2262,7 +2262,7 @@ class _LiveMapSheetState extends State<_LiveMapSheet> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.95),
+        color: Colors.white.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: Colors.black12),
       ),
@@ -2328,10 +2328,10 @@ class _MatchListTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.black12.withOpacity(0.06)),
+        border: Border.all(color: Colors.black12.withValues(alpha: 0.06)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 3),
           ),
@@ -2436,10 +2436,10 @@ class _MatchListTile extends StatelessWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: trailingStatusColor.withOpacity(0.08),
+                    color: trailingStatusColor.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(
-                      color: trailingStatusColor.withOpacity(0.18),
+                      color: trailingStatusColor.withValues(alpha: 0.18),
                     ),
                   ),
                   child: Text(

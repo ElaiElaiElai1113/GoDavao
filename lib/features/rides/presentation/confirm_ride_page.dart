@@ -153,7 +153,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       if (!mounted) return;
       setState(() {
         _routePolyline = d.toPolyline(
-          color: _purpleDark.withOpacity(.9),
+          color: _purpleDark.withValues(alpha: .9),
           width: 3,
         );
         _distanceKm = double.parse(km.toStringAsFixed(2));
@@ -167,7 +167,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       setState(() {
         _routePolyline = Polyline(
           points: [widget.pickup, widget.destination],
-          color: _purpleDark.withOpacity(.9),
+          color: _purpleDark.withValues(alpha: .9),
           strokeWidth: 3,
         );
         _distanceKm = double.parse(km.toStringAsFixed(2));
@@ -491,7 +491,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         flexibleSpace: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [_purple.withOpacity(0.4), Colors.transparent],
+              colors: [_purple.withValues(alpha: 0.4), Colors.transparent],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
@@ -503,7 +503,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         leading: Padding(
           padding: const EdgeInsets.only(left: 12),
           child: CircleAvatar(
-            backgroundColor: Colors.white.withOpacity(0.9),
+            backgroundColor: Colors.white.withValues(alpha: 0.9),
             child: IconButton(
               icon: const Icon(
                 Icons.arrow_back_ios_new,
@@ -534,7 +534,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 decoration: BoxDecoration(
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
+                      color: Colors.black.withValues(alpha: 0.1),
                       blurRadius: 12,
                       offset: Offset(0, 4),
                     ),
@@ -625,14 +625,14 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
           margin: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [_purple.withOpacity(0.9), _purple],
+              colors: [_purple.withValues(alpha: 0.9), _purple],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
-                color: _purple.withOpacity(0.4),
+                color: _purple.withValues(alpha: 0.4),
                 blurRadius: 10,
                 offset: Offset(0, 5),
               ),
@@ -686,7 +686,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 6,
             offset: Offset(0, 3),
           ),
@@ -740,7 +740,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.12),
+            color: Colors.black.withValues(alpha: 0.12),
             blurRadius: 6,
             offset: Offset(0, 3),
           ),
@@ -1013,7 +1013,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 6,
             offset: Offset(0, 3),
           ),
@@ -1068,7 +1068,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       children: [
         CircleAvatar(
           radius: 20,
-          backgroundColor: color.withOpacity(active ? 0.15 : 0.08),
+          backgroundColor: color.withValues(alpha: active ? 0.15 : 0.08),
           child: Icon(icon, color: color, size: 22),
         ),
         const SizedBox(height: 6),
@@ -1350,7 +1350,7 @@ class _Card extends StatelessWidget {
         border: Border.all(color: Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 12,
             offset: Offset(0, 6),
           ),
@@ -1449,7 +1449,7 @@ class _InfoRow extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: 18,
-            backgroundColor: const Color(0xFF6A27F7).withOpacity(0.1),
+            backgroundColor: const Color(0xFF6A27F7).withValues(alpha: 0.1),
             child: Icon(icon, color: const Color(0xFF6A27F7)),
           ),
           const SizedBox(width: 12),

@@ -95,7 +95,7 @@ class _PrivacyDisclaimerPageState extends State<PrivacyDisclaimerPage> {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: _purple.withOpacity(.25),
+                    color: _purple.withValues(alpha: .25),
                     blurRadius: 18,
                     offset: const Offset(0, 8),
                   ),
@@ -148,11 +148,11 @@ class _PrivacyDisclaimerPageState extends State<PrivacyDisclaimerPage> {
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: Colors.black12.withOpacity(.06),
+                        color: Colors.black12.withValues(alpha: .06),
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black12.withOpacity(.06),
+                          color: Colors.black12.withValues(alpha: .06),
                           blurRadius: 12,
                           offset: const Offset(0, 4),
                         ),

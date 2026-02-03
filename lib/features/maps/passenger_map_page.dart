@@ -601,7 +601,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
         flexibleSpace: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [_purple.withOpacity(0.4), Colors.transparent],
+              colors: [_purple.withValues(alpha: 0.4), Colors.transparent],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
@@ -613,7 +613,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
         leading: Padding(
           padding: const EdgeInsets.only(left: 12),
           child: CircleAvatar(
-            backgroundColor: Colors.white.withOpacity(0.9),
+            backgroundColor: Colors.white.withValues(alpha: 0.9),
             child: IconButton(
               icon: const Icon(
                 Icons.arrow_back_ios_new,
@@ -685,7 +685,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                         setState(() => _showAllRoutes = v);
                         await _refreshCandidates();
                       },
-                      activeColor: _purple,
+                      activeTrackColor: _purple,
                     ),
                     const SizedBox(width: 6),
                     Expanded(
@@ -709,8 +709,8 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
             child: FlutterMap(
               mapController: _map,
               options: MapOptions(
-                center: const LatLng(7.19, 125.45),
-                zoom: 12.5,
+                initialCenter: const LatLng(7.19, 125.45),
+                initialZoom: 12.5,
                 onMapReady: () {
                   if (!mounted) return;
                   setState(() => _mapReady = true);
@@ -738,7 +738,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                       Polyline(
                         points: _selectedRoutePoints,
                         strokeWidth: 3,
-                        color: Colors.black.withOpacity(0.6),
+                        color: Colors.black.withValues(alpha: 0.6),
                       ),
                     ],
                   ),
@@ -763,8 +763,8 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                         point: _me!,
                         radius: (_meAccuracy ?? 0),
                         useRadiusInMeter: true,
-                        color: Colors.blue.withOpacity(0.12),
-                        borderColor: Colors.blue.withOpacity(0.25),
+                        color: Colors.blue.withValues(alpha: 0.12),
+                        borderColor: Colors.blue.withValues(alpha: 0.25),
                         borderStrokeWidth: 2,
                       ),
                     ],
@@ -1087,7 +1087,7 @@ class _SearchBarState extends State<_SearchBar> {
         borderRadius: BorderRadius.circular(999),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 10,
             offset: const Offset(0, 3),
           ),
@@ -1277,7 +1277,7 @@ class BottomCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
+                color: Colors.black.withValues(alpha: 0.1),
                 blurRadius: 12,
                 offset: const Offset(0, -4),
               ),
