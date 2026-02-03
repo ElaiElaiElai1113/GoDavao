@@ -44,7 +44,7 @@ class _AdminFeedbackPageState extends State<AdminFeedbackPage> {
       List<Map<String, dynamic>> enriched = [];
 
       for (final rating in ratingsResponse) {
-        final userId = rating['ratee_user_id'];
+        final userId = rating['ratee_user_id'] as String?;
         String name = 'Unknown User';
 
         if (userId != null) {
@@ -56,7 +56,7 @@ class _AdminFeedbackPageState extends State<AdminFeedbackPage> {
                   .maybeSingle();
 
           if (userResp != null && userResp['name'] != null) {
-            name = userResp['name'];
+            name = userResp['name'] as String;
           }
         }
 
@@ -95,9 +95,9 @@ class _AdminFeedbackPageState extends State<AdminFeedbackPage> {
                   itemCount: _ratings.length,
                   itemBuilder: (context, i) {
                     final rating = _ratings[i];
-                    final userName = rating['user_name'] ?? 'Unknown User';
-                    final score = (rating['score'] ?? 0).toInt();
-                    final comment = rating['comment'] ?? '';
+                    final userName = rating['user_name'] as String? ?? 'Unknown User';
+                    final score = (rating['score'] as num?)?.toInt() ?? 0;
+                    final comment = (rating['comment'] as String?) ?? '';
                     final when = rating['created_at'];
 
                     return Container(

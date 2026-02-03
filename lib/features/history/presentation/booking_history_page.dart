@@ -308,7 +308,7 @@ class _BookingHistoryPageState extends State<BookingHistoryPage> {
                             if (_role == 'driver') {
                               Navigator.push(
                                 context,
-                                MaterialPageRoute(
+                                MaterialPageRoute<void>(
                                   builder:
                                       (_) =>
                                           DriverRideStatusPage(rideId: rideId),
@@ -317,7 +317,7 @@ class _BookingHistoryPageState extends State<BookingHistoryPage> {
                             } else {
                               Navigator.push(
                                 context,
-                                MaterialPageRoute(
+                                MaterialPageRoute<void>(
                                   builder:
                                       (_) => PassengerRideStatusPage(
                                         rideId: rideId,

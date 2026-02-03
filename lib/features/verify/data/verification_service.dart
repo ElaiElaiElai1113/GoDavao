@@ -2,8 +2,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:godavao/features/verify/data/verification_service.dart';
 
 /// Canonical, app-level verification states.
 /// (We normalize any DB string to one of these.)
@@ -170,15 +168,15 @@ class VerificationService {
       'role': roleNorm,
       'status': 'pending',
       'id_type': idType, // keep the human-readable value for admin filters
-      'id_front_key': keepOr(idFrontKey, existing?['id_front_key']),
-      'id_back_key': keepOr(idBackKey, existing?['id_back_key']),
-      'selfie_key': keepOr(selfieKey, existing?['selfie_key']),
+      'id_front_key': keepOr(idFrontKey, existing?['id_front_key'] as String?),
+      'id_back_key': keepOr(idBackKey, existing?['id_back_key'] as String?),
+      'selfie_key': keepOr(selfieKey, existing?['selfie_key'] as String?),
       'driver_license_key':
           roleNorm == 'driver'
-              ? keepOr(licenseKey, existing?['driver_license_key'])
+              ? keepOr(licenseKey, existing?['driver_license_key'] as String?)
               : null,
       'orcr_key':
-          roleNorm == 'driver' ? keepOr(orcrKey, existing?['orcr_key']) : null,
+          roleNorm == 'driver' ? keepOr(orcrKey, existing?['orcr_key'] as String?) : null,
       'created_at': DateTime.now().toIso8601String(),
     };
 

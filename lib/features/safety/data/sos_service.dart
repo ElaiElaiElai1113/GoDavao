@@ -41,7 +41,7 @@ class SosService {
 
       final rows = <Map<String, dynamic>>[];
       for (final c in (contacts as List)) {
-        final m = Map<String, dynamic>.from(c);
+        final m = Map<String, dynamic>.from(c as Map);
         final wantsSms = (m['notify_by_sms'] as bool?) ?? true;
         final phone = (m['phone'] as String?)?.trim();
 

@@ -235,7 +235,7 @@ class _VerifyIdentitySheetState extends State<VerifyIdentitySheet> {
 
               const SizedBox(height: 16),
               DropdownButtonFormField<IdType>(
-                value: _selected,
+                initialValue: _selected,
                 decoration: const InputDecoration(
                   labelText: 'Select ID Type',
                   border: OutlineInputBorder(),

@@ -165,7 +165,7 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
 
   // Friendly bottom sheet to explain the block
   void _showBlockedSheet() {
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       shape: const RoundedRectangleBorder(
@@ -278,7 +278,7 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
         // Call the Cancel + Notify RPC
         final res =
             await _sb
-                .rpc(
+                .rpc<List<Map<String, dynamic>>>(
                   'driver_cancel_route',
                   params: {
                     'p_route': widget.routeId,
@@ -289,8 +289,8 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
 
         // Count how many were cancelled
         int cancelledCount = 0;
-        if (res is List && res.isNotEmpty) {
-          final map = res.first as Map<String, dynamic>;
+        if (res.isNotEmpty) {
+          final map = res.first;
           cancelledCount = (map['cancelled_count'] as int?) ?? 0;
         }
 
@@ -372,7 +372,7 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
   Future<void> _openGeometryEditor() async {
     final updated = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(
+      MaterialPageRoute<bool>(
         builder: (_) => DriverRouteGeometryPage(routeId: widget.routeId),
       ),
     );

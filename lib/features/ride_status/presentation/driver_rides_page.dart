@@ -573,7 +573,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
   /* ───────────── Per-match helpers ───────────── */
 
   Future<void> _acceptViaRpc(String matchId, String rideRequestId) async {
-    await _supabase.rpc('accept_match', params: {'p_match_id': matchId});
+    await _supabase.rpc<void>('accept_match', params: {'p_match_id': matchId});
     await _loadPaymentIntents([rideRequestId]);
   }
 
@@ -855,7 +855,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     const SizedBox(width: 8),
                     GestureDetector(
                       onTap: () {
-                        showModalBottomSheet(
+                        showModalBottomSheet<void>(
                           context: context,
                           isScrollControlled: true,
                           shape: const RoundedRectangleBorder(
@@ -913,7 +913,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                   onPressed: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(
+                      MaterialPageRoute<void>(
                         builder: (_) => ChatPage(matchId: m.matchId),
                       ),
                     );
@@ -937,7 +937,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(
+                        MaterialPageRoute<void>(
                           builder:
                               (_) =>
                                   DriverRideStatusPage(rideId: m.rideRequestId),
@@ -1075,7 +1075,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     ? () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(
+                        MaterialPageRoute<void>(
                           builder:
                               (_) =>
                                   DriverRideStatusPage(rideId: m.rideRequestId),
@@ -1086,7 +1086,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             onChat: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => ChatPage(matchId: m.matchId)),
+                MaterialPageRoute<void>(builder: (_) => ChatPage(matchId: m.matchId)),
               );
             },
             buildPill:
@@ -1109,7 +1109,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                 m.passengerId == null
                     ? null
                     : () {
-                      showModalBottomSheet(
+                      showModalBottomSheet<void>(
                         context: context,
                         isScrollControlled: true,
                         shape: const RoundedRectangleBorder(
@@ -1317,7 +1317,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     }
 
     if (!mounted) return;
-    await showModalBottomSheet(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder:
@@ -1427,7 +1427,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
 
       final allowPassengerLive = single.status == 'en_route';
 
-      showModalBottomSheet(
+      showModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.white,
@@ -1511,7 +1511,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       if (boundsPoints.isEmpty) return;
       final bounds = LatLngBounds.fromPoints(boundsPoints);
 
-      showModalBottomSheet(
+      showModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.white,
@@ -1581,7 +1581,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             icon: const Icon(Icons.verified_user),
             tooltip: 'Get Verified',
             onPressed: () {
-              showModalBottomSheet(
+              showModalBottomSheet<void>(
                 context: context,
                 isScrollControlled: true,
                 builder: (_) => const VerifyIdentitySheet(role: 'driver'),

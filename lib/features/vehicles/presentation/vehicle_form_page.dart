@@ -111,7 +111,7 @@ class _VehicleFormState extends State<VehicleForm> {
         crNumber: _crNumber.text.trim().isEmpty ? null : _crNumber.text.trim(),
       );
       if (!mounted) return;
-      await showDialog(
+      await showDialog<void>(
         context: context,
         builder:
             (_) => AlertDialog(
@@ -130,7 +130,7 @@ class _VehicleFormState extends State<VehicleForm> {
       if (!mounted) return;
       Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (_) => const DashboardPage()),
+        MaterialPageRoute<void>(builder: (_) => const DashboardPage()),
         (_) => false,
       );
     } on PostgrestException catch (e) {
@@ -189,7 +189,7 @@ class _VehicleFormState extends State<VehicleForm> {
       await _svc.submitForVerificationBoth(vehicleId);
 
       if (!mounted) return;
-      await showDialog(
+      await showDialog<void>(
         context: context,
         builder:
             (_) => AlertDialog(
@@ -208,7 +208,7 @@ class _VehicleFormState extends State<VehicleForm> {
       if (!mounted) return;
       Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (_) => const DashboardPage()),
+        MaterialPageRoute<void>(builder: (_) => const DashboardPage()),
         (_) => false,
       );
     } on PostgrestException catch (e) {

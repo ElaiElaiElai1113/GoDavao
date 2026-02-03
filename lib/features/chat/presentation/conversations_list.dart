@@ -56,7 +56,7 @@ class _ConversationsListState extends State<ConversationsList> {
             chatSvc.setOpenChat(m['id'] as String);
             Navigator.push(
               context,
-              MaterialPageRoute(
+              MaterialPageRoute<void>(
                 builder: (_) => ChatPage(matchId: m['id'] as String),
               ),
             );

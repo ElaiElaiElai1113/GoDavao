@@ -572,7 +572,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     if (_pickup == null || _dropoff == null || _selectedRoute == null) return;
     Navigator.push(
       context,
-      MaterialPageRoute(
+      MaterialPageRoute<void>(
         builder:
             (_) => ConfirmRidePage(
               pickup: _pickup!.point,

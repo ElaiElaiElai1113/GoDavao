@@ -26,7 +26,7 @@ class _PrivacyDisclaimerPageState extends State<PrivacyDisclaimerPage> {
   }
 
   void _showFullText(String title, String body) {
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,

@@ -11,7 +11,7 @@ class SafetyService {
         .select('*')
         .eq('user_id', uid)
         .order('created_at', ascending: false);
-    return (rows as List).map((e) => Map<String, dynamic>.from(e)).toList();
+    return (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
   Future<void> addContact({

@@ -110,7 +110,7 @@ final class ErrorHandler {
     String? title,
     VoidCallback? onRetry,
   }) {
-    return showDialog(
+    return showDialog<void>(
       context: context,
       builder: (context) => ErrorDialog(
         title: title ?? 'Error',

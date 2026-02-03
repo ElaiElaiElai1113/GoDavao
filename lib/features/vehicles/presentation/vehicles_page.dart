@@ -44,7 +44,7 @@ class _VehiclesPageState extends State<VehiclesPage> {
   }
 
   Future<void> _addVehicle() async {
-    await showModalBottomSheet(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -802,8 +802,8 @@ class _FullScreenImageViewerState extends State<_FullScreenImageViewer> {
           final matrix =
               _controller.value.isIdentity()
                   ? (Matrix4.identity()
-                    ..translate(-pos.dx * (zoom - 1), -pos.dy * (zoom - 1))
-                    ..scale(zoom))
+                    ..leftTranslate(-pos.dx * (zoom - 1), -pos.dy * (zoom - 1))
+                    ..scale(zoom, zoom))
                   : Matrix4.identity();
 
           _controller.value = matrix;
@@ -1282,7 +1282,7 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
                   onChanged: (v) => setState(() => _isDefault = v),
                   title: const Text('Set as default'),
                   contentPadding: EdgeInsets.zero,
-                  activeColor: _purple,
+                  activeTrackColor: _purple,
                 ),
                 const SizedBox(height: 8),
 

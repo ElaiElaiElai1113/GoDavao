@@ -108,7 +108,7 @@ class HowItWorksPage extends StatelessWidget {
                   onPressed: () {
                     Navigator.pushReplacement(
                       context,
-                      MaterialPageRoute(builder: (_) => const DashboardPage()),
+                      MaterialPageRoute<void>(builder: (_) => const DashboardPage()),
                     );
                   },
                   icon: const Icon(

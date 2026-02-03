@@ -233,12 +233,12 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
     try {
       final res =
           await _sb
-              .rpc(
+              .rpc<Map<String, dynamic>>(
                 'carpool_seats_for_route',
                 params: {'p_route_id': widget.routeId},
               )
               .single();
-      final v = (res as Map).values.first;
+      final v = res.values.first;
       seatsExisting = (v is num) ? v.toInt() : int.tryParse('$v') ?? 0;
     } catch (_) {
       seatsExisting = 0;
@@ -368,7 +368,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       final rideReqId = (req['id'] as String?) ?? '';
       if (rideReqId.isEmpty) throw 'Failed to create ride request';
 
-      await _sb.rpc(
+      await _sb.rpc<void>(
         'allocate_seats',
         params: {
           'p_driver_route_id': widget.routeId,
@@ -389,7 +389,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       await _ensureRideMatch(rideReqId);
 
       try {
-        await _sb.rpc(
+        await _sb.rpc<void>(
           'reprice_carpool_for_route',
           params: {'p_route_id': widget.routeId},
         );
@@ -787,7 +787,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
 
     return InkWell(
       onTap: () {
-        showModalBottomSheet(
+        showModalBottomSheet<void>(
           context: context,
           isScrollControlled: true,
           shape: const RoundedRectangleBorder(

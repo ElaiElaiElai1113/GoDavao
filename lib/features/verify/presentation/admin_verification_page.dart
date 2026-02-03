@@ -234,7 +234,7 @@ class _AdminVerificationPageState extends State<AdminVerificationPage>
                 onReject: _reject,
                 roleColor: _roleColor,
                 format: _fmt,
-                displayName: (r) => r['name'] ?? 'Unknown',
+                displayName: (r) => r['name'] as String? ?? 'Unknown',
                 filter: _filter,
               ),
               _VerificationTab.static(
@@ -245,7 +245,7 @@ class _AdminVerificationPageState extends State<AdminVerificationPage>
                 onRefresh: () => _loadHistory('approved'),
                 format: _fmt,
                 roleColor: _roleColor,
-                displayName: (r) => r['name'] ?? 'Unknown',
+                displayName: (r) => r['name'] as String? ?? 'Unknown',
               ),
               _VerificationTab.static(
                 loading: _loadingRejected,
@@ -255,7 +255,7 @@ class _AdminVerificationPageState extends State<AdminVerificationPage>
                 onRefresh: () => _loadHistory('rejected'),
                 format: _fmt,
                 roleColor: _roleColor,
-                displayName: (r) => r['name'] ?? 'Unknown',
+                displayName: (r) => r['name'] as String? ?? 'Unknown',
               ),
             ],
           ),
@@ -419,7 +419,7 @@ class _VerificationCard extends StatelessWidget {
                       ),
                       if (row['phone'] != null && row['phone'] != '—')
                         Text(
-                          row['phone'],
+                          row['phone'] as String,
                           style: const TextStyle(
                             fontSize: 13,
                             color: Colors.black54,
@@ -432,7 +432,7 @@ class _VerificationCard extends StatelessWidget {
                 _Tag(role.toUpperCase(), roleColor(role)),
                 if (color != null) ...[
                   const SizedBox(width: 6),
-                  _Tag(row['verification_status'] ?? '', color!),
+                  _Tag(row['verification_status'] as String? ?? '', color!),
                 ],
               ],
             ),

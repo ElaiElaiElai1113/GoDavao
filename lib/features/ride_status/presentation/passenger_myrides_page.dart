@@ -66,7 +66,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
     }
 
     try {
-      final rows = await sb.rpc('passenger_rides_for_user').select();
+      final rows = await sb.rpc<List<Map<String, dynamic>>>('passenger_rides_for_user').select();
       final list =
           (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
       _applyRidesToState(list);
@@ -286,7 +286,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
     if (_working) return;
     setState(() => _working = true);
     try {
-      await sb.rpc(
+      await sb.rpc<void>(
         'cancel_ride',
         params: {'p_ride_id': rideId, 'p_reason': reason},
       );
@@ -598,7 +598,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                   onPressed: () async {
                     final me = sb.auth.currentUser?.id;
                     if (me == null) return;
-                    await showModalBottomSheet(
+                    await showModalBottomSheet<void>(
                       context: context,
                       isScrollControlled: true,
                       builder:
@@ -623,7 +623,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                 onPressed: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
+                    MaterialPageRoute<void>(
                       builder: (_) => PassengerRideStatusPage(rideId: rideId),
                     ),
                   );

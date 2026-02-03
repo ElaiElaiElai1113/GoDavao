@@ -192,7 +192,7 @@ class VerificationSubmissionSheet extends StatelessWidget {
                             onOpenViewer: (index) {
                               Navigator.push(
                                 context,
-                                MaterialPageRoute(
+                                MaterialPageRoute<void>(
                                   builder:
                                       (_) => _ImageGalleryPage(
                                         images: imageDocs,
@@ -243,7 +243,7 @@ class VerificationSubmissionSheet extends StatelessWidget {
                                       ),
                                       trailing: const Text('Open'),
                                       onTap: () {
-                                        showDialog(
+                                        showDialog<void>(
                                           context: context,
                                           builder:
                                               (_) => AlertDialog(

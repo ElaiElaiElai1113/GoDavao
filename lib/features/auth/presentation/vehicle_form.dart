@@ -118,7 +118,7 @@ class _VehicleFormState extends State<VehicleForm> {
 
       if (!mounted) return;
       // 3) Done → show next steps
-      await showDialog(
+      await showDialog<void>(
         context: context,
         builder:
             (_) => AlertDialog(
@@ -138,7 +138,7 @@ class _VehicleFormState extends State<VehicleForm> {
       if (!mounted) return;
       Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (_) => const DashboardPage()),
+        MaterialPageRoute<void>(builder: (_) => const DashboardPage()),
         (_) => false,
       );
     } on PostgrestException catch (e) {

@@ -165,7 +165,7 @@ class AppDrawer extends StatelessWidget {
                             Navigator.pop(context);
                             Navigator.push(
                               context,
-                              MaterialPageRoute(
+                              MaterialPageRoute<void>(
                                 builder: (_) => const ProfilePage(),
                               ),
                             );
@@ -179,7 +179,7 @@ class AppDrawer extends StatelessWidget {
                             Navigator.pop(context);
                             Navigator.push(
                               context,
-                              MaterialPageRoute(
+                              MaterialPageRoute<void>(
                                 builder: (_) => const HowItWorksPage(),
                               ),
                             );
@@ -193,7 +193,7 @@ class AppDrawer extends StatelessWidget {
                             Navigator.pop(context);
                             Navigator.push(
                               context,
-                              MaterialPageRoute(
+                              MaterialPageRoute<void>(
                                 builder: (_) => const BookingHistoryPage(),
                               ),
                             );
@@ -220,7 +220,7 @@ class AppDrawer extends StatelessWidget {
                           Navigator.pop(context);
                           Navigator.pushReplacement(
                             context,
-                            MaterialPageRoute(
+                            MaterialPageRoute<void>(
                               builder: (_) => const DashboardPage(),
                             ),
                           );
@@ -234,7 +234,7 @@ class AppDrawer extends StatelessWidget {
                           Navigator.pop(context);
                           Navigator.push(
                             context,
-                            MaterialPageRoute(
+                            MaterialPageRoute<void>(
                               builder: (_) => const BookingHistoryPage(),
                             ),
                           );
@@ -252,7 +252,7 @@ class AppDrawer extends StatelessWidget {
                           Navigator.pop(context);
                           Navigator.push(
                             context,
-                            MaterialPageRoute(
+                            MaterialPageRoute<void>(
                               builder: (_) => const HowItWorksPage(),
                             ),
                           );
@@ -266,7 +266,7 @@ class AppDrawer extends StatelessWidget {
                           Navigator.pop(context);
                           Navigator.push(
                             context,
-                            MaterialPageRoute(
+                            MaterialPageRoute<void>(
                               builder: (_) => const ProfilePage(),
                             ),
                           );
@@ -281,7 +281,7 @@ class AppDrawer extends StatelessWidget {
                           subtitle: 'See how other users rated you',
                           onTap: () {
                             Navigator.pop(context);
-                            showModalBottomSheet(
+                            showModalBottomSheet<void>(
                               context: context,
                               isScrollControlled: true,
                               shape: const RoundedRectangleBorder(
@@ -309,7 +309,7 @@ class AppDrawer extends StatelessWidget {
                             Navigator.pop(context);
                             Navigator.push(
                               context,
-                              MaterialPageRoute(
+                              MaterialPageRoute<void>(
                                 builder: (_) => const AdminPanelPage(),
                               ),
                             );
@@ -351,7 +351,7 @@ class AppDrawer extends StatelessWidget {
                       } catch (_) {}
                       if (!context.mounted) return;
                       nav.pushAndRemoveUntil(
-                        MaterialPageRoute(builder: (_) => const AuthPage()),
+                        MaterialPageRoute<void>(builder: (_) => const AuthPage()),
                         (route) => false,
                       );
                     },

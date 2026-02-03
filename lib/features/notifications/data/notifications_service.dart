@@ -14,12 +14,12 @@ class NotificationService {
 
   /// Mark a single notification as read (uses your RPC)
   Future<void> markRead(String id) async {
-    await _sb.rpc('mark_notification_read', params: {'p_id': id});
+    await _sb.rpc<void>('mark_notification_read', params: {'p_id': id});
   }
 
   /// Mark all as read (uses your RPC)
   Future<void> markAllRead() async {
-    await _sb.rpc('mark_all_notifications_read');
+    await _sb.rpc<void>('mark_all_notifications_read');
   }
 
   /// Get unread count (SDK-safe: no FetchOptions/count API used)

@@ -60,7 +60,7 @@ class RideService {
     required String rideRequestId,
     required int seatsRequested,
   }) async {
-    final res = await _sb.rpc(
+    return await _sb.rpc<Map<String, dynamic>>(
       'allocate_seats',
       params: {
         'p_driver_route_id': driverRouteId,
@@ -68,9 +68,6 @@ class RideService {
         'p_seats_requested': seatsRequested,
       },
     );
-
-    if (res == null) throw PostgrestException(message: 'Allocation failed');
-    return (res as Map).cast<String, dynamic>();
   }
 
   // ---------- PASSENGER STATUS VIEW ----------

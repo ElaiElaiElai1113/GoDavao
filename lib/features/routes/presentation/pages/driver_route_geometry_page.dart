@@ -312,7 +312,7 @@ class _DriverRouteGeometryPageState extends State<DriverRouteGeometryPage> {
       _debouncedReverseGeocode();
     } else {
       // Manual quick actions
-      showModalBottomSheet(
+      showModalBottomSheet<void>(
         context: context,
         builder:
             (_) => SafeArea(

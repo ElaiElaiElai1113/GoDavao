@@ -26,7 +26,7 @@ class _AuthGateState extends State<AuthGate> {
     _sub = Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
       if (data.event == AuthChangeEvent.passwordRecovery) {
         final ctx = _nav.context;
-        await showModalBottomSheet(
+        await showModalBottomSheet<void>(
           context: ctx,
           isScrollControlled: true,
           useSafeArea: true,

@@ -382,7 +382,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
       });
       _clearFare();
     } else {
-      showModalBottomSheet(
+      showModalBottomSheet<void>(
         context: context,
         builder:
             (_) => SafeArea(
@@ -653,8 +653,8 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
             child: FlutterMap(
               mapController: _map,
               options: MapOptions(
-                center: center,
-                zoom: 13,
+                initialCenter: center,
+                initialZoom: 13,
                 onTap: _onMapTap,
                 onLongPress: _onMapLongPress,
               ),
@@ -903,7 +903,7 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
             onAddVehicle: () async {
               await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const VehicleForm()),
+                MaterialPageRoute<void>(builder: (_) => const VehicleForm()),
               );
               await _checkHasVehicles();
             },

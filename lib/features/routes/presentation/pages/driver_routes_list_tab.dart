@@ -109,7 +109,7 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
       final blocked = await _fetchBlockedRouteIds();
 
       await _ingest(
-        (rows as List).map((e) => Map<String, dynamic>.from(e)).toList(),
+        (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList(),
         blockedRouteIds: blocked,
       );
     } catch (e) {
@@ -287,7 +287,7 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
               children: [
                 Expanded(
                   child: Text(
-                    (r['name'] as String?)?.trim().isNotEmpty == true ? r['name'] : 'Route ${id.substring(0, 8)}',
+                    (r['name'] as String?)?.trim().isNotEmpty == true ? r['name'] as String : 'Route ${id.substring(0, 8)}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Colors.black87),
@@ -352,7 +352,7 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
                     onPressed: () async {
                       final updated = await Navigator.push<bool>(
                         context,
-                        MaterialPageRoute(builder: (_) => DriverRouteEditPage(routeId: id)),
+                        MaterialPageRoute<bool>(builder: (_) => DriverRouteEditPage(routeId: id)),
                       );
                       if (updated == true && mounted) {
                         await _bootstrap();

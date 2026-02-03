@@ -58,7 +58,7 @@ Future<void> maybePromptForRating({
           as String;
 
   if (!context.mounted) return;
-  await showModalBottomSheet(
+  await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     builder:

@@ -24,7 +24,7 @@ class NotificationBell extends StatelessWidget {
             IconButton(
               icon: const Icon(Icons.notifications),
               onPressed: () {
-                showModalBottomSheet(
+                showModalBottomSheet<void>(
                   context: context,
                   showDragHandle: true,
                   shape: const RoundedRectangleBorder(

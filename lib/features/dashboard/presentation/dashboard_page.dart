@@ -101,7 +101,7 @@ class _DashboardPageState extends State<DashboardPage> {
     if (!mounted) return;
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(builder: (_) => const AuthPage()),
+      MaterialPageRoute<void>(builder: (_) => const AuthPage()),
       (_) => false,
     );
     return;
@@ -236,7 +236,7 @@ class _DashboardPageState extends State<DashboardPage> {
   try {
     // Pull current-user rides exactly like PassengerMyRidesPage
     final rows = await _sb
-        .rpc('passenger_rides_for_user')
+        .rpc<List<Map<String, dynamic>>>('passenger_rides_for_user')
         .select('id, effective_status');
 
     final list = (rows as List).cast<Map>();
@@ -393,7 +393,7 @@ class _DashboardPageState extends State<DashboardPage> {
     if (!mounted) return;
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(builder: (_) => const AuthPage()),
+      MaterialPageRoute<void>(builder: (_) => const AuthPage()),
       (_) => false,
     );
   }
@@ -455,7 +455,7 @@ class _DashboardPageState extends State<DashboardPage> {
                               role: role,
                               submittedAt: _verifSubmittedAt,
                               onReviewTap: () {
-                                showModalBottomSheet(
+                                showModalBottomSheet<void>(
                                   context: context,
                                   isScrollControlled: true,
                                   useSafeArea: true,
@@ -502,7 +502,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                   ElevatedButton(
                                     key: _verifyBtnKey, // tutorial target
                                     onPressed: () {
-                                      showModalBottomSheet(
+                                      showModalBottomSheet<void>(
                                         context: context,
                                         isScrollControlled: true,
                                         useSafeArea: true,
@@ -563,7 +563,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                     onPressed: () {
                                       Navigator.push(
                                         context,
-                                        MaterialPageRoute(
+                                        MaterialPageRoute<void>(
                                           builder:
                                               (_) =>
                                                   const TrustedContactsPage(),
@@ -612,7 +612,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                             onTap:
                                                 () => Navigator.push(
                                                   context,
-                                                  MaterialPageRoute(
+                                                  MaterialPageRoute<void>(
                                                     builder:
                                                         (_) =>
                                                             const VehiclesPage(),
@@ -627,7 +627,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                             onTap:
                                                 () => Navigator.push(
                                                   context,
-                                                  MaterialPageRoute(
+                                                  MaterialPageRoute<void>(
                                                     builder:
                                                         (_) =>
                                                             const DriverRoutePage(),
@@ -641,7 +641,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                             onTap: () {
                                               Navigator.push(
                                                 context,
-                                                MaterialPageRoute(
+                                                MaterialPageRoute<void>(
                                                   builder:
                                                       (_) =>
                                                           const DriverRoutesListTab(),
@@ -657,7 +657,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                             onTap:
                                                 () => Navigator.push(
                                                   context,
-                                                  MaterialPageRoute(
+                                                  MaterialPageRoute<void>(
                                                     builder:
                                                         (_) =>
                                                             const DriverRidesPage(),
@@ -672,7 +672,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                             onTap: () {
                                               Navigator.push(
                                                 context,
-                                                MaterialPageRoute(
+                                                MaterialPageRoute<void>(
                                                   builder:
                                                       (_) =>
                                                           const TrustedContactsPage(),
@@ -694,7 +694,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                             onTap:
                                                 () => Navigator.push(
                                                   context,
-                                                  MaterialPageRoute(
+                                                  MaterialPageRoute<void>(
                                                     builder:
                                                         (_) =>
                                                             const VehiclesPage(),
@@ -709,7 +709,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                             onTap: () {
                                               Navigator.push(
                                                 context,
-                                                MaterialPageRoute(
+                                                MaterialPageRoute<void>(
                                                   builder:
                                                       (_) =>
                                                           const TrustedContactsPage(),
@@ -730,7 +730,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                         onTap:
                                             () => Navigator.push(
                                               context,
-                                              MaterialPageRoute(
+                                              MaterialPageRoute<void>(
                                                 builder:
                                                     (_) =>
                                                         const PassengerMapPage(),
@@ -745,7 +745,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                         onTap:
                                             () => Navigator.push(
                                               context,
-                                              MaterialPageRoute(
+                                              MaterialPageRoute<void>(
                                                 builder:
                                                     (_) =>
                                                         const PassengerMyRidesPage(),
@@ -759,7 +759,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                         onTap:
                                             () => Navigator.push(
                                               context,
-                                              MaterialPageRoute(
+                                              MaterialPageRoute<void>(
                                                 builder:
                                                     (_) => const ProfilePage(),
                                               ),
@@ -773,7 +773,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                         onTap: () {
                                           Navigator.push(
                                             context,
-                                            MaterialPageRoute(
+                                            MaterialPageRoute<void>(
                                               builder:
                                                   (_) =>
                                                       const TrustedContactsPage(),
@@ -1278,7 +1278,7 @@ class _ErrorState extends StatelessWidget {
           onPressed: () {
             Navigator.pushAndRemoveUntil(
               context,
-              MaterialPageRoute(builder: (_) => const AuthPage()),
+              MaterialPageRoute<void>(builder: (_) => const AuthPage()),
               (_) => false,
             );
           },

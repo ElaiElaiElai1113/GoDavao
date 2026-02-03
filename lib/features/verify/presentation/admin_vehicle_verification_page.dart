@@ -161,7 +161,7 @@ class _AdminVehicleVerificationPageState
     );
   }
 
-  void _openPreview(Map<String, dynamic> v) => showModalBottomSheet(
+  void _openPreview(Map<String, dynamic> v) => showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
@@ -836,7 +836,7 @@ class _VehiclePreviewSheetState extends State<_VehiclePreviewSheet> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    v['review_notes'] ?? '',
+                    v['review_notes'] as String? ?? '',
                     style: const TextStyle(fontSize: 12.5),
                   ),
                 ],

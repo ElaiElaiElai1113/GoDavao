@@ -437,7 +437,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
 
     if (!mounted) return;
     _ratingPromptShown = true;
-    await showModalBottomSheet(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder:
@@ -456,7 +456,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
   // ===================== Safety =====================
   void _openSos() {
     HapticFeedback.selectionClick();
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (_) => SosSheet(rideId: widget.rideId),
@@ -842,7 +842,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                           TextButton(
                             onPressed: () {
                               HapticFeedback.selectionClick();
-                              showModalBottomSheet(
+                              showModalBottomSheet<void>(
                                 context: context,
                                 isScrollControlled: true,
                                 builder:
@@ -941,7 +941,7 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                               HapticFeedback.selectionClick();
                               Navigator.push(
                                 context,
-                                MaterialPageRoute(
+                                MaterialPageRoute<void>(
                                   builder: (_) => ChatPage(matchId: _matchId!),
                                 ),
                               );

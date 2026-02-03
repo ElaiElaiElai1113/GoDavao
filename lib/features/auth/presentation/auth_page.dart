@@ -158,7 +158,7 @@ class _AuthPageState extends State<AuthPage> {
   }
 
   Future<void> _promptVerify(String role) async {
-    await showModalBottomSheet(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -205,7 +205,7 @@ class _AuthPageState extends State<AuthPage> {
           if (!mounted) return;
           Navigator.of(
             context,
-          ).pushReplacement(MaterialPageRoute(builder: (_) => landing));
+          ).pushReplacement(MaterialPageRoute<void>(builder: (_) => landing));
         });
       } else {
         // SIGNUP
@@ -245,7 +245,7 @@ class _AuthPageState extends State<AuthPage> {
           if (!mounted) return;
           Navigator.of(
             context,
-          ).pushReplacement(MaterialPageRoute(builder: (_) => landing));
+          ).pushReplacement(MaterialPageRoute<void>(builder: (_) => landing));
         });
       }
     } on AuthException catch (e) {

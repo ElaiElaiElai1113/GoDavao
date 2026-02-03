@@ -164,7 +164,7 @@ class DriverRideService {
     String rideRequestId,
   ) async {
     try {
-      final result = await _supabase.rpc(
+      final result = await _supabase.rpc<Map<String, dynamic>>(
         'accept_ride_match',
         params: {
           'p_match_id': matchId,

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'sos_sheet.dart';
 
 Future<void> showSosSheet(BuildContext context, {String? rideId}) {
-  return showModalBottomSheet(
+  return showModalBottomSheet<void>(
     context: context,
     useSafeArea: true,
     isScrollControlled: true,

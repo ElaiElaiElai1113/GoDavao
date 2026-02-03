@@ -28,7 +28,7 @@ class PaymentsService {
             .maybeSingle();
 
     if (existing == null) {
-      final res = await _sb.rpc(
+      final res = await _sb.rpc<String>(
         'rpc_create_hold',
         params: {
           'p_ride_id': rideId,
@@ -36,14 +36,14 @@ class PaymentsService {
           'p_capture_method': 'manual',
         },
       );
-      return res as String; // payment_id
+      return res; // payment_id
     }
     return existing['id'] as String;
   }
 
   /// For paymongo_sim only — call this after your mock "payment sheet" succeeds.
   Future<void> simulatePaymongoSheetSuccess(String paymentId) async {
-    await _sb.rpc(
+    await _sb.rpc<void>(
       'rpc_simulate_paymongo_webhook',
       params: {'p_payment_id': paymentId},
     );
@@ -67,7 +67,7 @@ class PaymentsService {
             .maybeSingle();
 
     if (p != null && p['status'] == 'requires_capture') {
-      await _sb.rpc('rpc_capture_payment', params: {'p_payment_id': p['id']});
+      await _sb.rpc<void>('rpc_capture_payment', params: {'p_payment_id': p['id']});
     }
   }
 
@@ -88,7 +88,7 @@ class PaymentsService {
     if (p != null &&
         (p['status'] == 'requires_capture' ||
             p['status'] == 'requires_payment_method')) {
-      await _sb.rpc('rpc_void_payment', params: {'p_payment_id': p['id']});
+      await _sb.rpc<void>('rpc_void_payment', params: {'p_payment_id': p['id']});
     }
   }
 

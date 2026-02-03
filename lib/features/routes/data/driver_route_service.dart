@@ -41,7 +41,7 @@ class RoutesService {
   Future<int> deactivateRouteAndNotify(String routeId, {String? reason}) async {
     final res =
         await Supabase.instance.client
-            .rpc(
+            .rpc<List<Map<String, dynamic>>>(
               'driver_cancel_route',
               params: {
                 'p_route': routeId,
@@ -50,8 +50,8 @@ class RoutesService {
             )
             .select();
 
-    if (res is List && res.isNotEmpty) {
-      final map = res.first as Map<String, dynamic>;
+    if (res.isNotEmpty) {
+      final map = res.first;
       return (map['cancelled_count'] as int?) ?? 0;
     }
     return 0;

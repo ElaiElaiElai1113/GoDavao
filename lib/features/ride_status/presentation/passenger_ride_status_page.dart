@@ -182,7 +182,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   Future<void> _loadRideComposite() async {
     final res =
         await _sb
-            .rpc('passenger_ride_by_id', params: {'p_ride_id': widget.rideId})
+            .rpc<Map<String, dynamic>>('passenger_ride_by_id', params: {'p_ride_id': widget.rideId})
             .select()
             .single();
     if (!mounted) return;
@@ -593,7 +593,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
 
   Future<void> _cancelRide() async {
     try {
-      await _sb.rpc('cancel_ride', params: {'p_ride_id': widget.rideId});
+      await _sb.rpc<void>('cancel_ride', params: {'p_ride_id': widget.rideId});
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -619,7 +619,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     if (existing != null) return;
     if (!mounted) return;
     _ratingPromptShown = true;
-    await showModalBottomSheet(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder:
@@ -635,7 +635,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
 
   void _openSos() {
     HapticFeedback.selectionClick();
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (_) => SosSheet(rideId: widget.rideId),
@@ -719,7 +719,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                       : () {
                         Navigator.push(
                           context,
-                          MaterialPageRoute(
+                          MaterialPageRoute<void>(
                             builder: (_) => ChatPage(matchId: _matchId!),
                           ),
                         );
@@ -1168,7 +1168,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
     required String driverName,
     double? fare,
   }) {
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,

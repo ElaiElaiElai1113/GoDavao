@@ -182,7 +182,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
+                  MaterialPageRoute<void>(
                     builder: (_) => const AdminVerificationPage(),
                   ),
                 );
@@ -198,7 +198,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
+                  MaterialPageRoute<void>(
                     builder: (_) => const AdminVehicleVerificationPage(),
                   ),
                 );
@@ -213,7 +213,7 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const AdminFeedbackPage()),
+                  MaterialPageRoute<void>(builder: (_) => const AdminFeedbackPage()),
                 );
               },
             ),
