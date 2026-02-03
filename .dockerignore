@@ -1,0 +1,51 @@
+# Git files
+.git/
+.gitignore
+.github/
+
+# Build artifacts
+build/
+dist/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Test coverage
+coverage/
+.test_coverage/
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Documentation (not needed in container)
+*.md
+docs/
+
+# Docker files (don't need docker inside docker)
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# CI/CD
+.gitlab-ci.yml
+.travis.yml
+
+# Logs
+*.log
+logs/
+
+# Test results
+test-results/

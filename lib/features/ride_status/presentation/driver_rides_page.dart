@@ -24,92 +24,10 @@ import 'package:godavao/features/ratings/data/ratings_service.dart';
 
 import 'package:godavao/features/payments/presentation/payment_status_chip.dart';
 import 'package:godavao/features/ride_status/presentation/driver_ride_status_page.dart';
+import 'package:godavao/features/ride_status/models/match_card_model.dart';
+import 'package:godavao/features/ride_status/models/route_group_model.dart';
 import 'package:godavao/features/live_tracking/data/live_subscriber.dart';
 import 'package:godavao/main.dart' show localNotify;
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* Models                                                                     */
-/* ────────────────────────────────────────────────────────────────────────── */
-
-class MatchCard {
-  final String matchId;
-  final String rideRequestId;
-  final String? driverRouteId;
-  final String status;
-  final DateTime createdAt;
-  final String? driverRouteName;
-  final String passengerName;
-  final String? passengerId;
-  final String pickupAddress;
-  final String destinationAddress;
-  final double? fare;
-  final int pax;
-
-  // Map coords
-  final double? pickupLat;
-  final double? pickupLng;
-  final double? destLat;
-  final double? destLng;
-
-  // ⭐ Ratings
-  final double? ratingAvg;
-  final int? ratingCount;
-
-  const MatchCard({
-    required this.matchId,
-    required this.rideRequestId,
-    required this.driverRouteId,
-    required this.status,
-    required this.createdAt,
-    required this.passengerName,
-    required this.passengerId,
-    required this.pickupAddress,
-    required this.destinationAddress,
-    required this.fare,
-    required this.pax,
-    this.driverRouteName,
-    this.pickupLat,
-    this.pickupLng,
-    this.destLat,
-    this.destLng,
-    this.ratingAvg,
-    this.ratingCount,
-  });
-
-  bool get hasCoords =>
-      pickupLat != null &&
-      pickupLng != null &&
-      destLat != null &&
-      destLng != null;
-
-  LatLng? get pickup => hasCoords ? LatLng(pickupLat!, pickupLng!) : null;
-  LatLng? get destination => hasCoords ? LatLng(destLat!, destLng!) : null;
-}
-
-class RouteGroup {
-  final String routeId;
-  int? capacityTotal;
-  int? capacityAvailable;
-  final List<MatchCard> items;
-  final Set<String> selected = {};
-
-  RouteGroup({
-    required this.routeId,
-    required this.items,
-    this.capacityTotal,
-    this.capacityAvailable,
-  });
-
-  List<MatchCard> byStatus(String s) =>
-      items.where((m) => m.status == s).toList();
-
-  int get acceptedSeats =>
-      items.where((m) => m.status == 'accepted').fold(0, (a, b) => a + b.pax);
-
-  int get pendingSeatsSelected => items
-      .where((m) => selected.contains(m.matchId) && m.status == 'pending')
-      .fold(0, (a, b) => a + b.pax);
-}
 
 /* ────────────────────────────────────────────────────────────────────────── */
 
@@ -517,16 +435,15 @@ class _DriverRidesPageState extends State<DriverRidesPage>
       final updatedGroups = <String, RouteGroup>{};
       for (final card in allWithRatings) {
         final key = card.driverRouteId ?? 'unassigned';
-        updatedGroups.putIfAbsent(
-          key,
-          () => RouteGroup(
+        if (!updatedGroups.containsKey(key)) {
+          updatedGroups[key] = RouteGroup(
             routeId: key,
             items: [],
             capacityTotal: _routeCapById[key]?['total'],
             capacityAvailable: _routeCapById[key]?['available'],
-          ),
-        );
-        updatedGroups[key]!.items.add(card);
+          );
+        }
+        updatedGroups[key] = updatedGroups[key]!.addMatch(card);
       }
 
       final declined =
@@ -1052,6 +969,39 @@ class _DriverRidesPageState extends State<DriverRidesPage>
     );
   }
 
+  /* ───────────── Helpers for immutable RouteGroup updates ───────────── */
+
+  void _updateRouteGroup(String routeId, RouteGroup updated) {
+    setState(() {
+      _routeGroups[routeId] = updated;
+    });
+  }
+
+  void _toggleMatchSelection(String routeId, String matchId) {
+    final current = _routeGroups[routeId];
+    if (current != null) {
+      _updateRouteGroup(routeId, current.toggleSelection(matchId));
+    }
+  }
+
+  void _clearRouteSelection(String routeId) {
+    final current = _routeGroups[routeId];
+    if (current != null) {
+      _updateRouteGroup(routeId, current.clearSelection());
+    }
+  }
+
+  void _selectAllPendingForRoute(String routeId) {
+    final current = _routeGroups[routeId];
+    if (current != null) {
+      var updated = current.clearSelection();
+      for (final m in current.pending) {
+        updated = updated.toggleSelection(m.matchId);
+      }
+      _updateRouteGroup(routeId, updated);
+    }
+  }
+
   /* ───────────── Grouped section per route (Upcoming tab) ───────────── */
 
   Widget _routeSection(RouteGroup g) {
@@ -1087,19 +1037,14 @@ class _DriverRidesPageState extends State<DriverRidesPage>
               m.status == 'accepted' ||
               m.status == 'en_route' ||
               m.status == 'completed';
+          final isSelected = g.selected.contains(m.matchId);
           return _MatchListTile(
             m: m,
             selectable: selectable,
-            selected: selectable ? g.selected.contains(m.matchId) : false,
+            selected: selectable ? isSelected : false,
             onSelect:
                 selectable
-                    ? (v) => setState(() {
-                      if (v == true) {
-                        g.selected.add(m.matchId);
-                      } else {
-                        g.selected.remove(m.matchId);
-                      }
-                    })
+                    ? (v) => _toggleMatchSelection(g.routeId, m.matchId)
                     : (_) {},
             onDecline: () async {
               setState(() => _loading = true);
@@ -1280,11 +1225,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     onPressed:
                         pending.isEmpty
                             ? null
-                            : () => setState(() {
-                              for (final m in pending) {
-                                g.selected.add(m.matchId);
-                              }
-                            }),
+                            : () => _selectAllPendingForRoute(g.routeId),
                   ),
                   OutlinedButton.icon(
                     icon: const Icon(Icons.clear_all),
@@ -1299,7 +1240,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                     onPressed:
                         g.selected.isEmpty
                             ? null
-                            : () => setState(() => g.selected.clear()),
+                            : () => _clearRouteSelection(g.routeId),
                   ),
                   ElevatedButton.icon(
                     icon: const Icon(Icons.done_all),

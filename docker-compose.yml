@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  # Flutter Web Development Server
+  app:
+    build:
+      context: .
+      target: development
+    container_name: godavao-dev
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/app
+      - flutter_cache:/root/.flutter-cache
+    environment:
+      - ENVIRONMENT=development
+      - ENABLE_DEBUG_TOOLS=true
+      - FLUTTER_WEB_DEBUG_PORT=8080
+    command: flutter run -d web-server --web-port 8080 --web-hostname 0.0.0.0
+    restart: unless-stopped
+
+  # Production Web Server
+  web:
+    build:
+      context: .
+      target: web-production
+    container_name: godavao-web
+    ports:
+      - "80:80"
+      - "443:443"
+    restart: always
+    profiles:
+      - production
+
+  # Test Runner
+  test:
+    build:
+      context: .
+      target: test
+    container_name: godavao-test
+    volumes:
+      - ./test-results:/app/test-results
+      - ./coverage:/app/coverage
+    environment:
+      - ENVIRONMENT=test
+    command: flutter test --coverage
+    profiles:
+      - test
+
+  # OSRM Routing Server (for local development)
+  osrm:
+    image: osrm/osrm-backend:latest
+    container_name: godavao-osrm
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./osrm-data:/data
+    command: osrm-routed --algorithm mld /data/philippines.osrm
+    restart: unless-stopped
+    profiles:
+      - osrm
+
+volumes:
+  flutter_cache:
+    driver: local
+
+networks:
+  default:
+    name: godavao-network

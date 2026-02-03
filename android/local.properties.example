@@ -1,0 +1,11 @@
+# This file should NOT be committed to version control
+# Copy this file to local.properties and fill in your actual values
+
+# Mapbox Configuration
+# Get your tokens from: https://account.mapbox.com/
+MAPBOX_DOWNLOADS_TOKEN=sk.your_mapbox_downloads_token_here
+MAPBOX_ACCESS_TOKEN=pk.your_mapbox_access_token_here
+
+# Supabase Configuration (if needed for native modules)
+SUPABASE_URL=your_supabase_url_here
+SUPABASE_ANON_KEY=your_supabase_anon_key_here

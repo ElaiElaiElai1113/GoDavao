@@ -20,6 +20,10 @@ migrate_working_dir/
 
 # Environment Config
 .env
+.env.staging
+.env.production
+.env.*.local
+android/local.properties
 
 # The .vscode folder contains launch configuration and tasks you configure in
 # VS Code which you may wish to be included in version control, so this line
@@ -35,7 +39,7 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
-pubspec.lock   # ⬅️ ignore lock file so corruption won’t be committed
+# pubspec.lock - COMMIT THIS for reproducible builds in production
 
 # Symbolication related
 app.*.symbols
