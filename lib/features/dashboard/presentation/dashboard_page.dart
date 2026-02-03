@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:godavao/common/app_colors.dart';
 import 'package:godavao/features/auth/presentation/auth_page.dart';
 import 'package:godavao/features/profile/presentation/profile_page.dart';
 import 'package:godavao/features/profile/presentation/app_drawer.dart';
@@ -45,6 +46,7 @@ class _DashboardPageState extends State<DashboardPage> {
   int? _driverPendingRequests;
   int? _passengerUpcoming;
   int? _passengerHistory;
+  int? _vehicleCount;
 
   // ✅ Safety: trusted contacts count
   int? _trustedCount;
@@ -56,9 +58,9 @@ class _DashboardPageState extends State<DashboardPage> {
   DateTime? _verifSubmittedAt; // ✅ NEW: last submission time
 
   // Theme
-  static const _bg = Color(0xFFF7F7FB);
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _bg = AppColors.bg;
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
 
   // =========================
   // Coach overlay wiring
@@ -211,10 +213,16 @@ class _DashboardPageState extends State<DashboardPage> {
           .eq('driver_id', uid)
           .eq('status', 'pending');
 
+      final vehicles = await _sb
+          .from('vehicles')
+          .select('id')
+          .eq('driver_id', uid);
+
       if (!mounted) return;
       setState(() {
         _driverActiveRoutes = len(activeRoutes);
         _driverPendingRequests = len(pendingReqs);
+        _vehicleCount = len(vehicles);
       });
     } else {
   // PASSENGER
@@ -573,6 +581,128 @@ class _DashboardPageState extends State<DashboardPage> {
                           ),
 
                         const SizedBox(height: 16),
+
+                        // NEXT STEPS
+                        Builder(
+                          builder: (context) {
+                            final steps = <Widget>[];
+                            if (isDriver && !isVerified) {
+                              steps.add(
+                                _NextStepCard(
+                                  icon: Icons.verified_user_outlined,
+                                  title: 'Complete verification',
+                                  subtitle:
+                                      'Submit your ID to start accepting rides.',
+                                  cta: 'Verify now',
+                                  onTap: () async {
+                                    await showModalBottomSheet<void>(
+                                      context: context,
+                                      isScrollControlled: true,
+                                      builder:
+                                          (_) =>
+                                              const VerifyIdentitySheet(
+                                                role: 'driver',
+                                              ),
+                                    );
+                                    _fetch();
+                                  },
+                                ),
+                              );
+                            }
+                            if (isDriver && (_vehicleCount ?? 0) == 0) {
+                              steps.add(
+                                _NextStepCard(
+                                  icon: Icons.directions_car_filled_outlined,
+                                  title: 'Add your vehicle',
+                                  subtitle:
+                                      'Add your car and upload OR/CR documents.',
+                                  cta: 'Add vehicle',
+                                  onTap:
+                                      () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute<void>(
+                                          builder:
+                                              (_) => const VehiclesPage(),
+                                        ),
+                                      ),
+                                ),
+                              );
+                            }
+                            if ((_trustedCount ?? 0) == 0) {
+                              steps.add(
+                                _NextStepCard(
+                                  icon: Icons.person,
+                                  title: 'Set trusted contacts',
+                                  subtitle:
+                                      'Add people we can alert during SOS.',
+                                  cta: 'Set up',
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute<void>(
+                                        builder:
+                                            (_) =>
+                                                const TrustedContactsPage(),
+                                      ),
+                                    ).then((_) => _loadOverview());
+                                  },
+                                ),
+                              );
+                            }
+                            if (!isDriver && (_passengerUpcoming ?? 0) == 0) {
+                              steps.add(
+                                _NextStepCard(
+                                  icon: Icons.map_outlined,
+                                  title: 'Book your first ride',
+                                  subtitle:
+                                      'Find nearby drivers and request a ride.',
+                                  cta: 'Book now',
+                                  onTap:
+                                      () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute<void>(
+                                          builder:
+                                              (_) =>
+                                                  const PassengerMapPage(),
+                                        ),
+                                      ),
+                                ),
+                              );
+                            }
+
+                            if (steps.isEmpty) return const SizedBox.shrink();
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                  ),
+                                  child: Text(
+                                    'Next Steps',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                  ),
+                                  child: Column(
+                                    children: steps,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+                            );
+                          },
+                        ),
 
                         // QUICK ACTIONS
                         Padding(
@@ -1019,6 +1149,72 @@ class _ActionItem {
     required this.icon,
     required this.onTap,
   });
+}
+
+class _NextStepCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String cta;
+  final VoidCallback onTap;
+
+  const _NextStepCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.cta,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: Colors.indigo.withValues(alpha: 0.12),
+            child: Icon(icon, color: Colors.indigo),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: onTap,
+            child: Text(cta),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class BottomCard extends StatelessWidget {

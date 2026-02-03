@@ -6,6 +6,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:godavao/common/app_colors.dart';
 import 'package:godavao/features/chat/presentation/chat_page.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
@@ -39,6 +40,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   final _map = MapController();
   bool _didFitOnce = false;
   bool _debouncingMove = false;
+  bool _followDriver = true;
 
   // Ride + payment
   Map<String, dynamic>? _ride;
@@ -93,9 +95,9 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
   bool _ratingPromptShown = false;
 
   // Theme tokens
-  static const _bg = Color(0xFFF7F7FB);
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _bg = AppColors.bg;
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
 
   bool get _isChatLocked {
     final s = _status;
@@ -435,6 +437,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
         _driverLastAt = DateTime.now();
         setState(() => _driverLive = pos);
         _fitOnceWhenBothKnown();
+        if (_followDriver) _moveDebounced(pos, 16);
       },
     )..listen();
   }
@@ -466,6 +469,26 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
       _didFitOnce = true;
       _fitImportant();
     }
+  }
+
+  void _recenter() {
+    final target = _driverLive ?? _pickup ?? _myLive ?? _dropoff;
+    if (target != null) _moveDebounced(target, 15);
+  }
+
+  bool get _driverStale {
+    final last = _driverLastAt;
+    if (last == null) return true;
+    return DateTime.now().difference(last) > _watchdogSilence;
+  }
+
+  String _lastUpdateLabel(DateTime? dt) {
+    if (dt == null) return 'No updates yet';
+    final diff = DateTime.now().difference(dt);
+    if (diff.inSeconds < 10) return 'Updated just now';
+    if (diff.inSeconds < 60) return 'Updated ${diff.inSeconds}s ago';
+    if (diff.inMinutes < 60) return 'Updated ${diff.inMinutes}m ago';
+    return 'Updated ${diff.inHours}h ago';
   }
 
   void _kickWatchdog() {
@@ -794,49 +817,58 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                     // Status + facts
                     _SectionCard(
                       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _Chip(
-                            icon: Icons.info_outline,
-                            label: _status.toUpperCase(),
-                            color: _statusColor(_status).withValues(alpha: .10),
-                            textColor: _statusColor(_status),
+                          _StatusTimeline(status: _status),
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _Chip(
+                                icon: Icons.info_outline,
+                                label: _status.toUpperCase(),
+                                color: _statusColor(_status).withValues(
+                                  alpha: .10,
+                                ),
+                                textColor: _statusColor(_status),
+                              ),
+                              if (fare != null)
+                                _Chip(
+                                  icon: Icons.payments_outlined,
+                                  label: _peso(fare),
+                                ),
+                              if (_payment != null)
+                                PaymentStatusChip(
+                                  status: _payment!['status'] as String?,
+                                  amount:
+                                      (_payment!['amount'] as num?)?.toDouble(),
+                                ),
+                              _Chip(
+                                icon: Icons.groups_2_outlined,
+                                label: 'Riders: $_activeBookings',
+                              ),
+                              _Chip(
+                                icon: Icons.event_seat_outlined,
+                                label: 'Seats on route: $_activeSeatsTotal',
+                              ),
+                              _Chip(
+                                icon: Icons.event_seat,
+                                label:
+                                    _seatsBilled > 1
+                                        ? 'Your seats: $_seatsBilled'
+                                        : 'Your seats: 1',
+                              ),
+                              _Chip(
+                                icon: Icons.group_outlined,
+                                label:
+                                    'Booking: ${((_ride?['booking_type'] as String?) ?? 'shared').toUpperCase()}',
+                              ),
+                              if ((_weatherDesc ?? '').isNotEmpty)
+                                _Chip(icon: Icons.cloud, label: _weatherDesc!),
+                            ],
                           ),
-                          if (fare != null)
-                            _Chip(
-                              icon: Icons.payments_outlined,
-                              label: _peso(fare),
-                            ),
-                          if (_payment != null)
-                            PaymentStatusChip(
-                              status: _payment!['status'] as String?,
-                              amount: (_payment!['amount'] as num?)?.toDouble(),
-                            ),
-                          _Chip(
-                            icon: Icons.groups_2_outlined,
-                            label: 'Riders: $_activeBookings',
-                          ),
-                          _Chip(
-                            icon: Icons.event_seat_outlined,
-                            label: 'Seats on route: $_activeSeatsTotal',
-                          ),
-                          _Chip(
-                            icon: Icons.event_seat,
-                            label:
-                                _seatsBilled > 1
-                                    ? 'Your seats: $_seatsBilled'
-                                    : 'Your seats: 1',
-                          ),
-                          _Chip(
-                            icon: Icons.group_outlined,
-                            label:
-                                'Booking: ${((_ride?['booking_type'] as String?) ?? 'shared').toUpperCase()}',
-                          ),
-                          // optional: show weather reason at top as well
-                          if ((_weatherDesc ?? '').isNotEmpty)
-                            _Chip(icon: Icons.cloud, label: _weatherDesc!),
                         ],
                       ),
                     ),
@@ -846,6 +878,59 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                     _SectionCard(
                       child: Column(
                         children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                            child: Row(
+                              children: [
+                                _Chip(
+                                  icon:
+                                      _driverStale
+                                          ? Icons.warning_amber_rounded
+                                          : Icons.gps_fixed,
+                                  label:
+                                      _driverLive == null
+                                          ? 'Driver not live'
+                                          : _lastUpdateLabel(_driverLastAt),
+                                  color:
+                                      _driverStale
+                                          ? Colors.amber.withValues(alpha: .12)
+                                          : Colors.green.withValues(alpha: .12),
+                                  textColor:
+                                      _driverStale
+                                          ? Colors.amber.shade900
+                                          : Colors.green.shade700,
+                                ),
+                                const Spacer(),
+                                TextButton.icon(
+                                  onPressed: () {
+                                    setState(
+                                      () => _followDriver = !_followDriver,
+                                    );
+                                  },
+                                  icon: Icon(
+                                    _followDriver
+                                        ? Icons.my_location
+                                        : Icons.location_searching,
+                                  ),
+                                  label: Text(
+                                    _followDriver ? 'Follow on' : 'Follow off',
+                                  ),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: _purple,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                TextButton.icon(
+                                  onPressed: _recenter,
+                                  icon: const Icon(Icons.center_focus_strong),
+                                  label: const Text('Recenter'),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: _purple,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                           SizedBox(
                             height: 260,
                             child: ClipRRect(
@@ -857,6 +942,11 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                                   initialZoom: 13,
                                   onMapReady: () {},
                                   onTap: (_, __) {},
+                                  onPositionChanged: (pos, hasGesture) {
+                                    if (hasGesture && _followDriver) {
+                                      setState(() => _followDriver = false);
+                                    }
+                                  },
                                 ),
                                 children: [
                                   TileLayer(
@@ -1635,6 +1725,104 @@ class _TH extends StatelessWidget {
         t,
         style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
       ),
+    );
+  }
+}
+
+class _StatusTimeline extends StatelessWidget {
+  final String status;
+  const _StatusTimeline({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = status.toLowerCase();
+    final isCanceled =
+        s == 'canceled' || s == 'cancelled' || s == 'declined';
+    if (isCanceled) {
+      return Row(
+        children: [
+          Icon(Icons.cancel, color: Colors.red.shade700, size: 16),
+          const SizedBox(width: 6),
+          Text(
+            'Ride canceled',
+            style: TextStyle(
+              color: Colors.red.shade700,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      );
+    }
+
+    final steps = const [
+      ('Requested', Icons.file_present),
+      ('Accepted', Icons.check_circle_outline),
+      ('En route', Icons.directions_car),
+      ('Completed', Icons.flag_outlined),
+    ];
+    int index(String s) {
+      switch (s) {
+        case 'pending':
+          return 0;
+        case 'accepted':
+          return 1;
+        case 'en_route':
+          return 2;
+        case 'completed':
+          return 3;
+        default:
+          return 0;
+      }
+    }
+
+    final current = index(s);
+    final active = Colors.green.shade700;
+    final inactive = Colors.grey.shade400;
+
+    return Row(
+      children: List.generate(steps.length, (i) {
+        final isActive = i <= current;
+        final (label, icon) = steps[i];
+        return Expanded(
+          child: Row(
+            children: [
+              Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: isActive ? active.withValues(alpha: .12) : Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: isActive ? active : inactive),
+                ),
+                child: Icon(
+                  icon,
+                  size: 14,
+                  color: isActive ? active : inactive,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: isActive ? active : inactive,
+                  ),
+                ),
+              ),
+              if (i != steps.length - 1)
+                Container(
+                  width: 10,
+                  height: 2,
+                  color: isActive ? active : inactive,
+                ),
+            ],
+          ),
+        );
+      }),
     );
   }
 }

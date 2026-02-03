@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:godavao/common/app_colors.dart';
 import 'package:godavao/core/reverse_geocoder.dart';
 import 'package:godavao/core/osrm_service.dart';
 import 'package:godavao/features/ride_status/presentation/passenger_ride_status_page.dart';
@@ -32,10 +33,14 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
 
   final Map<String, String> _addr = {};
   final Set<String> _ratedRideIds = {};
+  final TextEditingController _search = TextEditingController();
+  String _query = '';
+  String _upcomingFilter = 'all';
+  String _historyFilter = 'all';
 
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
-  static const _bg = Color(0xFFF7F7FB);
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
+  static const _bg = AppColors.bg;
 
   @override
   void initState() {
@@ -47,6 +52,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
   void dispose() {
     _rideReqSub?.cancel();
     _rideMatchSub?.cancel();
+    _search.dispose();
     super.dispose();
   }
 
@@ -187,6 +193,34 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
       return bd.compareTo(ad);
     });
     return list;
+  }
+
+  List<Map<String, dynamic>> _filterRides(
+    List<Map<String, dynamic>> list, {
+    required bool upcoming,
+  }) {
+    final q = _query.trim().toLowerCase();
+    final filter = upcoming ? _upcomingFilter : _historyFilter;
+    final out =
+        list.where((r) {
+          final status =
+              (r['effective_status'] as String? ?? '').toLowerCase();
+          final normalized =
+              (status == 'canceled' || status == 'cancelled' || status == 'declined')
+                  ? 'canceled'
+                  : status;
+
+          if (filter != 'all' && normalized != filter) return false;
+          if (q.isEmpty) return true;
+
+          final haystack = [
+            r['driver_name']?.toString(),
+            r['pickup_address']?.toString(),
+            r['destination_address']?.toString(),
+          ].whereType<String>().join(' ').toLowerCase();
+          return haystack.contains(q);
+        }).toList();
+    return out;
   }
 
   void _backfillAddresses(List<Map<String, dynamic>> rows) {
@@ -637,6 +671,66 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
     );
   }
 
+  Widget _searchBar() {
+    return TextField(
+      controller: _search,
+      onChanged: (v) => setState(() => _query = v),
+      decoration: InputDecoration(
+        hintText: 'Search by driver or address',
+        prefixIcon: const Icon(Icons.search),
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade200),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade200),
+        ),
+        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+      ),
+    );
+  }
+
+  Widget _filterChips({required bool upcoming}) {
+    final items =
+        upcoming
+            ? const [
+              ('all', 'All'),
+              ('pending', 'Pending'),
+              ('accepted', 'Accepted'),
+              ('en_route', 'En route'),
+            ]
+            : const [
+              ('all', 'All'),
+              ('completed', 'Completed'),
+              ('canceled', 'Canceled'),
+            ];
+    final current = upcoming ? _upcomingFilter : _historyFilter;
+    return Wrap(
+      spacing: 8,
+      children:
+          items.map((e) {
+            final value = e.$1;
+            final label = e.$2;
+            final selected = current == value;
+            return ChoiceChip(
+              selected: selected,
+              label: Text(label),
+              onSelected:
+                  (_) => setState(() {
+                    if (upcoming) {
+                      _upcomingFilter = value;
+                    } else {
+                      _historyFilter = value;
+                    }
+                  }),
+            );
+          }).toList(),
+    );
+  }
+
   Widget _primaryButton({
     required String label,
     required VoidCallback? onPressed,
@@ -809,22 +903,43 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
             ),
           ),
         ),
-        body: TabBarView(
+        body: Column(
           children: [
-            RefreshIndicator(
-              onRefresh: _bootstrap,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children:
-                    _upcoming.map((r) => _rideCard(r, upcoming: true)).toList(),
-              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: _searchBar(),
             ),
-            RefreshIndicator(
-              onRefresh: _bootstrap,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children:
-                    _history.map((r) => _rideCard(r, upcoming: false)).toList(),
+            const SizedBox(height: 8),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  RefreshIndicator(
+                    onRefresh: _bootstrap,
+                    child: ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        _filterChips(upcoming: true),
+                        const SizedBox(height: 6),
+                        ..._filterRides(_upcoming, upcoming: true).map(
+                          (r) => _rideCard(r, upcoming: true),
+                        ),
+                      ],
+                    ),
+                  ),
+                  RefreshIndicator(
+                    onRefresh: _bootstrap,
+                    child: ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        _filterChips(upcoming: false),
+                        const SizedBox(height: 6),
+                        ..._filterRides(_history, upcoming: false).map(
+                          (r) => _rideCard(r, upcoming: false),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

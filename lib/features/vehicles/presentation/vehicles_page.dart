@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:godavao/common/app_colors.dart';
 import 'package:godavao/features/vehicles/data/vehicle_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -17,14 +19,40 @@ class _VehiclesPageState extends State<VehiclesPage> {
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _items = [];
+  StreamSubscription<List<Map<String, dynamic>>>? _sub;
 
   // Brand
-  static const _purple = Color(0xFF6A27F7);
+  static const _purple = AppColors.purple;
 
   @override
   void initState() {
     super.initState();
+    _subscribe();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  void _subscribe() {
+    _sub?.cancel();
+    _sub = _svc.watchMine().listen(
+      (list) {
+        if (!mounted) return;
+        setState(() {
+          _items = list;
+          _loading = false;
+          _error = null;
+        });
+      },
+      onError: (e) {
+        if (!mounted) return;
+        setState(() => _error = e.toString());
+      },
+    );
   }
 
   Future<void> _load() async {
@@ -49,6 +77,17 @@ class _VehiclesPageState extends State<VehiclesPage> {
       useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => const _AddVehicleSheet(),
+    );
+    if (mounted) _load();
+  }
+
+  Future<void> _editVehicle(Map<String, dynamic> v) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _EditVehicleSheet(vehicle: v, svc: _svc),
     );
     if (mounted) _load();
   }
@@ -117,6 +156,7 @@ class _VehiclesPageState extends State<VehiclesPage> {
                         v: _items[i],
                         svc: _svc,
                         onChanged: _load,
+                        onEdit: () => _editVehicle(_items[i]),
                       ),
                 ),
       ),
@@ -139,11 +179,13 @@ class _VehicleCard extends StatefulWidget {
   final Map<String, dynamic> v;
   final VehiclesService svc;
   final VoidCallback onChanged;
+  final VoidCallback onEdit;
 
   const _VehicleCard({
     required this.v,
     required this.svc,
     required this.onChanged,
+    required this.onEdit,
   });
 
   @override
@@ -153,7 +195,7 @@ class _VehicleCard extends StatefulWidget {
 class _VehicleCardState extends State<_VehicleCard> {
   bool _working = false;
 
-  static const _purple = Color(0xFF6A27F7);
+  static const _purple = AppColors.purple;
   void _successSnack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -173,9 +215,36 @@ class _VehicleCardState extends State<_VehicleCard> {
     );
   }
 
+  Future<ImageSource?> _chooseSource() async {
+    return showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Choose from gallery'),
+                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_camera),
+                title: const Text('Use camera'),
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _upload(bool isOR) async {
+    final source = await _chooseSource();
+    if (source == null) return;
     final picked = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
+      source: source,
       imageQuality: 85,
     );
     if (picked == null) return;
@@ -369,6 +438,10 @@ class _VehicleCardState extends State<_VehicleCard> {
                 statusChip,
               ],
             ),
+            if (_working) ...[
+              const SizedBox(height: 10),
+              const LinearProgressIndicator(minHeight: 2),
+            ],
 
             if (isDefault) ...[
               const SizedBox(height: 8),
@@ -405,6 +478,12 @@ class _VehicleCardState extends State<_VehicleCard> {
                   icon: const Icon(Icons.star),
                   label: Text(isDefault ? 'Default' : 'Make Default'),
                   onPressed: _working || isDefault ? null : _makeDefault,
+                ),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.edit),
+                  label: const Text('Edit'),
+                  onPressed: _working ? null : widget.onEdit,
+                  style: OutlinedButton.styleFrom(foregroundColor: _purple),
                 ),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.delete),
@@ -473,6 +552,11 @@ class _VehicleCardState extends State<_VehicleCard> {
                         ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Tip: use clear, well-lit photos for faster verification.',
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                   ),
                   const SizedBox(height: 10),
 
@@ -998,6 +1082,220 @@ class _ListSkeleton extends StatelessWidget {
   }
 }
 
+/* ---------------- Edit Vehicle Sheet ---------------- */
+
+class _EditVehicleSheet extends StatefulWidget {
+  final Map<String, dynamic> vehicle;
+  final VehiclesService svc;
+  const _EditVehicleSheet({required this.vehicle, required this.svc});
+
+  @override
+  State<_EditVehicleSheet> createState() => _EditVehicleSheetState();
+}
+
+class _EditVehicleSheetState extends State<_EditVehicleSheet> {
+  final _form = GlobalKey<FormState>();
+  late final TextEditingController _make;
+  late final TextEditingController _model;
+  late final TextEditingController _plate;
+  late final TextEditingController _color;
+  late final TextEditingController _year;
+  late final TextEditingController _seats;
+  late final TextEditingController _orNumber;
+  late final TextEditingController _crNumber;
+
+  bool _saving = false;
+
+  static const _purple = AppColors.purple;
+
+  @override
+  void initState() {
+    super.initState();
+    final v = widget.vehicle;
+    _make = TextEditingController(text: (v['make'] ?? '').toString());
+    _model = TextEditingController(text: (v['model'] ?? '').toString());
+    _plate = TextEditingController(text: (v['plate'] ?? '').toString());
+    _color = TextEditingController(text: (v['color'] ?? '').toString());
+    _year = TextEditingController(text: (v['year'] ?? '').toString());
+    _seats = TextEditingController(
+      text: (v['seats'] ?? 4).toString(),
+    );
+    _orNumber = TextEditingController(text: (v['or_number'] ?? '').toString());
+    _crNumber = TextEditingController(text: (v['cr_number'] ?? '').toString());
+  }
+
+  @override
+  void dispose() {
+    _make.dispose();
+    _model.dispose();
+    _plate.dispose();
+    _color.dispose();
+    _year.dispose();
+    _seats.dispose();
+    _orNumber.dispose();
+    _crNumber.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_form.currentState!.validate()) return;
+    setState(() => _saving = true);
+    try {
+      await widget.svc.updateVehicleFromValues(
+        vehicleId: widget.vehicle['id'] as String,
+        make: _make.text.trim(),
+        model: _model.text.trim(),
+        plate: _plate.text.trim().isEmpty ? null : _plate.text.trim(),
+        color: _color.text.trim().isEmpty ? null : _color.text.trim(),
+        year:
+            _year.text.trim().isEmpty ? null : int.tryParse(_year.text.trim()),
+        seats: int.parse(_seats.text.trim()),
+        orNumber: _orNumber.text.trim().isEmpty ? null : _orNumber.text.trim(),
+        crNumber: _crNumber.text.trim().isEmpty ? null : _crNumber.text.trim(),
+      );
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final insets = MediaQuery.of(context).viewInsets;
+    return SingleChildScrollView(
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 12,
+            bottom: insets.bottom + 12,
+          ),
+          child: Form(
+            key: _form,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Edit Vehicle',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 12),
+                _Section(
+                  title: 'Details',
+                  children: [
+                    TextFormField(
+                      controller: _make,
+                      decoration: const InputDecoration(labelText: 'Make *'),
+                      textInputAction: TextInputAction.next,
+                      validator:
+                          (v) =>
+                              (v == null || v.trim().isEmpty)
+                                  ? 'Required'
+                                  : null,
+                    ),
+                    TextFormField(
+                      controller: _model,
+                      decoration: const InputDecoration(labelText: 'Model *'),
+                      textInputAction: TextInputAction.next,
+                      validator:
+                          (v) =>
+                              (v == null || v.trim().isEmpty)
+                                  ? 'Required'
+                                  : null,
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _year,
+                            decoration: const InputDecoration(labelText: 'Year'),
+                            keyboardType: TextInputType.number,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextFormField(
+                            controller: _seats,
+                            decoration: const InputDecoration(
+                              labelText: 'Seats *',
+                            ),
+                            keyboardType: TextInputType.number,
+                            validator: (v) {
+                              final n = int.tryParse((v ?? '').trim());
+                              if (n == null) return 'Enter a number';
+                              if (n < 1 || n > 10) return 'Seats must be 1–10';
+                              return null;
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    TextFormField(
+                      controller: _plate,
+                      decoration: const InputDecoration(labelText: 'Plate'),
+                    ),
+                    TextFormField(
+                      controller: _color,
+                      decoration: const InputDecoration(labelText: 'Color'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _Section(
+                  title: 'OR / CR',
+                  children: [
+                    TextFormField(
+                      controller: _orNumber,
+                      decoration: const InputDecoration(labelText: 'OR Number'),
+                    ),
+                    TextFormField(
+                      controller: _crNumber,
+                      decoration: const InputDecoration(labelText: 'CR Number'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _purple,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: _saving ? null : _save,
+                    icon: const Icon(Icons.save),
+                    label: Text(_saving ? 'Saving…' : 'Save changes'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /* ---------------- Add Vehicle Sheet ---------------- */
 
 class _AddVehicleSheet extends StatefulWidget {
@@ -1041,8 +1339,31 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
   }
 
   Future<void> _pickFile(bool isOR) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Choose from gallery'),
+                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_camera),
+                title: const Text('Use camera'),
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (source == null) return;
     final x = await _picker.pickImage(
-      source: ImageSource.gallery,
+      source: source,
       imageQuality: 85,
     );
     if (x == null) return;
@@ -1056,8 +1377,8 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
     try {
       final svc = VehiclesService(Supabase.instance.client);
 
-      // 1️⃣ Create the vehicle — this function returns void, so just await it
-      await svc.createVehicle(
+      // 1️⃣ Create the vehicle and capture id
+      final newId = await svc.createVehicle(
         make: _make.text.trim(),
         model: _model.text.trim(),
         plate: _plate.text.trim().isEmpty ? null : _plate.text.trim(),
@@ -1070,22 +1391,10 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
         crNumber: _crNumber.text.trim().isEmpty ? null : _crNumber.text.trim(),
       );
 
-      // 2️⃣ After insertion, fetch the newest vehicle ID owned by the user
-      final list = await svc.listMine();
-      if (list.isEmpty) throw Exception('Vehicle created but not found');
-      // sort newest first
-      list.sort((a, b) {
-        final ta =
-            DateTime.tryParse('${a['created_at'] ?? ''}') ??
-            DateTime.fromMillisecondsSinceEpoch(0);
-        final tb =
-            DateTime.tryParse('${b['created_at'] ?? ''}') ??
-            DateTime.fromMillisecondsSinceEpoch(0);
-        return tb.compareTo(ta);
-      });
-      final newId = list.first['id'] as String?;
-
-      if (newId == null) throw Exception('Could not find new vehicle ID.');
+      // 2️⃣ Respect default toggle if requested
+      if (_isDefault) {
+        await svc.setDefault(newId);
+      }
 
       // 3️⃣ Upload OR/CR if provided
       bool uploadedOR = false, uploadedCR = false;
@@ -1269,6 +1578,11 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Tip: use clear, well-lit photos for faster verification.',
+                      style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                     ),
                   ],
                 ),
