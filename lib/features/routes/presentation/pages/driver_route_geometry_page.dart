@@ -401,7 +401,7 @@ class _DriverRouteGeometryPageState extends State<DriverRouteGeometryPage> {
             setState(
               () =>
                   _startAddress =
-                      (s.isNotEmpty ?? false) ? s : _coordShort(_start),
+                      s.isNotEmpty ? s : _coordShort(_start),
             );
           }
         }
@@ -410,7 +410,7 @@ class _DriverRouteGeometryPageState extends State<DriverRouteGeometryPage> {
           if (mounted) {
             setState(
               () =>
-                  _endAddress = (e.isNotEmpty ?? false) ? e : _coordShort(_end),
+                  _endAddress = e.isNotEmpty ? e : _coordShort(_end),
             );
           }
         }

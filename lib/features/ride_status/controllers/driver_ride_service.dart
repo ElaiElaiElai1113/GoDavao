@@ -172,7 +172,7 @@ class DriverRideService {
         },
       );
 
-      return result as Map<String, dynamic>;
+      return result;
     } catch (e) {
       throw Exception('Failed to accept match: $e');
     }

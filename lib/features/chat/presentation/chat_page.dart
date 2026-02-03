@@ -300,7 +300,7 @@ class _ChatPageState extends State<ChatPage>
       });
     } on PostgrestException catch (e) {
       if (e.code == '45000' ||
-          (e.message ?? '').toLowerCase().contains('cannot send messages')) {
+          e.message.toLowerCase().contains('cannot send messages')) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(

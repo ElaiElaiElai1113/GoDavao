@@ -89,15 +89,6 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
 
   // ---------- helpers ----------
 
-  InputDecoration _decor({String? label, String? hint}) =>
-      const InputDecoration(border: UnderlineInputBorder()).copyWith(
-        labelText: label,
-        hintText: hint,
-        focusedBorder: const UnderlineInputBorder(
-          borderSide: BorderSide(color: _purple, width: 2),
-        ),
-      );
-
   Future<void> _checkHasVehicles() async {
     setState(() {
       _checkingVehicles = true;

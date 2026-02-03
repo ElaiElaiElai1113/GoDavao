@@ -30,7 +30,6 @@ class _VehicleSwitcherState extends State<VehicleSwitcher> {
   String? _selectedId;
 
   static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
 
   @override
   void initState() {
@@ -241,7 +240,6 @@ class _VehicleSwitcherState extends State<VehicleSwitcher> {
 
             final isApproved = status == 'approved';
             final isPending = status == 'pending';
-            final isRejected = status == 'rejected';
 
             final statusChip = _StatusChip(status: status);
 

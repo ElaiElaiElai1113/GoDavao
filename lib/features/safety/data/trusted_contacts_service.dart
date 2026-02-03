@@ -32,7 +32,7 @@ class TrustedContactsService {
             })
             .select()
             .single();
-    return TrustedContact.fromMap(res as Map<String, dynamic>);
+    return TrustedContact.fromMap(res);
   }
 
   Future<TrustedContact> update(
@@ -48,7 +48,7 @@ class TrustedContactsService {
             .eq('id', id)
             .select()
             .single();
-    return TrustedContact.fromMap(res as Map<String, dynamic>);
+    return TrustedContact.fromMap(res);
   }
 
   Future<void> remove(String id) async {

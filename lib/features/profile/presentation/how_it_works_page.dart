@@ -219,7 +219,7 @@ class _StepInfo {
 class _StepCard extends StatelessWidget {
   final int index;
   final _StepInfo info;
-  const _StepCard({super.key, required this.index, required this.info});
+  const _StepCard({required this.index, required this.info});
 
   static const _purple = Color(0xFF6A27F7);
   static const _textDim = Color(0xFF667085);

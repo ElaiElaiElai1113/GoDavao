@@ -42,11 +42,11 @@ class VehiclesService {
       (s == null || s.trim().isEmpty) ? null : s.trim();
 
   Exception _friendlyVehicleError(PostgrestException e) {
-    final msg = (e.message ?? '').toLowerCase();
+    final msg = e.message.toLowerCase();
     if (msg.contains('uq_vehicle_plate_per_driver')) {
       return Exception('This plate is already registered to your account.');
     }
-    return Exception(e.message ?? 'Vehicle operation failed.');
+    return Exception(e.message);
   }
 
   String _nowUtcIso() => DateTime.now().toUtc().toIso8601String();

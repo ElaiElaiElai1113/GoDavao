@@ -37,7 +37,6 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
 
   // Map
   final _map = MapController();
-  bool _mapReady = false;
   bool _didFitOnce = false;
   bool _debouncingMove = false;
 
@@ -856,8 +855,7 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                                 options: MapOptions(
                                   initialCenter: center,
                                   initialZoom: 13,
-                                  onMapReady:
-                                      () => setState(() => _mapReady = true),
+                                  onMapReady: () {},
                                   onTap: (_, __) {},
                                 ),
                                 children: [

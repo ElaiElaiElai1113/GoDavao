@@ -20,7 +20,6 @@ class _VehiclesPageState extends State<VehiclesPage> {
 
   // Brand
   static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
 
   @override
   void initState() {

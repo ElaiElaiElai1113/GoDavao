@@ -207,8 +207,8 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
   // Turn Postgres errors into friendly copy
   String _niceError(Object e) {
     if (e is PostgrestException) {
-      final msg = (e.message ?? '').toString().toLowerCase();
-      final details = (e.details ?? '').toString().toLowerCase();
+      final msg = e.message.toString().toLowerCase();
+      final details = e.details.toString().toLowerCase();
 
       // Trigger/guard error
       if (e.code == '45000' ||
@@ -224,7 +224,7 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
       }
 
       // Other PG messages
-      return e.message ?? 'Save failed.';
+      return e.message.isNotEmpty ? e.message : 'Save failed.';
     }
     return 'Save failed. Please try again.';
   }
@@ -349,7 +349,7 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
       final msg = _niceError(e);
       // If DB blocked deactivation due to an ongoing trip, show nicer UI + revert toggle
       if (e.code == '45000' ||
-          (e.message ?? '').toLowerCase().contains('cannot deactivate')) {
+          e.message.toLowerCase().contains('cannot deactivate')) {
         if (!mounted) return;
         setState(() => _isActive = true);
         _showBlockedSheet();

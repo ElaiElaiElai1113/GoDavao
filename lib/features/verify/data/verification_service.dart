@@ -33,7 +33,6 @@ String _statusToText(VerificationStatus s) {
     case VerificationStatus.pending:
       return 'pending';
     case VerificationStatus.unknown:
-    default:
       // If someone attempts to set unknown, treat it as pending.
       return 'pending';
   }
@@ -261,7 +260,7 @@ class VerificationService {
               schema: 'public',
               table: 'users',
               callback: (payload) {
-                final newRec = payload.newRecord ?? {};
+                final newRec = payload.newRecord;
                 if (newRec['id'] == id) _push();
               },
             )
@@ -270,7 +269,7 @@ class VerificationService {
               schema: 'public',
               table: 'drivers',
               callback: (payload) {
-                final newRec = payload.newRecord ?? {};
+                final newRec = payload.newRecord;
                 if (newRec['user_id'] == id) _push();
               },
             )
@@ -279,7 +278,7 @@ class VerificationService {
               schema: 'public',
               table: 'passengers',
               callback: (payload) {
-                final newRec = payload.newRecord ?? {};
+                final newRec = payload.newRecord;
                 if (newRec['user_id'] == id) _push();
               },
             )

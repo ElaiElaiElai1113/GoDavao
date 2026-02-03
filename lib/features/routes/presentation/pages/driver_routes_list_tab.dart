@@ -201,7 +201,7 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
     } on PostgrestException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? 'Cannot change route status right now.')),
+        SnackBar(content: Text(e.message.isNotEmpty ? e.message : 'Cannot change route status right now.')),
       );
     } catch (e) {
       if (!mounted) return;

@@ -14,8 +14,7 @@ class SosService {
 
     // 1) Create parent alert
     final user =
-        await sb.from('users').select('name').eq('id', uid).maybeSingle()
-            as Map<String, dynamic>?;
+        await sb.from('users').select('name').eq('id', uid).maybeSingle();
 
     final name = (user?['name'] as String?)?.trim();
     final msg =
@@ -64,9 +63,7 @@ class SosService {
     }
 
     // 3) Invoke the Edge Function to send queued messages
-    final res = await sb.functions.invoke('send-sos', body: {});
-    // Optional: check result payload
-    // print('send-sos => $res');
+    await sb.functions.invoke('send-sos', body: {});
   }
 
   String _toE164(String phone) {

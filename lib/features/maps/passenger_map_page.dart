@@ -194,24 +194,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     return _meters(proj, p);
   }
 
-  LatLng _projectOnSegment(LatLng p, LatLng a, LatLng b) {
-    final ax = a.longitude, ay = a.latitude;
-    final bx = b.longitude, by = b.latitude;
-    final px = p.longitude, py = p.latitude;
-
-    final vx = bx - ax, vy = by - ay;
-    final wx = px - ax, wy = py - ay;
-
-    final c1 = vx * wx + vy * wy;
-    final c2 = vx * vx + vy * vy;
-
-    if (c1 <= 0) return a;
-    if (c2 <= c1) return b;
-
-    final t = c1 / c2;
-    return LatLng(ay + t * vy, ax + t * vx);
-  }
-
   _SnapResult _snapWithProgress(LatLng p, List<LatLng> poly) {
     // Find closest projection & compute progress = segIndex + t (0..n-1)
     double bestD = double.infinity;
