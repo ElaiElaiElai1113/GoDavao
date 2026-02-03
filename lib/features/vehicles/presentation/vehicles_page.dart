@@ -739,7 +739,7 @@ class _DocTile extends StatelessWidget {
     String heroTag,
   ) {
     Navigator.of(context).push(
-      PageRouteBuilder(
+      PageRouteBuilder<void>(
         opaque: false,
         pageBuilder:
             (_, __, ___) => _FullScreenImageViewer(

@@ -20,7 +20,7 @@ import 'package:godavao/features/verify/presentation/pending_banner.dart'; // âœ
 
 import 'package:godavao/features/safety/presentation/trusted_contacts_page.dart';
 
-import 'package:postgrest/postgrest.dart' show PostgrestException, CountOption;
+import 'package:postgrest/postgrest.dart' show PostgrestException;
 
 
 // ðŸŸ£ Coach marks
