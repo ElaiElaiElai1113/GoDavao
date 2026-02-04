@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:godavao/common/empty_state.dart';
 import 'package:godavao/features/routes/presentation/pages/driver_route_edit_page.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -450,8 +451,15 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
           onRefresh: _bootstrap,
           child: ListView(
             children: const [
-              SizedBox(height: 200),
-              Center(child: Text('No routes yet. Create one in the next tab.', style: TextStyle(color: Colors.black54))),
+              SizedBox(height: 120),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: EmptyStateCard(
+                  icon: Icons.route_outlined,
+                  title: 'No routes yet',
+                  subtitle: 'Create one in the next tab.',
+                ),
+              ),
             ],
           ),
         ),

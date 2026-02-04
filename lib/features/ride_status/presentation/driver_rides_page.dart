@@ -4,6 +4,7 @@ import 'dart:collection';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:godavao/common/empty_state.dart';
 import 'package:godavao/features/ratings/presentation/rating_details_sheet.dart';
 import 'package:intl/intl.dart';
 import 'package:geocoding/geocoding.dart';
@@ -1718,20 +1719,11 @@ class _DriverRidesPageState extends State<DriverRidesPage>
   Widget _emptyState(String message, {IconData icon = Icons.inbox}) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 44, color: Colors.black26),
-            const SizedBox(height: 12),
-            Text(
-              message,
-              style: const TextStyle(
-                color: Colors.black54,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
+        padding: const EdgeInsets.all(24),
+        child: EmptyStateCard(
+          icon: icon,
+          title: message,
+          subtitle: 'Check back later for updates.',
         ),
       ),
     );

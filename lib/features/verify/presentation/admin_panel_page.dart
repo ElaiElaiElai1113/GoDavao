@@ -528,12 +528,11 @@ class _LogoutButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ElevatedButton.icon(
-      style: ElevatedButton.styleFrom(
+    return FilledButton.icon(
+      style: FilledButton.styleFrom(
         backgroundColor: Colors.red.withValues(alpha: 0.12),
         foregroundColor: Colors.red.shade700,
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 18),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
       icon: const Icon(Icons.logout),
       label: const Text(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:godavao/common/empty_state.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/notifications_service.dart';
 
@@ -97,7 +98,11 @@ class _NotificationsSheet extends StatelessWidget {
                 notifs.isEmpty
                     ? const Padding(
                       padding: EdgeInsets.all(24),
-                      child: Text('No notifications yet.'),
+                      child: EmptyStateCard(
+                        icon: Icons.notifications_none,
+                        title: 'No notifications yet',
+                        subtitle: 'You’re all caught up.',
+                      ),
                     )
                     : ListView.separated(
                       shrinkWrap: true,

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:godavao/common/app_colors.dart';
+import 'package:godavao/common/empty_state.dart';
 import 'package:godavao/features/vehicles/data/vehicle_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -994,33 +995,12 @@ class _Empty extends StatelessWidget {
       padding: const EdgeInsets.all(24),
       children: [
         const SizedBox(height: 40),
-        Icon(
-          Icons.directions_car_filled,
-          size: 64,
-          color: Colors.black.withValues(alpha: .3),
-        ),
-        const SizedBox(height: 12),
-        const Center(
-          child: Text(
-            'No vehicles yet',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-          ),
-        ),
-        const SizedBox(height: 6),
-        Center(
-          child: Text(
-            'Add your vehicle and upload OR/CR to start accepting rides.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Center(
-          child: OutlinedButton.icon(
-            onPressed: onAdd,
-            icon: const Icon(Icons.add),
-            label: const Text('Add a vehicle'),
-          ),
+        EmptyStateCard(
+          icon: Icons.directions_car_filled,
+          title: 'No vehicles yet',
+          subtitle: 'Add your vehicle and upload OR/CR to start accepting rides.',
+          ctaLabel: 'Add a vehicle',
+          onCta: onAdd,
         ),
       ],
     );

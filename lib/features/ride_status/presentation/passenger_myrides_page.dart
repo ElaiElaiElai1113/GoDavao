@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:godavao/common/app_colors.dart';
+import 'package:godavao/common/empty_state.dart';
 import 'package:godavao/core/reverse_geocoder.dart';
 import 'package:godavao/core/osrm_service.dart';
 import 'package:godavao/features/maps/passenger_map_page.dart';
@@ -905,11 +906,20 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                           if (list.isEmpty) {
                             return [
                               const SizedBox(height: 24),
-                              _EmptyRides(
+                              EmptyStateCard(
+                                icon: Icons.event_note,
                                 title: 'No upcoming rides',
                                 subtitle:
                                     'Book a ride to see it appear here.',
-                                showCta: true,
+                                ctaLabel: 'Book a ride',
+                                onCta:
+                                    () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute<void>(
+                                        builder:
+                                            (_) => const PassengerMapPage(),
+                                      ),
+                                    ),
                               ),
                             ];
                           }
@@ -933,7 +943,8 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                           if (list.isEmpty) {
                             return [
                               const SizedBox(height: 24),
-                              const _EmptyRides(
+                              const EmptyStateCard(
+                                icon: Icons.event_note,
                                 title: 'No ride history yet',
                                 subtitle:
                                     'Completed rides will show up here.',
@@ -952,59 +963,6 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _EmptyRides extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final bool showCta;
-  const _EmptyRides({
-    required this.title,
-    required this.subtitle,
-    this.showCta = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        children: [
-          Icon(Icons.event_note, color: Colors.grey.shade500, size: 36),
-          const SizedBox(height: 8),
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-          ),
-          if (showCta) ...[
-            const SizedBox(height: 10),
-            FilledButton.icon(
-              onPressed:
-                  () => Navigator.push(
-                    context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => const PassengerMapPage(),
-                    ),
-                  ),
-              icon: const Icon(Icons.map_outlined),
-              label: const Text('Book a ride'),
-            ),
-          ],
-        ],
       ),
     );
   }

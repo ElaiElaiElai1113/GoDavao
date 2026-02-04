@@ -40,9 +40,9 @@ class PendingVerificationBanner extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          ElevatedButton(
+          FilledButton(
             onPressed: onReviewTap,
-            style: ElevatedButton.styleFrom(
+            style: FilledButton.styleFrom(
               backgroundColor: Colors.orange,
               foregroundColor: Colors.white,
             ),

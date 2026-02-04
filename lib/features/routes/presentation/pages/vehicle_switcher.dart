@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:godavao/common/empty_state.dart';
 
 class VehicleSwitcher extends StatefulWidget {
   const VehicleSwitcher({
@@ -213,7 +214,11 @@ class _VehicleSwitcherState extends State<VehicleSwitcher> {
     }
 
     if (_vehicles.isEmpty) {
-      return const Text('No vehicles found');
+      return const EmptyStateCard(
+        icon: Icons.directions_car_outlined,
+        title: 'No vehicles found',
+        subtitle: 'Add a vehicle to continue.',
+      );
     }
 
     return Wrap(

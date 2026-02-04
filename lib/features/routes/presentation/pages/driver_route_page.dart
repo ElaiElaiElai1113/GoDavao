@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:godavao/common/empty_state.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -1230,20 +1231,16 @@ class _CollapsibleRouteSheet extends StatelessWidget {
                           ),
                         )
                       else if (!hasAnyVehicle)
-                        Row(
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                'No vehicles yet. Add one to publish routes.',
-                                style: TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                            OutlinedButton.icon(
-                              icon: const Icon(Icons.add),
-                              label: const Text('Add Vehicle'),
-                              onPressed: onAddVehicle,
-                            ),
-                          ],
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: EmptyStateCard(
+                            icon: Icons.directions_car_filled_outlined,
+                            title: 'No vehicles yet',
+                            subtitle:
+                                'Add one to publish routes and go online.',
+                            ctaLabel: 'Add vehicle',
+                            onCta: onAddVehicle,
+                          ),
                         )
                       else
                         Column(
