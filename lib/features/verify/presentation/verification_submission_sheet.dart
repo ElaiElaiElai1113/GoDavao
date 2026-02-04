@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:godavao/common/empty_state.dart';
 
 class VerificationSubmissionSheet extends StatelessWidget {
   const VerificationSubmissionSheet({
@@ -269,9 +270,11 @@ class VerificationSubmissionSheet extends StatelessWidget {
                         if (imageDocs.isEmpty && fileDocs.isEmpty)
                           const Padding(
                             padding: EdgeInsets.all(12),
-                            child: Text(
-                              'No documents found for this submission.',
-                              style: TextStyle(color: Color(0xFF667085)),
+                            child: EmptyStateCard(
+                              icon: Icons.insert_drive_file_outlined,
+                              title: 'No documents found',
+                              subtitle:
+                                  'There are no files attached to this submission.',
                             ),
                           ),
                       ],

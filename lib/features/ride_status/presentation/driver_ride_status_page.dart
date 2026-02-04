@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:godavao/common/empty_state.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -567,7 +568,18 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
       return _errorScaffold();
     }
     if (_ride == null) {
-      return const Scaffold(body: Center(child: Text('No ride data')));
+      return const Scaffold(
+        body: Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: EmptyStateCard(
+              icon: Icons.inbox_outlined,
+              title: 'No ride data',
+              subtitle: 'This ride may have ended or is unavailable.',
+            ),
+          ),
+        ),
+      );
     }
 
     final pickup = _pickup;

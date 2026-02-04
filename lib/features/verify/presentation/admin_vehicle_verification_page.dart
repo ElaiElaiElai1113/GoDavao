@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:godavao/common/empty_state.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AdminVehicleVerificationPage extends StatefulWidget {
@@ -399,9 +400,13 @@ class _PendingVehicleTab extends StatelessWidget {
 
         final rows = applyFilters(snapshot.data ?? const []);
         if (rows.isEmpty) {
-          return const _VehicleEmptyState(
-            icon: Icons.directions_car_filled_outlined,
-            message: 'No pending vehicles match your filters.',
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: EmptyStateCard(
+              icon: Icons.directions_car_filled_outlined,
+              title: 'No pending vehicles',
+              subtitle: 'No pending vehicles match your filters.',
+            ),
           );
         }
 
@@ -447,9 +452,13 @@ class _VehicleHistoryTab extends StatelessWidget {
   Widget build(BuildContext context) {
     if (loading) return const Center(child: CircularProgressIndicator());
     if (items.isEmpty) {
-      return _VehicleEmptyState(
-        icon: stateLabel == 'Approved' ? Icons.verified : Icons.block,
-        message: 'No $stateLabel vehicles yet.',
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: EmptyStateCard(
+          icon: stateLabel == 'Approved' ? Icons.verified : Icons.block,
+          title: 'No $stateLabel vehicles yet',
+          subtitle: 'Check back later for updates.',
+        ),
       );
     }
     return RefreshIndicator(
@@ -701,31 +710,6 @@ class _DocStatusChip extends StatelessWidget {
       ),
     );
   }
-}
-
-class _VehicleEmptyState extends StatelessWidget {
-  const _VehicleEmptyState({required this.icon, required this.message});
-  final IconData icon;
-  final String message;
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 42, color: Colors.black26),
-          const SizedBox(height: 10),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 13, color: Colors.black54),
-          ),
-        ],
-      ),
-    ),
-  );
 }
 
 class _VehicleErrorState extends StatelessWidget {

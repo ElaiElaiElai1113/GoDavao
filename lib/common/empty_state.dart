@@ -6,6 +6,8 @@ class EmptyStateCard extends StatelessWidget {
   final String subtitle;
   final String? ctaLabel;
   final VoidCallback? onCta;
+  final bool compact;
+  final bool showSubtitle;
 
   const EmptyStateCard({
     super.key,
@@ -14,12 +16,14 @@ class EmptyStateCard extends StatelessWidget {
     required this.subtitle,
     this.ctaLabel,
     this.onCta,
+    this.compact = false,
+    this.showSubtitle = true,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(compact ? 12 : 16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -27,15 +31,27 @@ class EmptyStateCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Icon(icon, color: Colors.grey.shade500, size: 36),
+          Icon(icon, color: Colors.grey.shade500, size: compact ? 20 : 36),
           const SizedBox(height: 8),
-          Text(title, style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 4),
           Text(
-            subtitle,
+            title,
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+            style:
+                compact
+                    ? Theme.of(context).textTheme.bodyMedium
+                    : Theme.of(context).textTheme.titleSmall,
           ),
+          if (showSubtitle) ...[
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: compact ? 11 : 12,
+              ),
+            ),
+          ],
           if (ctaLabel != null && onCta != null) ...[
             const SizedBox(height: 10),
             FilledButton.icon(

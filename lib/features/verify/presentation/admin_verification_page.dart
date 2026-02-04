@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:godavao/common/empty_state.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/admin_service.dart';
@@ -341,9 +342,13 @@ class _VerificationTab extends StatelessWidget {
 
     if (loading) return const Center(child: CircularProgressIndicator());
     if (data!.isEmpty) {
-      return _StateMessage(
-        icon: Icons.inbox_outlined,
-        text: 'No $label records found.',
+      return const Padding(
+        padding: EdgeInsets.all(24),
+        child: EmptyStateCard(
+          icon: Icons.inbox_outlined,
+          title: 'No records found',
+          subtitle: 'Try adjusting filters or check back later.',
+        ),
       );
     }
     return RefreshIndicator(onRefresh: onRefresh!, child: _list(data!));

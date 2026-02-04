@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:godavao/common/empty_state.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/trusted_contacts_service.dart';
 import '../models/trusted_contact.dart';
@@ -147,9 +148,14 @@ class _TrustedContactsPageState extends State<TrustedContactsPage> {
               ? const Center(child: CircularProgressIndicator())
               : _items.isEmpty
               ? const Center(
-                child: Text(
-                  'No trusted contacts yet.\nAdd one to share your location during emergencies.',
-                  textAlign: TextAlign.center,
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: EmptyStateCard(
+                    icon: Icons.person_outline,
+                    title: 'No trusted contacts yet',
+                    subtitle:
+                        'Add one to share your location during emergencies.',
+                  ),
                 ),
               )
               : ListView.separated(

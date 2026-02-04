@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:godavao/common/empty_state.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
@@ -1198,30 +1199,17 @@ class _EmptyRoutesBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        const SizedBox(width: 12),
-        Expanded(
-          child: Container(
-            height: 48,
-            alignment: Alignment.centerLeft,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.black12),
-            ),
-            child: Text(message, maxLines: 1, overflow: TextOverflow.ellipsis),
-          ),
-        ),
-        const SizedBox(width: 8),
-        OutlinedButton.icon(
-          onPressed: onRetry,
-          icon: const Icon(Icons.refresh, size: 18),
-          label: const Text('Retry'),
-        ),
-        const SizedBox(width: 12),
-      ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: EmptyStateCard(
+        icon: Icons.route_outlined,
+        title: message,
+        subtitle: 'Try refreshing or adjusting your pickup/destination.',
+        compact: true,
+        showSubtitle: false,
+        ctaLabel: 'Retry',
+        onCta: onRetry,
+      ),
     );
   }
 }
