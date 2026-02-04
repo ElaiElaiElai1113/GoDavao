@@ -325,9 +325,13 @@ class _VerificationTab extends StatelessWidget {
         stream: stream,
         builder: (context, snap) {
           if (snap.hasError) {
-            return _StateMessage(
-              icon: Icons.error,
-              text: 'Error loading data.',
+            return const Padding(
+              padding: EdgeInsets.all(24),
+              child: EmptyStateCard(
+                icon: Icons.error_outline,
+                title: 'Error loading data',
+                subtitle: 'Please try again later.',
+              ),
             );
           }
           if (snap.connectionState == ConnectionState.waiting &&
@@ -626,29 +630,6 @@ class _FilterPanel extends StatelessWidget {
   );
 }
 
-class _StateMessage extends StatelessWidget {
-  const _StateMessage({required this.icon, required this.text});
-  final IconData icon;
-  final String text;
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 46, color: Colors.black26),
-          const SizedBox(height: 12),
-          Text(
-            text,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.black54, fontSize: 13),
-          ),
-        ],
-      ),
-    ),
-  );
-}
 
 extension on String {
   String capitalize() =>

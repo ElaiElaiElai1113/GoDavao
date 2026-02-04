@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:godavao/common/empty_state.dart';
 
 import 'package:godavao/features/ride_status/presentation/passenger_ride_status_page.dart';
 import 'package:godavao/features/ride_status/presentation/driver_ride_status_page.dart';
@@ -226,7 +227,18 @@ class _BookingHistoryPageState extends State<BookingHistoryPage> {
     if (_error != null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Booking History')),
-        body: Center(child: Text('Error: $_error')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: EmptyStateCard(
+              icon: Icons.error_outline,
+              title: 'Error loading history',
+              subtitle: _error!,
+              ctaLabel: 'Retry',
+              onCta: _load,
+            ),
+          ),
+        ),
       );
     }
 
@@ -234,20 +246,32 @@ class _BookingHistoryPageState extends State<BookingHistoryPage> {
       appBar: AppBar(title: const Text('Booking History')),
       body: RefreshIndicator(
         onRefresh: _load,
-        child: ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: _items.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 10),
-          itemBuilder: (context, i) {
-            final it = _items[i];
-            final dt = DateFormat(
-              'MMM d, y • h:mm a',
-            ).format(DateTime.parse(it['created_at'] as String));
-            final status = it['status'] as String;
-            final pickupAddr = (it['pickup'] as Map)['address'] as String;
-            final destAddr = (it['destination'] as Map)['address'] as String;
+        child:
+            _items.isEmpty
+                ? const ListView(
+                  padding: EdgeInsets.all(24),
+                  children: [
+                    EmptyStateCard(
+                      icon: Icons.history,
+                      title: 'No booking history yet',
+                      subtitle: 'Completed rides will appear here.',
+                    ),
+                  ],
+                )
+                : ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _items.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (context, i) {
+                    final it = _items[i];
+                    final dt = DateFormat(
+                      'MMM d, y • h:mm a',
+                    ).format(DateTime.parse(it['created_at'] as String));
+                    final status = it['status'] as String;
+                    final pickupAddr = (it['pickup'] as Map)['address'] as String;
+                    final destAddr = (it['destination'] as Map)['address'] as String;
 
-            return Card(
+                    return Card(
               elevation: 2,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),

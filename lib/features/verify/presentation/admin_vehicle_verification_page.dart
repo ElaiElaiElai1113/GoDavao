@@ -392,7 +392,18 @@ class _PendingVehicleTab extends StatelessWidget {
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: stream,
       builder: (context, snapshot) {
-        if (snapshot.hasError) return _VehicleErrorState(onRetry: () async {});
+        if (snapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(24),
+            child: EmptyStateCard(
+              icon: Icons.error_outline,
+              title: 'Failed to load vehicles',
+              subtitle: 'Please try again later.',
+              ctaLabel: 'Retry',
+              onCta: () {},
+            ),
+          );
+        }
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
@@ -712,31 +723,6 @@ class _DocStatusChip extends StatelessWidget {
   }
 }
 
-class _VehicleErrorState extends StatelessWidget {
-  const _VehicleErrorState({required this.onRetry});
-  final Future<void> Function() onRetry;
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(Icons.error_outline, size: 42, color: Colors.redAccent),
-        const SizedBox(height: 10),
-        const Text(
-          'Failed to load vehicles. Try again.',
-          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 12),
-        TextButton.icon(
-          onPressed: onRetry,
-          icon: const Icon(Icons.refresh),
-          label: const Text('Retry'),
-        ),
-      ],
-    ),
-  );
-}
 
 /* ------------------ PREVIEW & DIALOG ------------------ */
 
