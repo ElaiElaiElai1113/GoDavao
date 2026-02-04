@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:godavao/common/app_colors.dart';
+import 'package:godavao/common/error_state.dart';
 import 'package:godavao/common/empty_state.dart';
 import 'package:godavao/features/vehicles/data/vehicle_service.dart';
 import 'package:image_picker/image_picker.dart';
@@ -1021,17 +1022,11 @@ class _ErrorBox extends StatelessWidget {
       padding: const EdgeInsets.all(24),
       children: [
         const SizedBox(height: 40),
-        const Icon(Icons.error_outline, color: Colors.red, size: 48),
-        const SizedBox(height: 12),
-        SelectableText(
-          'Failed to load vehicles:\n$message',
-          style: const TextStyle(fontSize: 16),
-        ),
-        const SizedBox(height: 12),
-        FilledButton.icon(
-          onPressed: onRetry,
-          icon: const Icon(Icons.refresh),
-          label: const Text('Retry'),
+        ErrorStateCard(
+          title: 'Failed to load vehicles',
+          message: message,
+          ctaLabel: 'Retry',
+          onCta: onRetry,
         ),
       ],
     );

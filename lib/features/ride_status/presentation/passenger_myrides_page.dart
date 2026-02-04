@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:godavao/common/app_colors.dart';
+import 'package:godavao/common/error_state.dart';
 import 'package:godavao/common/empty_state.dart';
 import 'package:godavao/core/reverse_geocoder.dart';
 import 'package:godavao/core/osrm_service.dart';
@@ -806,7 +807,17 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
             ),
           ),
         ),
-        body: Center(child: Text(_error!)),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: ErrorStateCard(
+              title: 'Failed to load rides',
+              message: _error!,
+              ctaLabel: 'Retry',
+              onCta: _bootstrap,
+            ),
+          ),
+        ),
       );
     }
 

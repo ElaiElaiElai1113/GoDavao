@@ -9,6 +9,8 @@ class AppTheme {
     );
 
     return base.copyWith(
+      materialTapTargetSize: MaterialTapTargetSize.padded,
+      visualDensity: VisualDensity.standard,
       scaffoldBackgroundColor: AppColors.bg,
       appBarTheme: const AppBarTheme(
         centerTitle: true,
@@ -41,6 +43,10 @@ class AppTheme {
       chipTheme: base.chipTheme.copyWith(
         labelStyle: const TextStyle(fontWeight: FontWeight.w600),
         shape: const StadiumBorder(),
+      ),
+      listTileTheme: const ListTileThemeData(
+        minVerticalPadding: 12,
+        minLeadingWidth: 36,
       ),
       dividerTheme: DividerThemeData(
         color: Colors.grey.shade200,

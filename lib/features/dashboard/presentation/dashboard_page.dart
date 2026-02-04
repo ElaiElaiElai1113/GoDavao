@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:godavao/common/app_colors.dart';
+import 'package:godavao/common/section_header.dart';
 import 'package:godavao/features/auth/presentation/auth_page.dart';
 import 'package:godavao/features/profile/presentation/profile_page.dart';
 import 'package:godavao/features/profile/presentation/app_drawer.dart';
@@ -675,15 +676,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 16,
                                   ),
-                                  child: Text(
-                                    'Next Steps',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleMedium
-                                        ?.copyWith(fontWeight: FontWeight.w700),
-                                  ),
+                                  child: const SectionHeader(title: 'Next Steps'),
                                 ),
                                 const SizedBox(height: 8),
                                 Padding(
@@ -756,14 +749,8 @@ class _DashboardPageState extends State<DashboardPage> {
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 16,
                                   ),
-                                  child: Text(
-                                    'Getting Started',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleMedium
-                                        ?.copyWith(fontWeight: FontWeight.w700),
+                                  child: const SectionHeader(
+                                    title: 'Getting Started',
                                   ),
                                 ),
                                 const SizedBox(height: 8),
@@ -782,13 +769,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         // QUICK ACTIONS
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Text(
-                            'Quick Actions',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
+                          child: const SectionHeader(title: 'Quick Actions'),
                         ),
                         const SizedBox(height: 8),
                         Padding(
@@ -986,13 +967,7 @@ class _DashboardPageState extends State<DashboardPage> {
                           const SizedBox(height: 16),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Text(
-                              'Overview',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.w700),
-                            ),
+                            child: const SectionHeader(title: 'Overview'),
                           ),
                           const SizedBox(height: 8),
                           Padding(
