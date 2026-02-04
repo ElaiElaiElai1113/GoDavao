@@ -3,7 +3,17 @@ import 'dart:math';
 import 'package:latlong2/latlong.dart';
 import 'package:godavao/core/osrm_service.dart';
 
-enum PricingMode { shared, groupFlat, pakyaw }
+enum PricingMode { shared, sharedDistance, groupFlat, pakyaw }
+
+class SharedPassenger {
+  final String id;
+  final double distanceKm;
+
+  const SharedPassenger({
+    required this.id,
+    required this.distanceKm,
+  });
+}
 
 class FareRules {
   final double baseFare;
@@ -37,6 +47,60 @@ class FareRules {
     this.groupFlatMultiplier = 1.10,
     this.pakyawMultiplier = 1.20,
   });
+}
+
+class PassengerFare {
+  final String passengerId;
+  final double distanceKm;
+  final double fareShare;
+  final double platformFee;
+  final double total;
+
+  const PassengerFare({
+    required this.passengerId,
+    required this.distanceKm,
+    required this.fareShare,
+    required this.platformFee,
+    required this.total,
+  });
+
+  Map<String, dynamic> toMap() => {
+    'passenger_id': passengerId,
+    'distance_km': distanceKm,
+    'fare_share': fareShare,
+    'platform_fee': platformFee,
+    'total': total,
+  };
+}
+
+class SharedFareBreakdown {
+  final double totalRouteDistanceKm;
+  final double durationMin;
+  final double totalFare;
+  final double totalPlatformFee;
+  final double totalDriverTake;
+  final List<PassengerFare> passengerFares;
+  final PricingMode mode;
+
+  const SharedFareBreakdown({
+    required this.totalRouteDistanceKm,
+    required this.durationMin,
+    required this.totalFare,
+    required this.totalPlatformFee,
+    required this.totalDriverTake,
+    required this.passengerFares,
+    required this.mode,
+  });
+
+  Map<String, dynamic> toMap() => {
+    'total_route_distance_km': totalRouteDistanceKm,
+    'duration_min': durationMin,
+    'total_fare': totalFare,
+    'total_platform_fee': totalPlatformFee,
+    'total_driver_take': totalDriverTake,
+    'passenger_fares': passengerFares.map((p) => p.toMap()).toList(),
+    'mode': mode.name,
+  };
 }
 
 class FareBreakdown {
@@ -192,6 +256,83 @@ class FareService {
       total: total,
       platformFee: platformFee,
       driverTake: driverTake,
+    );
+  }
+
+  /// Calculate proportional fares for shared rides based on distance.
+  ///
+  /// Passengers split the total route fare proportionally based on their
+  /// individual distance traveled along the route.
+  ///
+  /// Example:
+  /// - Route: 10km, total fare = ₱500
+  /// - Passenger A: 10km (pays ₱333)
+  /// - Passenger B: 5km (pays ₱167)
+  /// - Total: ₱500
+  Future<SharedFareBreakdown> estimateSharedDistanceFare({
+    required LatLng routeStart,
+    required LatLng routeEnd,
+    required List<SharedPassenger> passengers,
+    DateTime? when,
+    double? platformFeeRate,
+    double surgeMultiplier = 1.0,
+  }) async {
+    final (totalKm, totalMins) = await _distanceAndTime(routeStart, routeEnd);
+
+    // Calculate total route fare (based on full route distance)
+    final baseFareBreakdown = estimateForDistance(
+      distanceKm: totalKm,
+      durationMin: totalMins,
+      when: when,
+      seats: 1, // Base fare for the route
+      platformFeeRate: platformFeeRate,
+      surgeMultiplier: surgeMultiplier,
+      mode: PricingMode.shared,
+    );
+
+    // Calculate total passenger distance
+    final totalPassengerKm = passengers.fold<double>(
+      0.0,
+      (sum, p) => sum + p.distanceKm,
+    );
+
+    // Calculate each passenger's fare proportionally
+    final passengerFares = <PassengerFare>[];
+    double totalFare = 0.0;
+    double totalPlatformFee = 0.0;
+
+    for (final passenger in passengers) {
+      // Calculate this passenger's share of the route fare
+      final distanceShare = totalPassengerKm > 0
+          ? (passenger.distanceKm / totalPassengerKm)
+          : (1.0 / passengers.length);
+
+      final fareShare = _round2(baseFareBreakdown.total * distanceShare);
+      final pFee = _round2(fareShare * (platformFeeRate ?? rules.defaultPlatformFeeRate));
+      final pTotal = _roundPeso(fareShare + pFee);
+
+      passengerFares.add(PassengerFare(
+        passengerId: passenger.id,
+        distanceKm: passenger.distanceKm,
+        fareShare: fareShare,
+        platformFee: pFee,
+        total: pTotal,
+      ));
+
+      totalFare += pTotal;
+      totalPlatformFee += pFee;
+    }
+
+    final totalDriverTake = _round2(totalFare - totalPlatformFee);
+
+    return SharedFareBreakdown(
+      totalRouteDistanceKm: _round(totalKm, 2),
+      durationMin: _round(totalMins, 0),
+      totalFare: totalFare,
+      totalPlatformFee: totalPlatformFee,
+      totalDriverTake: totalDriverTake,
+      passengerFares: passengerFares,
+      mode: PricingMode.sharedDistance,
     );
   }
 
