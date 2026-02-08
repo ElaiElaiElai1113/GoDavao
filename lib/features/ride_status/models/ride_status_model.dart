@@ -110,11 +110,11 @@ class RideStatus {
     return null;
   }
 
-  /// Get dropoff coordinates
+  /// Get destination coordinates
   LatLng? get dropoff {
     if (ride == null) return null;
-    final lat = ride!['dropoff_lat'] as num?;
-    final lng = ride!['dropoff_lng'] as num?;
+    final lat = ride!['destination_lat'] as num?;
+    final lng = ride!['destination_lng'] as num?;
     if (lat != null && lng != null) {
       return LatLng(lat.toDouble(), lng.toDouble());
     }

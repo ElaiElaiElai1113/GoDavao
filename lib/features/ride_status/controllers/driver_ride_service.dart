@@ -30,7 +30,7 @@ class DriverRideService {
             created_at,
             driver_routes!inner(
               id,
-              route_name
+              name
             ),
             ride_requests!inner(
               id,
@@ -38,11 +38,11 @@ class DriverRideService {
               seats_requested,
               status,
               pickup_address,
-              dropoff_address,
+              destination_address,
               pickup_lat,
               pickup_lng,
-              dropoff_lat,
-              dropoff_lng
+              destination_lat,
+              destination_lng
             )
           ''')
           .eq('driver_routes.driver_id', driverId)
@@ -64,15 +64,16 @@ class DriverRideService {
           createdAt: DateTime.parse(matchRow['created_at'] as String? ?? DateTime.now().toIso8601String()),
           passengerName: requestData['passenger_name'] as String? ?? 'Passenger',
           pickupAddress: requestData['pickup_address'] as String? ?? '',
-          destinationAddress: requestData['dropoff_address'] as String? ?? '',
+          destinationAddress:
+              requestData['destination_address'] as String? ?? '',
           fare: (matchRow['fare'] as num?)?.toDouble(),
           pax: requestData['seats_requested'] as int? ?? 1,
-          driverRouteName: routeData['route_name'] as String?,
+          driverRouteName: routeData['name'] as String?,
           passengerId: requestData['passenger_id'] as String?,
           pickupLat: (requestData['pickup_lat'] as num?)?.toDouble(),
           pickupLng: (requestData['pickup_lng'] as num?)?.toDouble(),
-          destLat: (requestData['dropoff_lat'] as num?)?.toDouble(),
-          destLng: (requestData['dropoff_lng'] as num?)?.toDouble(),
+          destLat: (requestData['destination_lat'] as num?)?.toDouble(),
+          destLng: (requestData['destination_lng'] as num?)?.toDouble(),
         );
       }).toList();
     } catch (e) {
@@ -95,7 +96,7 @@ class DriverRideService {
             created_at,
             driver_routes!inner(
               id,
-              route_name
+              name
             ),
             ride_requests!inner(
               id,
@@ -103,11 +104,11 @@ class DriverRideService {
               seats_requested,
               status,
               pickup_address,
-              dropoff_address,
+              destination_address,
               pickup_lat,
               pickup_lng,
-              dropoff_lat,
-              dropoff_lng
+              destination_lat,
+              destination_lng
             )
           ''')
           .eq('driver_routes.driver_id', driverId)
@@ -127,15 +128,16 @@ class DriverRideService {
           createdAt: DateTime.parse(matchRow['created_at'] as String? ?? DateTime.now().toIso8601String()),
           passengerName: requestData['passenger_name'] as String? ?? 'Passenger',
           pickupAddress: requestData['pickup_address'] as String? ?? '',
-          destinationAddress: requestData['dropoff_address'] as String? ?? '',
+          destinationAddress:
+              requestData['destination_address'] as String? ?? '',
           fare: (matchRow['fare'] as num?)?.toDouble(),
           pax: requestData['seats_requested'] as int? ?? 1,
-          driverRouteName: routeData['route_name'] as String?,
+          driverRouteName: routeData['name'] as String?,
           passengerId: requestData['passenger_id'] as String?,
           pickupLat: (requestData['pickup_lat'] as num?)?.toDouble(),
           pickupLng: (requestData['pickup_lng'] as num?)?.toDouble(),
-          destLat: (requestData['dropoff_lat'] as num?)?.toDouble(),
-          destLng: (requestData['dropoff_lng'] as num?)?.toDouble(),
+          destLat: (requestData['destination_lat'] as num?)?.toDouble(),
+          destLng: (requestData['destination_lng'] as num?)?.toDouble(),
         );
       }).toList();
     } catch (e) {
@@ -328,7 +330,7 @@ class DriverRideService {
     return {
       'id': row['id'] as String?,
       'driver_id': row['driver_id'] as String?,
-      'route_name': row['route_name'] as String?,
+      'route_name': row['name'] as String?,
       'capacity_total': row['capacity_total'] as int?,
       'capacity_available': row['capacity_available'] as int?,
       'created_at': row['created_at'] as String?,

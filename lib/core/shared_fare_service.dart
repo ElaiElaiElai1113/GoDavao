@@ -114,8 +114,8 @@ class SharedFareService {
               id,
               pickup_lat,
               pickup_lng,
-              dropoff_lat,
-              dropoff_lng
+              destination_lat,
+              destination_lng
             )
           ''')
           .eq('driver_route_id', routeId)
@@ -149,8 +149,8 @@ class SharedFareService {
         requestData['pickup_lng'] as double,
       );
       final destination = LatLng(
-        requestData['dropoff_lat'] as double,
-        requestData['dropoff_lng'] as double,
+        requestData['destination_lat'] as double,
+        requestData['destination_lng'] as double,
       );
 
       // Calculate distance from route start to passenger pickup

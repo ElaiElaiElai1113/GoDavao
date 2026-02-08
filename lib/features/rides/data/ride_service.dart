@@ -28,10 +28,10 @@ class RideService {
     required int seatsRequested,
     required double pickupLat,
     required double pickupLng,
-    required double dropoffLat,
-    required double dropoffLng,
+    required double destinationLat,
+    required double destinationLng,
     String? pickupAddress,
-    String? dropoffAddress,
+    String? destinationAddress,
   }) async {
     final insert =
         await _sb
@@ -41,10 +41,11 @@ class RideService {
               'seats_requested': seatsRequested,
               'pickup_lat': pickupLat,
               'pickup_lng': pickupLng,
-              'dropoff_lat': dropoffLat,
-              'dropoff_lng': dropoffLng,
+              'destination_lat': destinationLat,
+              'destination_lng': destinationLng,
               if (pickupAddress != null) 'pickup_address': pickupAddress,
-              if (dropoffAddress != null) 'dropoff_address': dropoffAddress,
+              if (destinationAddress != null)
+                'destination_address': destinationAddress,
               'status': 'pending',
               'created_at': DateTime.now().toIso8601String(),
             })
@@ -114,8 +115,8 @@ class RideService {
           id, status, seats_allocated, ride_request_id, created_at,
           ride_requests(
             id, passenger_id, seats_requested, status,
-            pickup_address, dropoff_address,
-            pickup_lat, pickup_lng, dropoff_lat, dropoff_lng
+            pickup_address, destination_address,
+            pickup_lat, pickup_lng, destination_lat, destination_lng
           )
         ''')
         .eq('driver_route_id', routeId)
