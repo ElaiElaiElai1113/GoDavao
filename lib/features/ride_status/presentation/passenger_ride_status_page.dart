@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:godavao/common/app_colors.dart';
 
 import 'package:godavao/common/app_colors.dart';
 import 'package:godavao/core/osrm_service.dart';
@@ -1537,7 +1538,7 @@ class _CardTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, color: const Color(0xFF6A27F7)),
+        Icon(icon, color: const AppColors.purple),
         const SizedBox(width: 8),
         Text(
           text,
@@ -2017,3 +2018,4 @@ class _LegendDot extends StatelessWidget {
     );
   }
 }
+

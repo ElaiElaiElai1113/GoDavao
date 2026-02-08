@@ -7,6 +7,7 @@ import 'package:godavao/common/empty_state.dart';
 import 'package:godavao/features/vehicles/data/vehicle_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:godavao/common/app_colors.dart';
 
 class VehiclesPage extends StatefulWidget {
   const VehiclesPage({super.key});
@@ -1297,7 +1298,7 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
   bool _isDefault = false;
   bool _saving = false;
 
-  static const _purple = Color(0xFF6A27F7);
+  static const _purple = AppColors.purple;
 
   @override
   void dispose() {
@@ -1629,3 +1630,4 @@ List<Widget> _withSpacing(List<Widget> list, double spacing) {
   }
   return out;
 }
+

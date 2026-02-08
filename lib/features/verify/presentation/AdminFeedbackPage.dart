@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:godavao/common/app_colors.dart';
 
 String formatWhen(dynamic isoString) {
   if (isoString == null) return '';
@@ -80,7 +81,7 @@ class _AdminFeedbackPageState extends State<AdminFeedbackPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('User Feedback & Ratings'),
-        backgroundColor: const Color(0xFF6A27F7),
+        backgroundColor: const AppColors.purple,
         foregroundColor: Colors.white,
       ),
       body:
@@ -121,7 +122,7 @@ class _AdminFeedbackPageState extends State<AdminFeedbackPage> {
                             children: [
                               const Icon(
                                 Icons.person,
-                                color: Color(0xFF6A27F7),
+                                color: AppColors.purple,
                               ),
                               const SizedBox(width: 8),
                               Expanded(
@@ -176,3 +177,4 @@ class _AdminFeedbackPageState extends State<AdminFeedbackPage> {
     );
   }
 }
+

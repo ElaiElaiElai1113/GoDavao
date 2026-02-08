@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:godavao/common/app_colors.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:godavao/common/app_colors.dart';
 
 class AppTheme {
   static ThemeData light() {
@@ -11,9 +13,12 @@ class AppTheme {
       ),
     );
 
+    final textTheme = GoogleFonts.plusJakartaSansTextTheme(base.textTheme);
+
     return base.copyWith(
       materialTapTargetSize: MaterialTapTargetSize.padded,
       visualDensity: VisualDensity.standard,
+      textTheme: _textTheme(textTheme),
       scaffoldBackgroundColor: AppColors.bg,
       appBarTheme: const AppBarTheme(
         centerTitle: true,
@@ -26,7 +31,6 @@ class AppTheme {
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
-      textTheme: _textTheme(base.textTheme),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: Colors.white,

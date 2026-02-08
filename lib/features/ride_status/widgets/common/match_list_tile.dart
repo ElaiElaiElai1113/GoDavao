@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:godavao/common/app_colors.dart';
 
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
 import 'package:godavao/features/ratings/presentation/user_rating.dart';
@@ -19,7 +20,7 @@ class RidePill extends StatelessWidget {
   final IconData? icon;
   final Color? color;
 
-  static const _defaultColor = Color(0xFF6A27F7);
+  static const _defaultColor = AppColors.purple;
 
   @override
   Widget build(BuildContext context) {
@@ -123,8 +124,8 @@ class MapThumbnail extends StatelessWidget {
   final LatLng destination;
   final VoidCallback? onTap;
 
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
 
   @override
   Widget build(BuildContext context) {
@@ -230,7 +231,7 @@ class MatchListTile extends StatelessWidget {
   final VoidCallback? onTapRating;
   final Color? statusColor;
 
-  static const _defaultStatusColor = Color(0xFF6A27F7);
+  static const _defaultStatusColor = AppColors.purple;
 
   Color get _trailingStatusColor =>
       statusColor ?? _defaultStatusColor;
@@ -429,3 +430,4 @@ class MatchListTile extends StatelessWidget {
     );
   }
 }
+

@@ -1,6 +1,7 @@
 // lib/features/ride_status/presentation/driver_ride_status_page.dart
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:godavao/common/app_colors.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -100,8 +101,8 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
   );
 
   // UX/Theme tokens
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
   static const _bg = Color(0xFFF7F7FB);
 
   // Distance helper for rough ETA
@@ -1161,3 +1162,4 @@ extension _Kill on RealtimeChannel? {
     if (c != null) sb.removeChannel(c);
   }
 }
+

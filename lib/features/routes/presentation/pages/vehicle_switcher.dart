@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/common/empty_state.dart';
+import 'package:godavao/common/app_colors.dart';
 
 class VehicleSwitcher extends StatefulWidget {
   const VehicleSwitcher({
@@ -30,7 +31,7 @@ class _VehicleSwitcherState extends State<VehicleSwitcher> {
   List<Map<String, dynamic>> _vehicles = [];
   String? _selectedId;
 
-  static const _purple = Color(0xFF6A27F7);
+  static const _purple = AppColors.purple;
 
   @override
   void initState() {
@@ -345,3 +346,4 @@ class _StatusChip extends StatelessWidget {
     );
   }
 }
+

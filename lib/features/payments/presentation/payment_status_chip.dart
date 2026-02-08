@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:godavao/common/app_colors.dart';
 
 class PaymentStatusChip extends StatelessWidget {
   final String? status; // on_hold | captured | canceled | requires_proof | null
@@ -15,7 +16,7 @@ class PaymentStatusChip extends StatelessWidget {
 
     switch (status) {
       case 'on_hold':
-        bg = Color(0xFF6A27F7);
+        bg = AppColors.purple;
         icon = Icons.lock_clock;
         label = 'ON HOLD';
         break;
@@ -70,3 +71,4 @@ class PaymentStatusChip extends StatelessWidget {
     );
   }
 }
+

@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/common/empty_state.dart';
+import 'package:godavao/common/app_colors.dart';
 
 import 'package:godavao/features/ride_status/presentation/passenger_ride_status_page.dart';
 import 'package:godavao/features/ride_status/presentation/driver_ride_status_page.dart';
@@ -219,7 +220,7 @@ class _BookingHistoryPageState extends State<BookingHistoryPage> {
 
   @override
   Widget build(BuildContext context) {
-    const purple = Color(0xFF6A27F7);
+    const purple = AppColors.purple;
 
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -365,3 +366,4 @@ class _BookingHistoryPageState extends State<BookingHistoryPage> {
     );
   }
 }
+

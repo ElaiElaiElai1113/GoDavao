@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/core/fare_service.dart';
 import 'package:godavao/core/osrm_service.dart';
+import 'package:godavao/core/route_polyline.dart';
 
 /// Service for calculating and managing distance-proportional fares
 /// for shared rides with multiple passengers.
@@ -57,6 +58,7 @@ class SharedFareService {
       routeStart,
       routeEnd,
       passengers,
+      routeData,
     );
 
     // 4. Create SharedPassenger objects
@@ -88,7 +90,9 @@ class SharedFareService {
     try {
       final result = await _supabase
           .from('driver_routes')
-          .select('id, start_lat, start_lng, end_lat, end_lng')
+          .select(
+            'id, start_lat, start_lng, end_lat, end_lng, route_mode, route_polyline, manual_polyline',
+          )
           .eq('id', routeId)
           .single();
 
@@ -139,8 +143,10 @@ class SharedFareService {
     LatLng routeStart,
     LatLng routeEnd,
     List<Map<String, dynamic>> passengers,
+    Map<String, dynamic> routeData,
   ) async {
     final results = <Map<String, dynamic>>[];
+    final polylinePoints = _effectiveRoutePolylinePoints(routeData);
 
     for (final passenger in passengers) {
       final requestData = passenger['ride_requests'] as Map<String, dynamic>;
@@ -153,14 +159,34 @@ class SharedFareService {
         requestData['destination_lng'] as double,
       );
 
-      // Calculate distance from route start to passenger pickup
-      final pickupDistance = await _calculateRouteDistance(routeStart, pickup);
+      double pickupDistance = 0.0;
+      double tripDistance = 0.0;
 
-      // Calculate distance from passenger pickup to destination
-      final tripDistance = await _calculateRouteDistance(pickup, destination);
+      if (polylinePoints.length >= 2) {
+        final pickupSnap = snapToPolyline(pickup, polylinePoints);
+        final dropSnap = snapToPolyline(destination, polylinePoints);
+        if (pickupSnap != null && dropSnap != null) {
+          pickupDistance = polylineDistanceBetweenProgress(
+            polylinePoints,
+            0.0,
+            pickupSnap.progress,
+          );
+          tripDistance = polylineDistanceBetweenProgress(
+            polylinePoints,
+            pickupSnap.progress,
+            dropSnap.progress,
+          );
+        }
+      }
 
-      // Total distance this passenger travels along the route
-      final totalDistance = pickupDistance + tripDistance;
+      if (tripDistance <= 0) {
+        // Fallback to OSRM/haversine if polyline is missing or snaps failed
+        tripDistance = await _calculateRouteDistance(pickup, destination);
+        pickupDistance = 0.0;
+      }
+
+      // Total distance this passenger travels along the route (segment only)
+      final totalDistance = tripDistance;
 
       results.add({
         'ride_request_id': requestData['id'] as String,
@@ -237,6 +263,7 @@ class SharedFareService {
       routeStart,
       routeEnd,
       passengers,
+      routeData,
     );
 
     final sharedPassengers = passengerDistances.map((p) {
@@ -255,4 +282,18 @@ class SharedFareService {
       surgeMultiplier: surgeMultiplier,
     );
   }
+}
+
+List<LatLng> _effectiveRoutePolylinePoints(Map<String, dynamic> routeData) {
+  final routeMode = routeData['route_mode'] as String?;
+  final routePolyline = routeData['route_polyline'] as String?;
+  final manualPolyline = routeData['manual_polyline'] as String?;
+
+  final encoded =
+      (routeMode == 'manual')
+          ? manualPolyline
+          : routePolyline ?? manualPolyline;
+  if (encoded == null || encoded.isEmpty) return const [];
+
+  return decodePolylinePoints(encoded);
 }

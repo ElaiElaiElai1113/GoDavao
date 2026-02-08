@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:godavao/common/app_colors.dart';
 
 import 'package:godavao/features/vehicles/data/vehicle_service.dart';
 import 'package:godavao/features/dashboard/presentation/dashboard_page.dart';
@@ -19,8 +20,8 @@ class _VehicleFormState extends State<VehicleForm> {
   final _picker = ImagePicker();
 
   // Theme
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
   static const _bg = Color(0xFFF7F7FB);
 
   // Base fields
@@ -608,3 +609,4 @@ class _DocPickerRow extends StatelessWidget {
     );
   }
 }
+

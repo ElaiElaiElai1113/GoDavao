@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
 import 'package:godavao/common/app_colors.dart';
+import 'package:godavao/common/app_shadows.dart';
 import 'package:godavao/common/section_header.dart';
 import 'package:godavao/features/auth/presentation/auth_page.dart';
 import 'package:godavao/features/profile/presentation/profile_page.dart';
@@ -60,8 +60,8 @@ class _DashboardPageState extends State<DashboardPage> {
 
   // Theme
   static const _bg = AppColors.bg;
-  static const _purple = Color(0xFF5A20D7); // Darker purple for better contrast
-  static const _purpleDark = Color(0xFF3B10A7); // Much darker purple
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
 
   // =========================
   // Coach overlay wiring
@@ -1080,13 +1080,7 @@ class _HeroHeader extends StatelessWidget {
           end: Alignment.bottomRight,
         ),
         borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
-        boxShadow: [
-          BoxShadow(
-            color: purple.withValues(alpha: 0.25),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
+        boxShadow: AppShadows.lifted,
       ),
       child: Column(
         children: [
@@ -1121,7 +1115,9 @@ class _HeroHeader extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(
                         context,
-                      ).textTheme.labelLarge?.copyWith(color: Colors.white70),
+                      ).textTheme.labelLarge?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -1225,13 +1221,7 @@ class _NextStepCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        boxShadow: AppShadows.card,
       ),
       child: Row(
         children: [
@@ -1246,12 +1236,14 @@ class _NextStepCard extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade700),
                 ),
               ],
             ),
@@ -1289,13 +1281,7 @@ class _ChecklistCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        boxShadow: AppShadows.card,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1304,12 +1290,14 @@ class _ChecklistCard extends StatelessWidget {
             children: [
               Text(
                 '$done of $total completed',
-                style: const TextStyle(fontWeight: FontWeight.w700),
+                style: Theme.of(context).textTheme.titleSmall,
               ),
               const Spacer(),
               Text(
                 '${(pct * 100).toStringAsFixed(0)}%',
-                style: TextStyle(color: Colors.grey.shade700),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade700),
               ),
             ],
           ),
@@ -1338,8 +1326,7 @@ class _ChecklistCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       i.label,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color:
                             i.done
                                 ? Colors.black87
@@ -1373,13 +1360,7 @@ class BottomCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
-                blurRadius: 12,
-                offset: const Offset(0, -4),
-              ),
-            ],
+            boxShadow: AppShadows.lifted,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1409,8 +1390,8 @@ class _ActionGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accent = Color(0xFF6A27F7);
-    const accentDark = Color(0xFF4B18C9);
+    const accent = AppColors.purple;
+    const accentDark = AppColors.purpleDark;
     return GridView.builder(
       itemCount: items.length,
       shrinkWrap: true,
@@ -1431,13 +1412,7 @@ class _ActionGrid extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x15000000),
-                  blurRadius: 10,
-                  offset: Offset(0, 4),
-                ),
-              ],
+              boxShadow: AppShadows.card,
             ),
             child: Padding(
               padding: const EdgeInsets.all(14),
@@ -1469,17 +1444,16 @@ class _ActionGrid extends StatelessWidget {
                     it.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                    ),
+                    style: Theme.of(context).textTheme.titleSmall,
                   ),
                   const SizedBox(height: 2),
                   Text(
                     it.subtitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.black54, fontSize: 12),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: Colors.black54),
                   ),
                 ],
               ),
@@ -1503,20 +1477,14 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accent = Color(0xFF6A27F7);
-    const accentDark = Color(0xFF4B18C9);
+    const accent = AppColors.purple;
+    const accentDark = AppColors.purpleDark;
     return Container(
       height: 84,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x15000000),
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
+        boxShadow: AppShadows.card,
       ),
       padding: const EdgeInsets.all(14),
       child: Row(
@@ -1550,7 +1518,9 @@ class _StatCard extends StatelessWidget {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.black54, fontSize: 12),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.black54),
                 ),
                 const SizedBox(height: 2),
                 Text(

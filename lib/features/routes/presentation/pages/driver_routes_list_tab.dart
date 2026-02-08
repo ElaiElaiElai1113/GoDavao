@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/core/osrm_service.dart';
 import 'package:godavao/core/reverse_geocoder.dart';
+import 'package:godavao/common/app_colors.dart';
 
 class DriverRoutesListTab extends StatefulWidget {
   const DriverRoutesListTab({super.key});
@@ -26,8 +27,8 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
   StreamSubscription<List<Map<String, dynamic>>>? _sub;
   final Map<String, String> _addr = {};
 
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
 
   @override
   void initState() {
@@ -478,3 +479,4 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
     );
   }
 }
+

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:godavao/common/app_config.dart';
+import 'package:godavao/common/error_handler.dart';
+import 'package:godavao/common/monitoring.dart';
 import 'package:godavao/features/onboarding/presentation/privacy_disclaimer_page.dart';
 import 'package:godavao/features/profile/presentation/profile_page.dart';
 import 'package:godavao/features/safety/presentation/trusted_contacts_page.dart';
@@ -34,12 +36,15 @@ const kAppDeepLink = 'io.supabase.godavao://reset-callback';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: ".env");
+  await AppConfig.init();
 
   await Supabase.initialize(
-    url: dotenv.env['SUPABASE_URL']!,
-    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
+    url: AppConfig.supabaseUrl,
+    anonKey: AppConfig.supabaseAnonKey,
   );
+
+  ErrorHandler.initialize();
+  MonitoringService.init();
 
   // Disclaimer
   final prefs = await SharedPreferences.getInstance();

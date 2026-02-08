@@ -1,12 +1,13 @@
 // lib/features/profile/presentation/how_it_works_page.dart
 import 'package:flutter/material.dart';
 import 'package:godavao/features/dashboard/presentation/dashboard_page.dart';
+import 'package:godavao/common/app_colors.dart';
 
 class HowItWorksPage extends StatelessWidget {
   const HowItWorksPage({super.key});
 
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
   static const _textDim = Color(0xFF667085);
 
   @override
@@ -197,7 +198,7 @@ class _StepCard extends StatelessWidget {
   final _StepInfo info;
   const _StepCard({required this.index, required this.info});
 
-  static const _purple = Color(0xFF6A27F7);
+  static const _purple = AppColors.purple;
   static const _textDim = Color(0xFF667085);
 
   @override
@@ -269,3 +270,4 @@ class _StepCard extends StatelessWidget {
     );
   }
 }
+

@@ -3,6 +3,7 @@ import 'package:godavao/common/empty_state.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/admin_service.dart';
+import 'package:godavao/common/app_colors.dart';
 
 String getPublicUrl(String key) {
   if (key.isEmpty) return '';
@@ -19,8 +20,8 @@ class AdminVerificationPage extends StatefulWidget {
 class _AdminVerificationPageState extends State<AdminVerificationPage>
     with SingleTickerProviderStateMixin {
   static const _bg = Color(0xFFF7F7FB);
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
   final _tsFmt = DateFormat('MMM d, yyyy • h:mm a');
 
   late final AdminVerificationService admin;
@@ -208,7 +209,7 @@ class _AdminVerificationPageState extends State<AdminVerificationPage>
         controller: _tabs,
         indicatorColor: Colors.white,
         labelColor: Colors.white,
-        unselectedLabelColor: Colors.white70,
+        unselectedLabelColor: Colors.white.withValues(alpha: 0.85),
         tabs: const [
           Tab(text: 'Pending'),
           Tab(text: 'Approved'),
@@ -615,11 +616,11 @@ class _FilterPanel extends StatelessWidget {
                 ),
                 selected: roleFilter == r.$1,
                 onSelected: (_) => onRoleChanged(r.$1),
-                selectedColor: const Color(0xFF6A27F7).withValues(alpha: .18),
+                selectedColor: const AppColors.purple.withValues(alpha: .18),
                 labelStyle: TextStyle(
                   color:
                       roleFilter == r.$1
-                          ? const Color(0xFF4B18C9)
+                          ? const AppColors.purpleDark
                           : Colors.black87,
                 ),
               ),
@@ -635,3 +636,4 @@ extension on String {
   String capitalize() =>
       isEmpty ? this : '${this[0].toUpperCase()}${substring(1)}';
 }
+

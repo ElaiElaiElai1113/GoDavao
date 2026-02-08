@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:godavao/common/app_colors.dart';
 
 import 'package:godavao/features/ride_status/models/route_group_model.dart';
 import 'package:godavao/features/ride_status/models/match_card_model.dart';
@@ -39,8 +40,8 @@ class RouteSection extends StatelessWidget {
   final void Function(MatchCard)? onTapRating;
   final Color? Function(String status)? statusColorBuilder;
 
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
 
   List<MatchCard> get _pending => routeGroup.byStatus('pending');
   List<MatchCard> get _accepted => routeGroup.byStatus('accepted');
@@ -299,3 +300,4 @@ class RouteSection extends StatelessWidget {
     );
   }
 }
+

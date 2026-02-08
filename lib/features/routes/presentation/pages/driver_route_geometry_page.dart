@@ -5,6 +5,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_polyline_algorithm/google_polyline_algorithm.dart'
+import 'package:godavao/common/app_colors.dart';
     as gpa;
 
 import 'package:godavao/core/osrm_service.dart';
@@ -53,8 +54,8 @@ class _DriverRouteGeometryPageState extends State<DriverRouteGeometryPage> {
   // small debounce to avoid spamming geocoder during quick edits
   Timer? _geocodeDebounce;
 
-  static const _purple = Color(0xFF5A20D7); // Darker for better contrast
-  static const _purpleDark = Color(0xFF3B10A7);
+  static const _purple = AppColors.purple; // Darker for better contrast
+  static const _purpleDark = AppColors.purpleDark;
 
   @override
   void initState() {
@@ -810,8 +811,8 @@ class _ModeToggle extends StatelessWidget {
   final GeometryMode mode;
   final ValueChanged<GeometryMode> onChanged;
 
-  static const _purple = Color(0xFF5A20D7); // Darker for better contrast
-  static const _purpleDark = Color(0xFF3B10A7);
+  static const _purple = AppColors.purple; // Darker for better contrast
+  static const _purpleDark = AppColors.purpleDark;
 
   @override
   Widget build(BuildContext context) {
@@ -983,3 +984,4 @@ class _AddressChip extends StatelessWidget {
     );
   }
 }
+

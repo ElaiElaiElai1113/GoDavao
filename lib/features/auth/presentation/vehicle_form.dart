@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/features/dashboard/presentation/dashboard_page.dart';
+import 'package:godavao/common/app_colors.dart';
 
 class VehicleForm extends StatefulWidget {
   const VehicleForm({super.key});
@@ -24,8 +25,8 @@ class _VehicleFormState extends State<VehicleForm> {
   File? _orcrFile;
   final _picker = ImagePicker();
 
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
 
   @override
   void dispose() {
@@ -307,3 +308,4 @@ class _VehicleFormState extends State<VehicleForm> {
     );
   }
 }
+

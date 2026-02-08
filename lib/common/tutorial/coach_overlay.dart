@@ -1,6 +1,7 @@
 // lib/common/tutorial/coach_overlay.dart
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:godavao/common/app_colors.dart';
 
 class CoachStep {
   final GlobalKey key;
@@ -182,8 +183,8 @@ class _TooltipCard extends StatelessWidget {
     required this.padding,
   });
 
-  static const _purple = Color(0xFF5A20D7); // Darker for better contrast
-  static const _purpleDark = Color(0xFF3B10A7);
+  static const _purple = AppColors.purple; // Darker for better contrast
+  static const _purpleDark = AppColors.purpleDark;
 
   @override
   Widget build(BuildContext context) {
@@ -275,3 +276,4 @@ class _TooltipCard extends StatelessWidget {
     );
   }
 }
+

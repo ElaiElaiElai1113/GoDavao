@@ -382,6 +382,7 @@ class FareService {
 
     // Calculate each passenger's fare proportionally
     final passengerFares = <PassengerFare>[];
+    final totals = <double>[];
     double totalFare = 0.0;
     double totalPlatformFee = 0.0;
 
@@ -391,9 +392,26 @@ class FareService {
           ? (passenger.distanceKm / totalPassengerKm)
           : (1.0 / passengers.length);
 
-      final fareShare = _round2(baseFareBreakdown.total * distanceShare);
-      final pFee = _round2(fareShare * (platformFeeRate ?? rules.defaultPlatformFeeRate));
-      final pTotal = _roundPeso(fareShare + pFee);
+      final fareShare = baseFareBreakdown.total * distanceShare;
+      final pTotal = _roundPeso(fareShare);
+      totals.add(pTotal);
+    }
+
+    // Adjust rounding so totals sum exactly to route total
+    final sumTotals = totals.fold<double>(0.0, (a, b) => a + b);
+    final diff = baseFareBreakdown.total - sumTotals;
+    if (totals.isNotEmpty && diff != 0) {
+      final idx = _indexOfMaxDistance(passengers);
+      totals[idx] = _roundPeso(totals[idx] + diff);
+    }
+
+    for (int i = 0; i < passengers.length; i++) {
+      final passenger = passengers[i];
+      final pTotal = totals[i];
+      final pFee = _round2(
+        pTotal * (platformFeeRate ?? rules.defaultPlatformFeeRate),
+      );
+      final fareShare = _round2(pTotal - pFee);
 
       passengerFares.add(PassengerFare(
         passengerId: passenger.id,
@@ -480,4 +498,16 @@ class FareService {
   double _max(double a, double b) => a > b ? a : b;
   double _clamp(double v, double lo, double hi) =>
       v < lo ? lo : (v > hi ? hi : v);
+
+  int _indexOfMaxDistance(List<SharedPassenger> passengers) {
+    var idx = 0;
+    var maxD = -1.0;
+    for (int i = 0; i < passengers.length; i++) {
+      if (passengers[i].distanceKm > maxD) {
+        maxD = passengers[i].distanceKm;
+        idx = i;
+      }
+    }
+    return idx;
+  }
 }

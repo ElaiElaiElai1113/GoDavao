@@ -2,11 +2,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:godavao/common/empty_state.dart';
+import 'package:godavao/common/app_colors.dart';
+import 'package:godavao/common/app_shadows.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:godavao/common/tutorial/tutorial_service.dart';
+import 'package:godavao/common/app_colors.dart';
 
 import 'package:godavao/core/osrm_service.dart';
 import 'package:godavao/features/rides/presentation/confirm_ride_page.dart';
@@ -59,8 +63,8 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
   final Distance _distance = const Distance();
 
   // UI palette
-  static const _purple = Color(0xFF5A20D7); // Darker for better contrast
-  static const _purpleDark = Color(0xFF3B10A7);
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
 
   // Map readiness
   bool _mapReady = false;
@@ -111,6 +115,9 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
     super.initState();
     _loadRoutes();
     _startLiveLocation();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _maybeShowFirstUseHint();
+    });
   }
 
   @override
@@ -301,6 +308,26 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
         _map.move(here, _map.camera.zoom);
       }
     }, onError: (_) {});
+  }
+
+  Future<void> _maybeShowFirstUseHint() async {
+    final seen = await TutorialService.getPassengerMapHintSeen();
+    if (!mounted || seen) return;
+
+    await TutorialService.setPassengerMapHintSeen();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text(
+          'Tip: Search a destination, then tap the route to set pickup and drop-off.',
+        ),
+        action: SnackBarAction(
+          label: 'Got it',
+          onPressed: () {},
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   Future<void> _centerOnMe() async {
@@ -1074,13 +1101,7 @@ class _SearchBarState extends State<_SearchBar> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(999),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
+        boxShadow: AppShadows.soft,
         border: Border.all(color: Colors.black12),
       ),
       child: Row(
@@ -1125,7 +1146,7 @@ class _RouteChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  static const _purple = Color(0xFF5A20D7); // Darker for better contrast
+  static const _purple = AppColors.purple;
 
   @override
   Widget build(BuildContext context) {
@@ -1178,16 +1199,10 @@ class _Pill extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: borderEmphasis ? const Color(0xFF5A20D7) : Colors.black26,
+          color: borderEmphasis ? AppColors.purple : Colors.black26,
           width: borderEmphasis ? 2 : 1,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        boxShadow: AppShadows.soft,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1196,8 +1211,7 @@ class _Pill extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             label,
-            style: const TextStyle(
-              fontSize: 12,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
               fontWeight: FontWeight.w600,
               color: Colors.black87,
             ),
@@ -1261,13 +1275,7 @@ class BottomCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
-                blurRadius: 12,
-                offset: const Offset(0, -4),
-              ),
-            ],
+            boxShadow: AppShadows.lifted,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,

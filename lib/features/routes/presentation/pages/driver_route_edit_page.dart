@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/features/routes/presentation/pages/driver_route_geometry_page.dart';
+import 'package:godavao/common/app_colors.dart';
 
 class DriverRouteEditPage extends StatefulWidget {
   final String routeId;
@@ -32,7 +33,7 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
   List<Map<String, dynamic>> _vehicles = [];
   bool _hasActiveRide = false;
 
-  static const _purple = Color(0xFF6A27F7);
+  static const _purple = AppColors.purple;
 
   @override
   void initState() {
@@ -645,3 +646,4 @@ List<Widget> _withSpacing(List<Widget> list, double spacing) {
   }
   return out;
 }
+

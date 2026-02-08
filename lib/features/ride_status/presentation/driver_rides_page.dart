@@ -1,6 +1,7 @@
 // lib/features/ride_status/presentation/driver_rides_page.dart
 import 'dart:async';
 import 'dart:collection';
+import 'package:godavao/common/app_colors.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -44,8 +45,8 @@ class _DriverRidesPageState extends State<DriverRidesPage>
   final _supabase = Supabase.instance.client;
   late final _sharedFareService = SharedFareService(client: _supabase);
 
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
   static const _bg = Color(0xFFF7F7FB);
 
   static const bool _dbg = false;
@@ -1870,8 +1871,8 @@ class _MapThumb extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bounds = LatLngBounds.fromPoints([pickup, destination]);
-    const purple = Color(0xFF6A27F7);
-    const purpleDark = Color(0xFF4B18C9);
+    const purple = AppColors.purple;
+    const purpleDark = AppColors.purpleDark;
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: DecoratedBox(
@@ -2510,3 +2511,4 @@ class _MatchListTile extends StatelessWidget {
   static String _pesoStatic(num? v) =>
       v == null ? '₱0.00' : '₱${(v.toDouble()).toStringAsFixed(2)}';
 }
+

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../verify/data/verification_service.dart';
+import 'package:godavao/common/app_colors.dart';
 
 class VerifyIdentitySheet extends StatefulWidget {
   const VerifyIdentitySheet({super.key, required this.role});
@@ -16,7 +17,7 @@ class VerifyIdentitySheet extends StatefulWidget {
 
 class _VerifyIdentitySheetState extends State<VerifyIdentitySheet> {
   // Brand
-  static const _purple = Color(0xFF6A27F7);
+  static const _purple = AppColors.purple;
 
   final _picker = ImagePicker();
   late final VerificationService _service;
@@ -338,3 +339,4 @@ class IdType {
     this.isDriversLicense = false,
   });
 }
+

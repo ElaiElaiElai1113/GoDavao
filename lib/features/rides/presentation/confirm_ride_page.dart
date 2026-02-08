@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
+import 'package:godavao/common/app_colors.dart';
 
 import 'package:godavao/core/weather_service.dart';
 import 'package:godavao/core/surge.dart';
@@ -41,8 +42,8 @@ class ConfirmRidePage extends StatefulWidget {
 }
 
 class _ConfirmRidePageState extends State<ConfirmRidePage> {
-  static const _purple = Color(0xFF5A20D7); // Darker for better contrast
-  static const _purpleDark = Color(0xFF3B10A7);
+  static const _purple = AppColors.purple; // Darker for better contrast
+  static const _purpleDark = AppColors.purpleDark;
   final _pesoFmt = NumberFormat.currency(
     locale: 'en_PH',
     symbol: '₱',
@@ -786,7 +787,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
       child: Row(
         children: [
           const CircleAvatar(
-            backgroundColor: Color(0xFF6A27F7),
+            backgroundColor: AppColors.purple,
             child: Icon(Icons.person, color: Colors.white),
           ),
           const SizedBox(width: 12),
@@ -1352,7 +1353,7 @@ class _Card extends StatelessWidget {
 //   Widget build(BuildContext context) {
 //     return Row(
 //       children: [
-//         Icon(icon, color: const Color(0xFF6A27F7)),
+//         Icon(icon, color: const AppColors.purple),
 //         const SizedBox(width: 8),
 //         Text(
 //           text,
@@ -1373,7 +1374,7 @@ class _CardTitle extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, color: const Color(0xFF6A27F7)),
+        Icon(icon, color: const AppColors.purple),
         const SizedBox(width: 8),
         // ✅ let the text wrap / ellipsize
         Expanded(
@@ -1431,8 +1432,8 @@ class _InfoRow extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: 18,
-            backgroundColor: const Color(0xFF6A27F7).withValues(alpha: 0.1),
-            child: Icon(icon, color: const Color(0xFF6A27F7)),
+            backgroundColor: const AppColors.purple.withValues(alpha: 0.1),
+            child: Icon(icon, color: const AppColors.purple),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1516,7 +1517,7 @@ class _RoundIconBtn extends StatelessWidget {
         width: 44,
         height: 44,
         decoration: BoxDecoration(
-          color: onTap == null ? Colors.grey.shade200 : const Color(0xFF6A27F7),
+          color: onTap == null ? Colors.grey.shade200 : const AppColors.purple,
           borderRadius: BorderRadius.circular(12),
         ),
         alignment: Alignment.center,
@@ -1556,3 +1557,4 @@ class StarRatings extends StatelessWidget {
     );
   }
 }
+

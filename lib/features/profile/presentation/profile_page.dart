@@ -2,8 +2,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:godavao/common/app_colors.dart';
+import 'package:godavao/common/app_shadows.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
 import 'package:godavao/features/profile/presentation/app_drawer.dart';
+import 'package:godavao/common/app_colors.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -24,8 +27,8 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _saving = false;
   bool _obscure = true;
 
-  static const purple = Color(0xFF6A27F7);
-  static const purpleDark = Color(0xFF4B18C9);
+  static const purple = AppColors.purple;
+  static const purpleDark = AppColors.purpleDark;
   static const textDim = Color(0xFF667085);
 
   @override
@@ -170,14 +173,13 @@ class _ProfilePageState extends State<ProfilePage> {
                             ),
                       ),
                       const SizedBox(width: 8),
-                      const Text(
-                        'Profile',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                const Text(
+                  'Profile',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                     ],
                   ),
                 ),
@@ -213,13 +215,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Colors.black12,
-                        blurRadius: 12,
-                        offset: Offset(0, 6),
-                      ),
-                    ],
+                    boxShadow: AppShadows.card,
                   ),
                   child: Form(
                     key: _formKey,
@@ -370,9 +366,8 @@ class _ProfilePageState extends State<ProfilePage> {
       alignment: Alignment.centerLeft,
       child: Text(
         text,
-        style: const TextStyle(
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
           color: textDim,
-          fontSize: 12.5,
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -399,16 +394,16 @@ class _ProfilePageState extends State<ProfilePage> {
             children: [
               Text(
                 title,
-                style: const TextStyle(
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w800,
-                  fontSize: 16,
-                  color: Colors.black87,
                 ),
               ),
               const SizedBox(height: 4),
               Text(
                 subtitle,
-                style: const TextStyle(color: textDim, fontSize: 12.5),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: textDim,
+                ),
               ),
             ],
           ),

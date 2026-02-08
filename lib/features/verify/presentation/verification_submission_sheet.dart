@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:godavao/common/empty_state.dart';
+import 'package:godavao/common/app_colors.dart';
 
 class VerificationSubmissionSheet extends StatelessWidget {
   const VerificationSubmissionSheet({
@@ -17,7 +18,7 @@ class VerificationSubmissionSheet extends StatelessWidget {
   final VoidCallback? onReject;
   final bool busy;
 
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purpleDark = AppColors.purpleDark;
 
   bool _isImage(Map<String, dynamic> d) {
     final mime = (d['mime'] ?? '').toString().toLowerCase();
@@ -406,7 +407,7 @@ class _ImageGalleryPageState extends State<_ImageGalleryPage> {
                   const SizedBox(height: 8),
                   Text(
                     VerificationSubmissionSheet._prettyType(type),
-                    style: const TextStyle(color: Colors.white70),
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -418,3 +419,4 @@ class _ImageGalleryPageState extends State<_ImageGalleryPage> {
     );
   }
 }
+

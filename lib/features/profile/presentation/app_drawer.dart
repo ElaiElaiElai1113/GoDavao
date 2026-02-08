@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:godavao/common/app_colors.dart';
 
 import 'package:godavao/features/dashboard/presentation/dashboard_page.dart';
 import 'package:godavao/features/history/presentation/booking_history_page.dart';
@@ -14,8 +15,8 @@ class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
 
   static const _bg = Color(0xFFF7F7FB);
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
   static const _textDim = Color(0xFF667085);
 
   @override
@@ -521,3 +522,4 @@ class _HeaderSkeleton extends StatelessWidget {
     );
   }
 }
+

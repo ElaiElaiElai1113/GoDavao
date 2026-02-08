@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:godavao/common/app_colors.dart';
+import 'package:godavao/common/app_shadows.dart';
 import 'package:godavao/features/dashboard/presentation/dashboard_page.dart';
 import 'package:godavao/features/verify/presentation/admin_panel_page.dart';
 import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
+import 'package:godavao/common/app_colors.dart';
 
 const _kAppDeepLink = 'io.supabase.godavao://reset-callback';
 
@@ -28,8 +31,8 @@ class _AuthPageState extends State<AuthPage> {
 
   final _sb = Supabase.instance.client;
 
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
 
   @override
   void dispose() {
@@ -44,10 +47,10 @@ class _AuthPageState extends State<AuthPage> {
     return InputDecoration(
       hintText: hint,
       labelText: label,
-      labelStyle: const TextStyle(color: Colors.white70),
+      labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
       filled: true,
       fillColor: Colors.white.withValues(alpha: 0.15),
-      hintStyle: const TextStyle(color: Colors.white54),
+      hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
@@ -295,13 +298,7 @@ class _AuthPageState extends State<AuthPage> {
                             padding: const EdgeInsets.all(4),
                             decoration: const BoxDecoration(
                               shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black12,
-                                  blurRadius: 12,
-                                  offset: Offset(0, 6),
-                                ),
-                              ],
+                              boxShadow: AppShadows.card,
                             ),
                             child: Container(
                               padding: const EdgeInsets.all(3),
@@ -377,7 +374,9 @@ class _AuthPageState extends State<AuthPage> {
                               hint: 'Enter your password',
                               suffix: IconButton(
                                 style: IconButton.styleFrom(
-                                  foregroundColor: Colors.white70,
+                                  foregroundColor: Colors.white.withValues(
+                                    alpha: 0.85,
+                                  ),
                                 ),
                                 icon: Icon(
                                   _obscure
@@ -443,7 +442,9 @@ class _AuthPageState extends State<AuthPage> {
                               decoration: _fieldDecor(label: 'Role'),
                               dropdownColor: _purpleDark,
                               iconEnabledColor: Colors.white,
-                              iconDisabledColor: Colors.white54,
+                              iconDisabledColor: Colors.white.withValues(
+                                alpha: 0.75,
+                              ),
                               style: const TextStyle(color: Colors.white),
                               items: const [
                                 DropdownMenuItem(
@@ -505,7 +506,9 @@ class _AuthPageState extends State<AuthPage> {
                             children: [
                               Text(
                                 _isLogin ? 'or ' : 'Already have an account? ',
-                                style: const TextStyle(color: Colors.white70),
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.85),
+                                ),
                               ),
                               GestureDetector(
                                 onTap:

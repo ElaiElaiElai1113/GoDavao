@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:godavao/common/empty_state.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:godavao/common/app_colors.dart';
 
 class AdminVehicleVerificationPage extends StatefulWidget {
   const AdminVehicleVerificationPage({super.key});
@@ -13,8 +14,8 @@ class _AdminVehicleVerificationPageState
     extends State<AdminVehicleVerificationPage>
     with SingleTickerProviderStateMixin {
   static const _bg = Color(0xFFF7F7FB);
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
 
   late final _VehicleAdminService svc;
   late final TabController _tabs;
@@ -190,7 +191,7 @@ class _AdminVehicleVerificationPageState
         controller: _tabs,
         indicatorColor: Colors.white,
         labelColor: Colors.white,
-        unselectedLabelColor: Colors.white70,
+        unselectedLabelColor: Colors.white.withValues(alpha: 0.85),
         tabs: const [
           Tab(text: 'Pending'),
           Tab(text: 'Approved'),
@@ -349,11 +350,11 @@ class _VehicleFilterPanel extends StatelessWidget {
                 ),
                 selected: docFilter == f.$1,
                 onSelected: (_) => onFilterChanged(f.$1),
-                selectedColor: const Color(0xFF6A27F7).withValues(alpha: .18),
+                selectedColor: const AppColors.purple.withValues(alpha: .18),
                 labelStyle: TextStyle(
                   color:
                       docFilter == f.$1
-                          ? const Color(0xFF4B18C9)
+                          ? const AppColors.purpleDark
                           : Colors.black87,
                   fontWeight:
                       docFilter == f.$1 ? FontWeight.w700 : FontWeight.w500,
@@ -895,3 +896,4 @@ class _ReasonDialogState extends State<_ReasonDialog> {
     ],
   );
 }
+

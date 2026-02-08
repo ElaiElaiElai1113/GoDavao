@@ -3,10 +3,13 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:godavao/common/empty_state.dart';
+import 'package:godavao/common/app_colors.dart';
+import 'package:godavao/common/app_shadows.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:google_polyline_algorithm/google_polyline_algorithm.dart'
+import 'package:godavao/common/app_colors.dart';
     as gpa;
 import 'package:geolocator/geolocator.dart';
 
@@ -67,9 +70,9 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
   bool _locating = false;
 
   // Theme tokens
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
-  static const _bg = Color(0xFFF7F7FB);
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
+  static const _bg = AppColors.bg;
 
   SupabaseClient get _sb => Supabase.instance.client;
 
@@ -968,8 +971,8 @@ class _ModeSegment extends StatelessWidget {
   final RouteMode mode;
   final ValueChanged<RouteMode> onChanged;
 
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
 
   @override
   Widget build(BuildContext context) {
@@ -978,13 +981,7 @@ class _ModeSegment extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(999),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        boxShadow: AppShadows.soft,
         border: Border.all(color: Colors.white.withValues(alpha: 0.4)),
         backgroundBlendMode: BlendMode.overlay,
       ),
@@ -1340,7 +1337,9 @@ class _StatRow extends StatelessWidget {
               '$label: $value',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w700),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -1362,9 +1361,7 @@ class _InfoChip extends StatelessWidget {
         color: Colors.white.withValues(alpha: .96),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.black12),
-        boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 2)),
-        ],
+        boxShadow: AppShadows.soft,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1377,7 +1374,9 @@ class _InfoChip extends StatelessWidget {
               text,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w700),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -1401,8 +1400,8 @@ class _GlassFab extends StatelessWidget {
     this.active = false,
   });
 
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
 
   @override
   Widget build(BuildContext context) {

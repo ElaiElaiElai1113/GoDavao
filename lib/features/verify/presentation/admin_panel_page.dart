@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:godavao/common/app_colors.dart';
 
 import 'package:flutter/material.dart';
 import 'package:godavao/features/verify/presentation/AdminFeedbackPage.dart';
@@ -16,7 +17,7 @@ class AdminPanelPage extends StatefulWidget {
 }
 
 class _AdminPanelPageState extends State<AdminPanelPage> {
-  static const _purple = Color(0xFF6A27F7);
+  static const _purple = AppColors.purple;
   static const _bg = Color(0xFFF7F7FB);
 
   final _sb = Supabase.instance.client;
@@ -390,8 +391,8 @@ class _AdminTile extends StatelessWidget {
   final String description;
   final VoidCallback onTap;
 
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
 
   @override
   Widget build(BuildContext context) {
@@ -583,3 +584,4 @@ class _ErrorBanner extends StatelessWidget {
     );
   }
 }
+

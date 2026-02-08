@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:godavao/common/app_colors.dart';
 
 class PrivacyDisclaimerPage extends StatefulWidget {
   const PrivacyDisclaimerPage({super.key});
@@ -10,8 +11,8 @@ class PrivacyDisclaimerPage extends StatefulWidget {
 
 class _PrivacyDisclaimerPageState extends State<PrivacyDisclaimerPage> {
   // GoDavao brand
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purple = AppColors.purple;
+  static const _purpleDark = AppColors.purpleDark;
   static const _bg = Color(0xFFF7F7FB);
 
   bool _agreed = false;
@@ -305,3 +306,4 @@ GoDavao collects limited data (name, contact, GPS) to enable rides, live trackin
 and SOS features. Data is stored securely in Supabase and shared only as needed for
 safety (e.g., your trusted contacts during SOS). You may request deletion of your data.
 ''';
+
