@@ -5,7 +5,10 @@ class AppTheme {
   static ThemeData light() {
     final base = ThemeData(
       useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(seedColor: AppColors.purple),
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: AppColors.purple,
+        brightness: Brightness.light,
+      ),
     );
 
     return base.copyWith(
@@ -39,6 +42,7 @@ class AppTheme {
           horizontal: 12,
           vertical: 12,
         ),
+        hintStyle: TextStyle(color: Colors.grey.shade600),
       ),
       chipTheme: base.chipTheme.copyWith(
         labelStyle: const TextStyle(fontWeight: FontWeight.w600),
@@ -88,13 +92,13 @@ class AppTheme {
 
   static TextTheme _textTheme(TextTheme base) {
     return base.copyWith(
-      titleLarge: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-      titleMedium: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-      titleSmall: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-      bodyLarge: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-      bodyMedium: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-      bodySmall: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-      labelLarge: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+      titleLarge: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.black87),
+      titleMedium: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.black87),
+      titleSmall: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black87),
+      bodyLarge: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black87),
+      bodyMedium: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.black87),
+      bodySmall: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.black87),
+      labelLarge: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.black87),
     );
   }
 }
