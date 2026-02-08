@@ -915,80 +915,83 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
           // Bottom controls
           BottomCard(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (_selectedRoute != null) ...[
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      _Pill(
-                        icon: Icons.person_pin_circle,
-                        label:
-                            _searchedPickup == null
-                                ? 'Pickup filter'
-                                : 'Pickup filter ✓',
-                      ),
-                      _Pill(
-                        icon: Icons.flag,
-                        label:
-                            _searchedDestination == null
-                                ? 'Destination'
-                                : 'Destination ✓',
-                      ),
-                      GestureDetector(
-                        onTap: () => setState(() => _editTarget = 'pickup'),
-                        child: _Pill(
-                          icon: Icons.location_pin,
-                          label: _pickup == null ? 'Pickup' : 'Pickup ✓',
-                          borderEmphasis: _editTarget == 'pickup',
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        _Pill(
+                          icon: Icons.person_pin_circle,
+                          label:
+                              _searchedPickup == null
+                                  ? 'Pickup filter'
+                                  : 'Pickup ✓',
                         ),
-                      ),
-                      GestureDetector(
-                        onTap: () => setState(() => _editTarget = 'dropoff'),
-                        child: _Pill(
-                          icon: Icons.outbound,
-                          label: _dropoff == null ? 'Dropoff' : 'Dropoff ✓',
-                          borderEmphasis: _editTarget == 'dropoff',
+                        _Pill(
+                          icon: Icons.flag,
+                          label:
+                              _searchedDestination == null
+                                  ? 'Destination'
+                                  : 'Destination ✓',
                         ),
-                      ),
-                      FloatingActionButton.small(
-                        heroTag: 'center_me_fab',
-                        onPressed: _centerOnMe,
-                        backgroundColor: _purple,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 2,
-                        child: const Icon(Icons.my_location, size: 20),
-                      ),
-                      if (_pickup != null || _dropoff != null)
-                        IconButton(
-                          onPressed: () {
-                            setState(() {
-                              _pickup = null;
-                              _dropoff = null;
-                              _osrmSegment = null;
-                              _editTarget = 'auto';
-                            });
-                          },
-                          style: IconButton.styleFrom(
-                            backgroundColor: Colors.grey.shade200,
-                            shape: const CircleBorder(),
-                          ),
-                          icon: const Icon(
-                            Icons.refresh,
-                            size: 18,
-                            color: Colors.black54,
+                        GestureDetector(
+                          onTap: () => setState(() => _editTarget = 'pickup'),
+                          child: _Pill(
+                            icon: Icons.location_pin,
+                            label: _pickup == null ? 'Pickup' : 'Pickup ✓',
+                            borderEmphasis: _editTarget == 'pickup',
                           ),
                         ),
-                    ],
+                        GestureDetector(
+                          onTap: () => setState(() => _editTarget = 'dropoff'),
+                          child: _Pill(
+                            icon: Icons.outbound,
+                            label: _dropoff == null ? 'Dropoff' : 'Dropoff ✓',
+                            borderEmphasis: _editTarget == 'dropoff',
+                          ),
+                        ),
+                        FloatingActionButton.small(
+                          heroTag: 'center_me_fab',
+                          onPressed: _centerOnMe,
+                          backgroundColor: _purple,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 2,
+                          child: const Icon(Icons.my_location, size: 20),
+                        ),
+                        if (_pickup != null || _dropoff != null)
+                          IconButton(
+                            onPressed: () {
+                              setState(() {
+                                _pickup = null;
+                                _dropoff = null;
+                                _osrmSegment = null;
+                                _editTarget = 'auto';
+                              });
+                            },
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.grey.shade200,
+                              shape: const CircleBorder(),
+                            ),
+                            icon: const Icon(
+                              Icons.refresh,
+                              size: 18,
+                              color: Colors.black54,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
+                    width: double.infinity,
                     height: 44,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
