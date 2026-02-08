@@ -5,8 +5,14 @@ import 'package:godavao/core/osrm_service.dart';
 
 enum PricingMode { shared, sharedDistance, groupFlat, pakyaw }
 
+/// Represents a passenger in a shared ride with their distance traveled.
+///
+/// Used as input to [estimateSharedDistanceFare] to calculate distance-proportional
+/// fare splitting.
 class SharedPassenger {
+  /// Unique identifier for the passenger
   final String id;
+  /// Distance this passenger travels along the route in kilometers
   final double distanceKm;
 
   const SharedPassenger({
@@ -15,20 +21,57 @@ class SharedPassenger {
   });
 }
 
+/// Fare calculation rules for GoDavao rides.
+///
+/// Pricing formula:
+/// ```dart
+/// subtotal = baseFare + (perKm × distanceKm) + (perMin × durationMin) + bookingFee
+/// subtotal = max(subtotal, minFare)
+///
+/// nightSurcharge = subtotal × nightSurchargePct (if night hours)
+///
+/// raw = (subtotal + nightSurcharge) × surgeMultiplier × seatsBilled
+///
+/// Apply mode multipliers:
+///   - groupFlat: × 1.10
+///   - pakyaw: × 1.20
+///
+/// Apply carpool discount (except for groupFlat):
+///   raw = raw × (1 - carpoolDiscountPct)
+///
+/// total = round(raw)
+/// platformFee = total × platformFeeRate
+/// driverTake = total - platformFee
+/// ```
 class FareRules {
+  /// Base starting fare for all rides (₱25)
   final double baseFare;
+  /// Rate per kilometer traveled (₱14/km)
   final double perKm;
+  /// Rate per minute of travel time (₱0.80/min)
   final double perMin;
+  /// Minimum fare regardless of distance (₱70)
   final double minFare;
+  /// One-time booking fee (₱5)
   final double bookingFee;
+  /// Additional percentage charge for night rides (15%)
   final double nightSurchargePct;
+  /// Night surcharge start hour (21:00 / 9 PM)
   final int nightStartHour;
+  /// Night surcharge end hour (05:00 / 5 AM)
   final int nightEndHour;
+  /// Platform fee percentage of total fare (15%)
   final double defaultPlatformFeeRate;
+  /// Minimum surge multiplier during low demand (0.7×)
   final double minSurgeMultiplier;
+  /// Maximum surge multiplier during high demand (2.0×)
   final double maxSurgeMultiplier;
+  /// Carpool discounts based on total seats filled
+  /// Key = number of seats, Value = discount percentage
   final Map<int, double> carpoolDiscountBySeats;
+  /// Group flat mode multiplier (1.10×)
   final double groupFlatMultiplier;
+  /// Pakyaw (private) mode multiplier (1.20×)
   final double pakyawMultiplier;
 
   const FareRules({
@@ -49,11 +92,20 @@ class FareRules {
   });
 }
 
+/// Individual fare breakdown for a single passenger in a shared ride.
+///
+/// Used in distance-proportional pricing to show how much each passenger
+/// contributes based on their traveled distance.
 class PassengerFare {
+  /// Unique identifier for the passenger
   final String passengerId;
+  /// Distance this passenger traveled in kilometers
   final double distanceKm;
+  /// This passenger's share of the route fare (before platform fee)
   final double fareShare;
+  /// Platform fee for this passenger
   final double platformFee;
+  /// Total amount this passenger pays (fareShare + platformFee)
   final double total;
 
   const PassengerFare({
@@ -73,13 +125,24 @@ class PassengerFare {
   };
 }
 
+/// Breakdown of fare distribution for a shared ride with multiple passengers.
+///
+/// Used by [estimateSharedDistanceFare] to return the complete pricing details
+/// when using distance-proportional pricing.
 class SharedFareBreakdown {
+  /// Total distance of the route in kilometers
   final double totalRouteDistanceKm;
+  /// Estimated travel time in minutes
   final double durationMin;
+  /// Total fare collected from all passengers (before platform fees)
   final double totalFare;
+  /// Total platform fee collected from all passengers
   final double totalPlatformFee;
+  /// Total driver earnings after platform fees
   final double totalDriverTake;
+  /// Individual fare breakdown for each passenger
   final List<PassengerFare> passengerFares;
+  /// Pricing mode used (should be [PricingMode.sharedDistance])
   final PricingMode mode;
 
   const SharedFareBreakdown({
@@ -259,16 +322,37 @@ class FareService {
     );
   }
 
-  /// Calculate proportional fares for shared rides based on distance.
+  /// Calculate proportional fares for shared rides based on distance traveled.
   ///
-  /// Passengers split the total route fare proportionally based on their
-  /// individual distance traveled along the route.
+  /// This method implements distance-proportional pricing where passengers pay
+  /// based on their actual usage of the route. The total route fare is calculated
+  /// once, then split among passengers proportionally to their distance traveled.
   ///
-  /// Example:
-  /// - Route: 10km, total fare = ₱500
-  /// - Passenger A: 10km (pays ₱333)
-  /// - Passenger B: 5km (pays ₱167)
-  /// - Total: ₱500
+  /// **Algorithm:**
+  /// 1. Calculate total route fare using full route distance
+  /// 2. Sum all passenger distances
+  /// 3. For each passenger:
+  ///    - Calculate their distance share: (their_distance / total_passenger_distance)
+  ///    - Their fare = route_fare × distance_share
+  ///    - Add platform fee to get their total
+  ///
+  /// **Example:**
+  /// ```dart
+  /// // Route: 10km, total fare = ₱500
+  /// final passengers = [
+  ///   SharedPassenger(id: 'A', distanceKm: 10.0), // Full route
+  ///   SharedPassenger(id: 'B', distanceKm: 5.0),  // Half route
+  /// ];
+  ///
+  /// // Passenger A: (10/15) × 500 = ₱333
+  /// // Passenger B: (5/15) × 500 = ₱167
+  /// // Total collected: ₱500 (equals route fare)
+  /// ```
+  ///
+  /// **Key Benefits:**
+  /// - Fair pricing: passengers pay proportionally to distance traveled
+  /// - Driver revenue protection: total collected equals full route fare
+  /// - Transparency: clear relationship between distance and cost
   Future<SharedFareBreakdown> estimateSharedDistanceFare({
     required LatLng routeStart,
     required LatLng routeEnd,

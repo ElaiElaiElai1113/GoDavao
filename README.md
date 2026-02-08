@@ -56,12 +56,28 @@ This project was originally developed for academic purposes but is being improve
 
 ### Fare Calculation
 Dynamic fare formula based on:
-- Base fare
-- Distance (per km)
-- ETA / duration (per minute)
+- Base fare (₱25)
+- Distance rate (₱14 per km)
+- Time rate (₱0.80 per minute)
+- Booking fee (₱5)
+- Minimum fare (₱70)
 - Number of seats
-- Carpool discount
-- Night/peak surcharge
+- Carpool discount (2=6%, 3=12%, 4=20%, 5=25%)
+- Night surcharge (+15% from 9 PM - 5 AM)
+- Surge multiplier (0.7-2.0 based on demand/weather)
+- Platform fee (15% of total)
+
+**Booking Modes:**
+- **Shared**: Regular shared ride with carpool discounts
+- **Group Flat**: Group rate (+10% multiplier, bills 1 seat)
+- **Pakyaw**: Full private ride (+20% multiplier, all seats)
+
+**Distance-Proportional Shared Pricing:**
+For shared rides with multiple passengers, fares are split proportionally based on each passenger's traveled distance. The total route fare is calculated first, then each passenger pays their fair share based on how much of the route they use.
+
+Example: 10km route with ₱500 total fare
+- Passenger A travels 10km → pays ₱333
+- Passenger B travels 5km → pays ₱167
 
 ### Real-time Features
 - Supabase Realtime subscriptions

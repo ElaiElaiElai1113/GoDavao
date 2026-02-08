@@ -1,13 +1,18 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:godavao/core/shared_fare_service.dart';
 import 'package:godavao/features/ride_status/models/match_card_model.dart';
 
 /// Service for handling driver ride operations.
 class DriverRideService {
   final SupabaseClient _supabase;
+  final SharedFareService _sharedFareService;
 
-  DriverRideService({SupabaseClient? client})
-      : _supabase = client ?? Supabase.instance.client;
+  DriverRideService({
+    SupabaseClient? client,
+    SharedFareService? sharedFareService,
+  })  : _supabase = client ?? Supabase.instance.client,
+        _sharedFareService = sharedFareService ?? SharedFareService();
 
   /// Fetch all matches for a driver's routes
   Future<List<MatchCard>> fetchMatches(
@@ -158,10 +163,11 @@ class DriverRideService {
     }
   }
 
-  /// Accept a ride match via RPC
+  /// Accept a ride match via RPC and recalculate fares using distance-proportional pricing
   Future<Map<String, dynamic>> acceptMatch(
     String matchId,
     String rideRequestId,
+    String? driverRouteId,
   ) async {
     try {
       final result = await _supabase.rpc<Map<String, dynamic>>(
@@ -171,6 +177,16 @@ class DriverRideService {
           'p_ride_request_id': rideRequestId,
         },
       );
+
+      // Recalculate fares for all passengers on this route using distance-proportional pricing
+      if (driverRouteId != null) {
+        try {
+          await _sharedFareService.calculateAndStoreSharedFares(driverRouteId);
+        } catch (e) {
+          // Log but don't fail the acceptance if fare calculation fails
+          print('Warning: Failed to recalculate shared fares: $e');
+        }
+      }
 
       return result;
     } catch (e) {

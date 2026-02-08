@@ -27,6 +27,7 @@ import 'package:godavao/features/payments/presentation/payment_status_chip.dart'
 import 'package:godavao/features/ride_status/presentation/driver_ride_status_page.dart';
 import 'package:godavao/features/ride_status/models/match_card_model.dart';
 import 'package:godavao/features/ride_status/models/route_group_model.dart';
+import 'package:godavao/core/shared_fare_service.dart';
 import 'package:godavao/features/live_tracking/data/live_subscriber.dart';
 import 'package:godavao/main.dart' show localNotify;
 
@@ -41,6 +42,7 @@ class DriverRidesPage extends StatefulWidget {
 class _DriverRidesPageState extends State<DriverRidesPage>
     with SingleTickerProviderStateMixin {
   final _supabase = Supabase.instance.client;
+  late final _sharedFareService = SharedFareService(client: _supabase);
 
   static const _purple = Color(0xFF6A27F7);
   static const _purpleDark = Color(0xFF4B18C9);
@@ -650,6 +652,17 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         if (allowSeats <= 0) break;
       }
 
+      // Recalculate fares using distance-proportional pricing for all passengers on this route
+      if (acceptedCount > 0 && g.routeId.isNotEmpty) {
+        try {
+          await _sharedFareService.calculateAndStoreSharedFares(g.routeId);
+          _d('Recalculated shared fares for route ${g.routeId}');
+        } catch (e) {
+          // Log but don't fail the acceptance if fare calculation fails
+          _d('Warning: Failed to recalculate shared fares: $e');
+        }
+      }
+
       if (!mounted) return;
       if (acceptedCount == 0) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -657,7 +670,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Accepted $acceptedCount rider(s).')),
+          SnackBar(content: Text('Accepted $acceptedCount rider(s). Fares updated based on distance.')),
         );
       }
     } catch (e) {
