@@ -248,7 +248,7 @@ class _BookingHistoryPageState extends State<BookingHistoryPage> {
         onRefresh: _load,
         child:
             _items.isEmpty
-                ? const ListView(
+                ? ListView(
                   padding: EdgeInsets.all(24),
                   children: [
                     EmptyStateCard(
