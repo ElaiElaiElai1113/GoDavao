@@ -41,8 +41,8 @@ class ConfirmRidePage extends StatefulWidget {
 }
 
 class _ConfirmRidePageState extends State<ConfirmRidePage> {
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purple = Color(0xFF5A20D7); // Darker for better contrast
+  static const _purpleDark = Color(0xFF3B10A7);
   final _pesoFmt = NumberFormat.currency(
     locale: 'en_PH',
     symbol: '₱',
@@ -517,7 +517,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         title: const Text(
           'Confirm Ride',
           style: TextStyle(
-            color: Colors.white,
+            color: Colors.black87,
             fontWeight: FontWeight.bold,
             fontSize: 18,
           ),

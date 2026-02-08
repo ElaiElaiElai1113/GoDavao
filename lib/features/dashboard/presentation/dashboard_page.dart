@@ -60,8 +60,8 @@ class _DashboardPageState extends State<DashboardPage> {
 
   // Theme
   static const _bg = AppColors.bg;
-  static const _purple = AppColors.purple;
-  static const _purpleDark = AppColors.purpleDark;
+  static const _purple = Color(0xFF5A20D7); // Darker purple for better contrast
+  static const _purpleDark = Color(0xFF3B10A7); // Much darker purple
 
   // =========================
   // Coach overlay wiring

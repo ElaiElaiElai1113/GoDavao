@@ -59,8 +59,8 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
   final Distance _distance = const Distance();
 
   // UI palette
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purple = Color(0xFF5A20D7); // Darker for better contrast
+  static const _purpleDark = Color(0xFF3B10A7);
 
   // Map readiness
   bool _mapReady = false;
@@ -610,7 +610,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
         title: const Text(
           'Find a Route',
           style: TextStyle(
-            color: Colors.white,
+            color: Colors.black87,
             fontWeight: FontWeight.bold,
             fontSize: 18,
           ),
@@ -676,7 +676,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                         _showAllRoutes
                             ? 'Showing all active routes'
                             : 'Filter routes by proximity to pickup/destination',
-                        style: const TextStyle(color: Colors.white),
+                        style: const TextStyle(color: Colors.black87),
                       ),
                     ),
                   ],
@@ -1119,7 +1119,7 @@ class _RouteChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  static const _purple = Color(0xFF6A27F7);
+  static const _purple = Color(0xFF5A20D7); // Darker for better contrast
 
   @override
   Widget build(BuildContext context) {

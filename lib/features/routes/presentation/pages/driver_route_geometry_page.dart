@@ -53,8 +53,8 @@ class _DriverRouteGeometryPageState extends State<DriverRouteGeometryPage> {
   // small debounce to avoid spamming geocoder during quick edits
   Timer? _geocodeDebounce;
 
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purple = Color(0xFF5A20D7); // Darker for better contrast
+  static const _purpleDark = Color(0xFF3B10A7);
 
   @override
   void initState() {
@@ -810,8 +810,8 @@ class _ModeToggle extends StatelessWidget {
   final GeometryMode mode;
   final ValueChanged<GeometryMode> onChanged;
 
-  static const _purple = Color(0xFF6A27F7);
-  static const _purpleDark = Color(0xFF4B18C9);
+  static const _purple = Color(0xFF5A20D7); // Darker for better contrast
+  static const _purpleDark = Color(0xFF3B10A7);
 
   @override
   Widget build(BuildContext context) {
