@@ -997,6 +997,10 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                                 ? _purple
                                 : Colors.grey.shade300,
                         disabledBackgroundColor: Colors.grey.shade300,
+                        foregroundColor:
+                            (_pickup != null && _dropoff != null)
+                                ? Colors.white
+                                : Colors.black54,
                         shadowColor: Colors.transparent,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
@@ -1009,7 +1013,6 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                       child: const Text(
                         'Review Fare',
                         style: TextStyle(
-                          color: Colors.white,
                           fontWeight: FontWeight.w600,
                           fontSize: 15,
                         ),
@@ -1166,25 +1169,35 @@ class _Pill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final base = Colors.grey.shade100;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: base,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: borderEmphasis ? const Color(0xFF6A27F7) : Colors.black12,
+          color: borderEmphasis ? const Color(0xFF5A20D7) : Colors.black26,
           width: borderEmphasis ? 2 : 1,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: Colors.black54),
+          Icon(icon, size: 14, color: Colors.black87),
           const SizedBox(width: 6),
           Text(
             label,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
           ),
         ],
       ),
