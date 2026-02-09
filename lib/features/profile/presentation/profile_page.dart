@@ -6,7 +6,6 @@ import 'package:godavao/common/app_colors.dart';
 import 'package:godavao/common/app_shadows.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
 import 'package:godavao/features/profile/presentation/app_drawer.dart';
-import 'package:godavao/common/app_colors.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -28,7 +27,6 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _obscure = true;
 
   static const purple = AppColors.purple;
-  static const purpleDark = AppColors.purpleDark;
   static const textDim = Color(0xFF667085);
 
   @override
@@ -124,6 +122,8 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -173,13 +173,13 @@ class _ProfilePageState extends State<ProfilePage> {
                             ),
                       ),
                       const SizedBox(width: 8),
-                const Text(
-                  'Profile',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+                      Text(
+                        'Profile',
+                        style: textTheme.titleMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -336,12 +336,11 @@ class _ProfilePageState extends State<ProfilePage> {
                                             ),
                                       ),
                                     )
-                                    : const Text(
+                                    : Text(
                                       'Save changes',
-                                      style: TextStyle(
+                                      style: textTheme.labelLarge?.copyWith(
                                         color: Colors.white,
                                         fontWeight: FontWeight.w700,
-                                        fontSize: 16,
                                       ),
                                     ),
                           ),

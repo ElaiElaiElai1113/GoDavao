@@ -4,9 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:google_polyline_algorithm/google_polyline_algorithm.dart'
+import 'package:google_polyline_algorithm/google_polyline_algorithm.dart' as gpa;
 import 'package:godavao/common/app_colors.dart';
-    as gpa;
 
 import 'package:godavao/core/osrm_service.dart';
 import 'package:godavao/core/reverse_geocoder.dart'; // <- add this
@@ -794,7 +793,9 @@ class _DriverRouteGeometryPageState extends State<DriverRouteGeometryPage> {
                         padding: const EdgeInsets.all(10),
                         child: Text(
                           _error!,
-                          style: const TextStyle(color: Colors.red),
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodySmall?.copyWith(color: Colors.red),
                         ),
                       ),
                   ],
@@ -874,7 +875,7 @@ class _ModeToggle extends StatelessWidget {
                     child: Center(
                       child: Text(
                         m == GeometryMode.osrm ? 'OSRM' : 'Manual',
-                        style: TextStyle(
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
                           color: selected ? Colors.white : _purpleDark,
                           fontWeight: FontWeight.w700,
                         ),
@@ -911,7 +912,9 @@ class _InfoRow extends StatelessWidget {
               text,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w600),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -944,9 +947,19 @@ class _StatCard extends StatelessWidget {
         children: [
           Icon(icon, size: 18, color: Colors.black54),
           const SizedBox(width: 8),
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text(
+            label,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+          ),
           const Spacer(),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
+          Text(
+            value,
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+          ),
         ],
       ),
     );
@@ -977,11 +990,12 @@ class _AddressChip extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             '$label: $value',
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
           ),
         ],
       ),
     );
   }
 }
-

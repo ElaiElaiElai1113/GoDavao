@@ -171,11 +171,13 @@ class _VehicleSwitcherState extends State<VehicleSwitcher> {
               ? 'This vehicle isn’t approved yet. Please wait for verification or select another vehicle.'
               : e.message;
       setState(() => _selectedId = prev);
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(friendly)));
     } catch (e) {
       setState(() => _selectedId = prev);
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Failed to switch vehicle: $e')));
@@ -203,7 +205,12 @@ class _VehicleSwitcherState extends State<VehicleSwitcher> {
           const Icon(Icons.error_outline, size: 16, color: Colors.red),
           const SizedBox(width: 6),
           Expanded(
-            child: Text(_error!, style: const TextStyle(color: Colors.red)),
+            child: Text(
+              _error!,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.red),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -266,7 +273,7 @@ class _VehicleSwitcherState extends State<VehicleSwitcher> {
                       child: Text(
                         label,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           fontWeight: FontWeight.w600,
                           color: selected ? Colors.white : null,
                         ),
@@ -336,9 +343,8 @@ class _StatusChip extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: TextStyle(
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
           color: c,
-          fontSize: 11,
           fontWeight: FontWeight.w700,
           letterSpacing: .2,
         ),
@@ -346,4 +352,3 @@ class _StatusChip extends StatelessWidget {
     );
   }
 }
-

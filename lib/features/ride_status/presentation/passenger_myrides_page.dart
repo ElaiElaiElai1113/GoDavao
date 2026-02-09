@@ -6,7 +6,6 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/common/app_colors.dart';
 
-import 'package:godavao/common/app_colors.dart';
 import 'package:godavao/common/error_state.dart';
 import 'package:godavao/common/empty_state.dart';
 import 'package:godavao/core/reverse_geocoder.dart';
@@ -416,7 +415,10 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
       ),
       child: Text(
         s.toUpperCase(),
-        style: TextStyle(color: c, fontWeight: FontWeight.w800, fontSize: 12),
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: c,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
@@ -550,7 +552,9 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
               '$pickupText → $destText',
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w800),
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 6),
             Wrap(
@@ -571,7 +575,9 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                       driverId == null
                           ? 'Driver: unassigned'
                           : 'Driver: ${driverName ?? driverId.substring(0, 8)}',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     if (driverId != null) ...[
                       const SizedBox(width: 6),
@@ -591,7 +597,9 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                       const SizedBox(width: 6),
                       Text(
                         _peso(fare),
-                        style: const TextStyle(fontWeight: FontWeight.w700),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ],
                   ),
@@ -606,7 +614,9 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                     const SizedBox(width: 6),
                     Text(
                       created,
-                      style: const TextStyle(color: Colors.black54),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: Colors.black54),
                     ),
                   ],
                 ),
@@ -750,7 +760,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
         label: Text(
           label,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
             color: Colors.white,
             fontWeight: FontWeight.w800,
           ),
@@ -799,12 +809,11 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
               ),
             ),
           ),
-          title: const Text(
+          title: Text(
             'My Rides',
-            style: TextStyle(
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
               color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ),
@@ -853,12 +862,11 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
               ),
             ),
           ),
-          title: const Text(
+          title: Text(
             'My Rides',
-            style: TextStyle(
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
               color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
+              fontWeight: FontWeight.w700,
             ),
           ),
           bottom: PreferredSize(

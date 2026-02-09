@@ -285,10 +285,17 @@ class _BookingHistoryPageState extends State<BookingHistoryPage> {
                     // Route line
                     Text(
                       '$pickupAddr → $destAddr',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 6),
-                    Text(dt, style: const TextStyle(color: Colors.black54)),
+                    Text(
+                      dt,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: Colors.black54),
+                    ),
 
                     if (it['counterparty_name'] != null) ...[
                       const SizedBox(height: 4),
@@ -319,10 +326,9 @@ class _BookingHistoryPageState extends State<BookingHistoryPage> {
                           ),
                           child: Text(
                             status.toUpperCase(),
-                            style: TextStyle(
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
                               color: _statusColor(status),
                               fontWeight: FontWeight.w600,
-                              fontSize: 12,
                             ),
                           ),
                         ),
@@ -366,4 +372,3 @@ class _BookingHistoryPageState extends State<BookingHistoryPage> {
     );
   }
 }
-

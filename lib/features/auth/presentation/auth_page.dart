@@ -5,7 +5,6 @@ import 'package:godavao/common/app_shadows.dart';
 import 'package:godavao/features/dashboard/presentation/dashboard_page.dart';
 import 'package:godavao/features/verify/presentation/admin_panel_page.dart';
 import 'package:godavao/features/verify/presentation/verify_identity_sheet.dart';
-import 'package:godavao/common/app_colors.dart';
 
 const _kAppDeepLink = 'io.supabase.godavao://reset-callback';
 
@@ -47,10 +46,14 @@ class _AuthPageState extends State<AuthPage> {
     return InputDecoration(
       hintText: hint,
       labelText: label,
-      labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
+      labelStyle: Theme.of(
+        context,
+      ).textTheme.bodyMedium?.copyWith(color: Colors.white.withValues(alpha: 0.85)),
       filled: true,
       fillColor: Colors.white.withValues(alpha: 0.15),
-      hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
+      hintStyle: Theme.of(
+        context,
+      ).textTheme.bodyMedium?.copyWith(color: Colors.white.withValues(alpha: 0.75)),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
@@ -265,6 +268,14 @@ class _AuthPageState extends State<AuthPage> {
   // ----- UI -----
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final whiteBody = textTheme.bodyMedium?.copyWith(color: Colors.white);
+    final whiteLabel = textTheme.labelLarge?.copyWith(color: Colors.white);
+    final whiteTitle = textTheme.titleLarge?.copyWith(
+      fontWeight: FontWeight.w700,
+      color: Colors.white,
+    );
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Container(
@@ -319,20 +330,14 @@ class _AuthPageState extends State<AuthPage> {
 
                           Text(
                             _isLogin ? 'Welcome' : 'Create your account',
-                            style: Theme.of(
-                              context,
-                            ).textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
+                            style: whiteTitle,
                           ),
                           const SizedBox(height: 4),
                           Text(
                             _isLogin
                                 ? 'Sign in to book rides around Davao.'
                                 : 'Join GoDavao to start riding or driving.',
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(color: Colors.white),
+                            style: whiteBody,
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 24),
@@ -342,7 +347,7 @@ class _AuthPageState extends State<AuthPage> {
                             keyboardType: TextInputType.emailAddress,
                             autofillHints: const [AutofillHints.email],
                             textInputAction: TextInputAction.next,
-                            style: const TextStyle(color: Colors.white),
+                            style: whiteBody,
                             decoration: _fieldDecor(
                               label: 'Email',
                               hint: 'you@example.com',
@@ -350,8 +355,9 @@ class _AuthPageState extends State<AuthPage> {
                             validator: (v) {
                               final s = (v ?? '').trim();
                               if (s.isEmpty) return 'Enter your email';
-                              if (!s.contains('@'))
+                              if (!s.contains('@')) {
                                 return 'Enter a valid email';
+                              }
                               return null;
                             },
                           ),
@@ -368,7 +374,7 @@ class _AuthPageState extends State<AuthPage> {
                             onFieldSubmitted: (_) {
                               if (_isLogin) _submit();
                             },
-                            style: const TextStyle(color: Colors.white),
+                            style: whiteBody,
                             decoration: _fieldDecor(
                               label: 'Password',
                               hint: 'Enter your password',
@@ -399,9 +405,9 @@ class _AuthPageState extends State<AuthPage> {
                             alignment: Alignment.centerRight,
                             child: TextButton(
                               onPressed: _forgotPassword,
-                              child: const Text(
+                              child: Text(
                                 'Forgot Password?',
-                                style: TextStyle(color: Colors.white),
+                                style: whiteLabel,
                               ),
                             ),
                           ),
@@ -411,7 +417,7 @@ class _AuthPageState extends State<AuthPage> {
                             TextFormField(
                               controller: _nameCtrl,
                               textInputAction: TextInputAction.next,
-                              style: const TextStyle(color: Colors.white),
+                              style: whiteBody,
                               decoration: _fieldDecor(label: 'Full Name'),
                               validator:
                                   (v) =>
@@ -426,7 +432,7 @@ class _AuthPageState extends State<AuthPage> {
                               controller: _phoneCtrl,
                               keyboardType: TextInputType.phone,
                               textInputAction: TextInputAction.done,
-                              style: const TextStyle(color: Colors.white),
+                              style: whiteBody,
                               decoration: _fieldDecor(label: 'Phone Number'),
                               validator:
                                   (v) =>
@@ -445,20 +451,20 @@ class _AuthPageState extends State<AuthPage> {
                               iconDisabledColor: Colors.white.withValues(
                                 alpha: 0.75,
                               ),
-                              style: const TextStyle(color: Colors.white),
-                              items: const [
+                              style: whiteBody,
+                              items: [
                                 DropdownMenuItem(
                                   value: 'passenger',
                                   child: Text(
                                     'Passenger',
-                                    style: TextStyle(color: Colors.white),
+                                    style: whiteBody,
                                   ),
                                 ),
                                 DropdownMenuItem(
                                   value: 'driver',
                                   child: Text(
                                     'Driver',
-                                    style: TextStyle(color: Colors.white),
+                                    style: whiteBody,
                                   ),
                                 ),
                               ],
@@ -492,9 +498,8 @@ class _AuthPageState extends State<AuthPage> {
                                       )
                                       : Text(
                                         _isLogin ? 'Login' : 'Register',
-                                        style: const TextStyle(
+                                        style: textTheme.labelLarge?.copyWith(
                                           fontWeight: FontWeight.w700,
-                                          fontSize: 16,
                                         ),
                                       ),
                             ),
@@ -506,18 +511,24 @@ class _AuthPageState extends State<AuthPage> {
                             children: [
                               Text(
                                 _isLogin ? 'or ' : 'Already have an account? ',
-                                style: TextStyle(
+                                style: textTheme.bodyMedium?.copyWith(
                                   color: Colors.white.withValues(alpha: 0.85),
                                 ),
                               ),
-                              GestureDetector(
-                                onTap:
+                              TextButton(
+                                onPressed:
                                     () => setState(() => _isLogin = !_isLogin),
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: Size.zero,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  foregroundColor: Colors.white,
+                                ),
                                 child: Text(
                                   _isLogin ? 'Register' : 'Login',
-                                  style: const TextStyle(
+                                  style: textTheme.labelLarge?.copyWith(
                                     color: Colors.white,
-                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ),
@@ -529,7 +540,7 @@ class _AuthPageState extends State<AuthPage> {
                             Text(
                               _error!,
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
+                              style: textTheme.bodyMedium?.copyWith(
                                 color: Colors.yellowAccent,
                               ),
                             ),

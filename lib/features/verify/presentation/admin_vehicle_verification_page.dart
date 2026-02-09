@@ -54,11 +54,12 @@ class _AdminVehicleVerificationPageState
       if (status == 'approved') _approved = data;
       if (status == 'rejected') _rejected = data;
     } finally {
-      if (!mounted) return;
-      setState(() {
-        if (status == 'approved') _loadingApproved = false;
-        if (status == 'rejected') _loadingRejected = false;
-      });
+      if (mounted) {
+        setState(() {
+          if (status == 'approved') _loadingApproved = false;
+          if (status == 'rejected') _loadingRejected = false;
+        });
+      }
     }
   }
 
@@ -350,11 +351,11 @@ class _VehicleFilterPanel extends StatelessWidget {
                 ),
                 selected: docFilter == f.$1,
                 onSelected: (_) => onFilterChanged(f.$1),
-                selectedColor: const AppColors.purple.withValues(alpha: .18),
-                labelStyle: TextStyle(
+                selectedColor: AppColors.purple.withValues(alpha: .18),
+                labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color:
                       docFilter == f.$1
-                          ? const AppColors.purpleDark
+                          ? AppColors.purpleDark
                           : Colors.black87,
                   fontWeight:
                       docFilter == f.$1 ? FontWeight.w700 : FontWeight.w500,
@@ -531,8 +532,7 @@ class _PendingVehicleCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     '$plate • $make $model',
-                    style: const TextStyle(
-                      fontSize: 15,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -541,8 +541,18 @@ class _PendingVehicleCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 4),
-            Text('Driver: $driverName', style: _subStyle),
-            Text('Submitted $timeAgo', style: _metaStyle),
+            Text(
+              'Driver: $driverName',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.black54),
+            ),
+            Text(
+              'Submitted $timeAgo',
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: Colors.black45),
+            ),
             const SizedBox(height: 6),
             Wrap(
               spacing: 6,
@@ -591,9 +601,6 @@ class _PendingVehicleCard extends StatelessWidget {
     );
   }
 
-  static const _subStyle = TextStyle(fontSize: 12.5, color: Colors.black54);
-  static const _metaStyle = TextStyle(fontSize: 12, color: Colors.black45);
-
   static String _relTime(DateTime? dt) {
     if (dt == null) return '—';
     final diff = DateTime.now().difference(dt);
@@ -636,8 +643,7 @@ class _VehicleHistoryCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     '$plate • $make $model',
-                    style: const TextStyle(
-                      fontSize: 15,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -646,12 +652,19 @@ class _VehicleHistoryCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 4),
-            Text('Reviewed: ${reviewed ?? '—'}', style: _metaStyle),
+            Text(
+              'Reviewed: ${reviewed ?? '—'}',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.black54),
+            ),
             if (notes.isNotEmpty) ...[
               const SizedBox(height: 6),
               Text(
                 notes,
-                style: const TextStyle(fontSize: 12.5, color: Colors.black87),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: Colors.black87),
               ),
             ],
           ],
@@ -660,7 +673,6 @@ class _VehicleHistoryCard extends StatelessWidget {
     );
   }
 
-  static const _metaStyle = TextStyle(fontSize: 12, color: Colors.black54);
 }
 
 class _VehicleTag extends StatelessWidget {
@@ -677,8 +689,7 @@ class _VehicleTag extends StatelessWidget {
     ),
     child: Text(
       label.toUpperCase(),
-      style: TextStyle(
-        fontSize: 10.5,
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
         fontWeight: FontWeight.w700,
         color: color,
       ),
@@ -712,8 +723,7 @@ class _DocStatusChip extends StatelessWidget {
           const SizedBox(width: 4),
           Text(
             label,
-            style: TextStyle(
-              fontSize: 12,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
               fontWeight: FontWeight.w600,
               color: color,
             ),
@@ -769,7 +779,9 @@ class _VehiclePreviewSheetState extends State<_VehiclePreviewSheet> {
           children: [
             Text(
               '${v['plate'] ?? '—'} • ${v['make'] ?? ''} ${v['model'] ?? ''}',
-              style: const TextStyle(fontWeight: FontWeight.w700),
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
             Wrap(
@@ -781,9 +793,11 @@ class _VehiclePreviewSheetState extends State<_VehiclePreviewSheet> {
               ],
             ),
             const Divider(height: 20),
-            const Text(
+            Text(
               'Documents',
-              style: TextStyle(fontWeight: FontWeight.w600),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 6),
             if (_loading)
@@ -801,14 +815,16 @@ class _VehiclePreviewSheetState extends State<_VehiclePreviewSheet> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Notes',
-                    style: TextStyle(fontWeight: FontWeight.w600),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     v['review_notes'] as String? ?? '',
-                    style: const TextStyle(fontSize: 12.5),
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
               ),
@@ -823,13 +839,17 @@ class _VehiclePreviewSheetState extends State<_VehiclePreviewSheet> {
     children: [
       Text(
         title,
-        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
       ),
       const SizedBox(height: 4),
       if (url == null)
-        const Text(
+        Text(
           'No file uploaded',
-          style: TextStyle(color: Colors.black54, fontSize: 12),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: Colors.black54),
         )
       else
         ClipRRect(
@@ -896,4 +916,3 @@ class _ReasonDialogState extends State<_ReasonDialog> {
     ],
   );
 }
-

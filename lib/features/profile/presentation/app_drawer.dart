@@ -86,9 +86,8 @@ class AppDrawer extends StatelessWidget {
                                       name,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
+                                      style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
                                         fontWeight: FontWeight.w700,
-                                        fontSize: 18,
                                         color: Colors.white,
                                       ),
                                     ),
@@ -97,9 +96,8 @@ class AppDrawer extends StatelessWidget {
                                         email,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
+                                        style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
                                           color: Colors.white.withValues(alpha: 0.85),
-                                          fontSize: 12.5,
                                         ),
                                       ),
                                     const SizedBox(height: 8),
@@ -160,6 +158,7 @@ class AppDrawer extends StatelessWidget {
                     child: Row(
                       children: [
                         _quickAction(
+                          context: context,
                           icon: Icons.person_outline,
                           label: 'Profile',
                           onTap: () {
@@ -174,6 +173,7 @@ class AppDrawer extends StatelessWidget {
                         ),
                         const SizedBox(width: 10),
                         _quickAction(
+                          context: context,
                           icon: Icons.help_outline,
                           label: 'How it works',
                           onTap: () {
@@ -188,6 +188,7 @@ class AppDrawer extends StatelessWidget {
                         ),
                         const SizedBox(width: 10),
                         _quickAction(
+                          context: context,
                           icon: Icons.history_rounded,
                           label: 'History',
                           onTap: () {
@@ -330,16 +331,18 @@ class AppDrawer extends StatelessWidget {
                     ),
                     tileColor: Colors.red.withValues(alpha: 0.08),
                     leading: const Icon(Icons.logout, color: Colors.red),
-                    title: const Text(
+                    title: Text(
                       'Logout',
-                      style: TextStyle(
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         color: Colors.red,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                    subtitle: const Text(
+                    subtitle: Text(
                       'Sign out of your account',
-                      style: TextStyle(color: _textDim),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: _textDim,
+                      ),
                     ),
                     onTap: () async {
                       final nav = Navigator.of(context);
@@ -400,6 +403,7 @@ class AppDrawer extends StatelessWidget {
   }
 
   static Widget _quickAction({
+    required BuildContext context,
     required IconData icon,
     required String label,
     required VoidCallback onTap,
@@ -428,8 +432,7 @@ class AppDrawer extends StatelessWidget {
               const SizedBox(height: 6),
               Text(
                 label,
-                style: const TextStyle(
-                  fontSize: 12.5,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   fontWeight: FontWeight.w600,
                   color: _textDim,
                 ),
@@ -444,12 +447,14 @@ class AppDrawer extends StatelessWidget {
   Widget _sectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontWeight: FontWeight.w800,
-          color: _purpleDark,
-          letterSpacing: 0.2,
+      child: Builder(
+        builder: (context) => Text(
+          title,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: _purpleDark,
+            letterSpacing: 0.2,
+          ),
         ),
       ),
     );
@@ -477,17 +482,25 @@ class AppDrawer extends StatelessWidget {
           size: 20,
         ),
       ),
-      title: Text(
-        label,
-        style: TextStyle(
-          fontSize: 16,
-          fontWeight: highlight ? FontWeight.w700 : FontWeight.w600,
-          color: highlight ? _purple : Colors.black87,
+      title: Builder(
+        builder: (context) => Text(
+          label,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: highlight ? FontWeight.w700 : FontWeight.w600,
+            color: highlight ? _purple : Colors.black87,
+          ),
         ),
       ),
       subtitle:
           subtitle != null
-              ? Text(subtitle, style: const TextStyle(color: _textDim))
+              ? Builder(
+                builder: (context) => Text(
+                  subtitle,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: _textDim,
+                  ),
+                ),
+              )
               : null,
       onTap: onTap,
     );
@@ -522,4 +535,3 @@ class _HeaderSkeleton extends StatelessWidget {
     );
   }
 }
-

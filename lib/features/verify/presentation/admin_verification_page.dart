@@ -422,16 +422,14 @@ class _VerificationCard extends StatelessWidget {
                     children: [
                       Text(
                         name,
-                        style: const TextStyle(
-                          fontSize: 16,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                       if (row['phone'] != null && row['phone'] != '—')
                         Text(
                           row['phone'] as String,
-                          style: const TextStyle(
-                            fontSize: 13,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: Colors.black54,
                           ),
                         ),
@@ -449,14 +447,18 @@ class _VerificationCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               'Reviewed: $reviewed',
-              style: const TextStyle(fontSize: 12.5, color: Colors.black54),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.black54),
             ),
             if (notes.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
                   notes,
-                  style: const TextStyle(fontSize: 12.5, color: Colors.black87),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.black87),
                 ),
               ),
             // --- Verification images (Pending only) ---
@@ -544,7 +546,7 @@ Widget _idImageBox(dynamic key, String label) {
         ),
       ),
       const SizedBox(height: 4),
-      Text(label, style: const TextStyle(fontSize: 12)),
+      Text(label),
     ],
   );
 }
@@ -562,7 +564,10 @@ class _Tag extends StatelessWidget {
     ),
     child: Text(
       text,
-      style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700),
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: color,
+        fontWeight: FontWeight.w700,
+      ),
     ),
   );
 }
@@ -616,11 +621,11 @@ class _FilterPanel extends StatelessWidget {
                 ),
                 selected: roleFilter == r.$1,
                 onSelected: (_) => onRoleChanged(r.$1),
-                selectedColor: const AppColors.purple.withValues(alpha: .18),
-                labelStyle: TextStyle(
+                selectedColor: AppColors.purple.withValues(alpha: .18),
+                labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color:
                       roleFilter == r.$1
-                          ? const AppColors.purpleDark
+                          ? AppColors.purpleDark
                           : Colors.black87,
                 ),
               ),
@@ -636,4 +641,3 @@ extension on String {
   String capitalize() =>
       isEmpty ? this : '${this[0].toUpperCase()}${substring(1)}';
 }
-

@@ -149,14 +149,16 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
-          Icon(Icons.lock_clock, color: Color(0xFFF57C00)),
-          SizedBox(width: 10),
+        children: [
+          const Icon(Icons.lock_clock, color: Color(0xFFF57C00)),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
               'This route has an accepted or ongoing ride. '
               'You can’t deactivate it until the ride is completed or cancelled.',
-              style: TextStyle(color: Color(0xFF5D4037)),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF5D4037)),
             ),
           ),
         ],
@@ -180,9 +182,11 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
               children: [
                 const Icon(Icons.lock, size: 36),
                 const SizedBox(height: 10),
-                const Text(
+                Text(
                   'Route is in use',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 const Text(
@@ -379,6 +383,7 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
     );
     if (updated == true && mounted) {
       await _load();
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Geometry updated')));
@@ -446,9 +451,9 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
                           SwitchListTile.adaptive(
                             contentPadding: EdgeInsets.zero,
                             title: const Text('Active'),
-                            subtitle: const Text(
+                            subtitle: Text(
                               'Turn off to deactivate this route (cancels rides and notifies passengers).',
-                              style: TextStyle(fontSize: 12),
+                              style: Theme.of(context).textTheme.bodySmall,
                             ),
                             value: _isActive,
                             onChanged: (v) {
@@ -564,20 +569,18 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
                                 }),
                           ),
                           const SizedBox(height: 6),
-                          const Text(
+                          Text(
                             'Mode changes affect how your route is drawn for passengers.',
-                            style: TextStyle(
-                              fontSize: 12,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: Colors.black54,
                             ),
                           ),
                         ]),
                         const SizedBox(height: 10),
                         _section('Geometry', [
-                          const Text(
+                          Text(
                             'Edit the start & end points on a map.',
-                            style: TextStyle(
-                              fontSize: 12,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: Colors.black54,
                             ),
                           ),
@@ -628,7 +631,9 @@ class _DriverRouteEditPageState extends State<DriverRouteEditPage> {
         children: [
           Text(
             title,
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 8),
           ..._withSpacing(children, 10),
@@ -646,4 +651,3 @@ List<Widget> _withSpacing(List<Widget> list, double spacing) {
   }
   return out;
 }
-

@@ -292,7 +292,10 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
                     (r['name'] as String?)?.trim().isNotEmpty == true ? r['name'] as String : 'Route ${id.substring(0, 8)}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Colors.black87),
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black87,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -304,7 +307,10 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
                   ),
                   child: Text(
                     isActive ? 'ACTIVE' : 'INACTIVE',
-                    style: TextStyle(color: isActive ? Colors.green : Colors.red, fontWeight: FontWeight.w800, fontSize: 12),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: isActive ? Colors.green : Colors.red,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ],
@@ -314,7 +320,9 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
               '${r['start_address']} → ${r['end_address']}',
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.black54),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.black54),
             ),
             const SizedBox(height: 8),
             Wrap(
@@ -383,7 +391,13 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
         children: [
           Icon(icon, size: 14, color: _purpleDark),
           const SizedBox(width: 6),
-          Text(text, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Colors.black87)),
+          Text(
+            text,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: Colors.black87,
+            ),
+          ),
         ],
       ),
     );
@@ -402,7 +416,10 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
         label: Text(
           label,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
     );
@@ -431,7 +448,13 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
           ),
         ),
       ),
-      title: const Text('My Routes', style: TextStyle(fontWeight: FontWeight.w700, color: _purpleDark, fontSize: 18)),
+      title: Text(
+        'My Routes',
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w700,
+          color: _purpleDark,
+        ),
+      ),
     );
   }
 
@@ -479,4 +502,3 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
     );
   }
 }
-

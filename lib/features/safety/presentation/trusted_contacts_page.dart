@@ -56,7 +56,9 @@ class _TrustedContactsPageState extends State<TrustedContactsPage> {
               children: [
                 Text(
                   'Tip: Only add people you personally trust. We’ll notify them if you trigger an SOS.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey[600],
+                  ),
                 ),
                 TextField(
                   controller: nameCtrl,

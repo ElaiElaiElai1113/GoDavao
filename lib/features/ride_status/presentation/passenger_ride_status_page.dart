@@ -7,7 +7,6 @@ import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:godavao/common/app_colors.dart';
 
-import 'package:godavao/common/app_colors.dart';
 import 'package:godavao/core/osrm_service.dart';
 import 'package:godavao/features/chat/presentation/chat_page.dart';
 import 'package:godavao/features/verify/presentation/verified_badge.dart';
@@ -748,12 +747,11 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
             ),
           ),
         ),
-        title: const Text(
+        title: Text(
           'Ride Status',
-          style: TextStyle(
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
             color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 18,
+            fontWeight: FontWeight.w700,
           ),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
@@ -823,14 +821,15 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: Colors.red.withValues(alpha: .2)),
                         ),
-                        child: const Row(
+                        child: Row(
                           children: [
-                            Icon(Icons.cancel, color: Colors.red),
-                            SizedBox(width: 8),
+                            const Icon(Icons.cancel, color: Colors.red),
+                            const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 'This ride has been canceled.',
-                                style: TextStyle(
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(
                                   color: Colors.red,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -848,10 +847,10 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                           border: Border.all(color: Colors.amber.shade200),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Text(
+                        child: Text(
                           'Chat is disabled for this ride because it was cancelled, declined, or completed.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 12),
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
                     if (isCanceled) const SizedBox(height: 12),
@@ -1139,19 +1138,17 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                                       : driverName,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 16,
-                                  ),
+                                  style: Theme.of(context).textTheme.titleSmall
+                                      ?.copyWith(fontWeight: FontWeight.w700),
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
                                   driverId == null
                                       ? 'We’ll notify you when a driver is matched'
                                       : 'Your driver',
-                                  style: const TextStyle(
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
                                     color: Colors.black54,
-                                    fontSize: 12.5,
                                   ),
                                 ),
                               ],
@@ -1176,9 +1173,9 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
                             Expanded(
                               child: Text(
                                 'Matching in progress. You can cancel anytime before pickup.',
-                                style: TextStyle(
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
                                   color: Colors.amber.shade900,
-                                  fontSize: 12,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -1401,13 +1398,17 @@ class _PassengerRideStatusPageState extends State<PassengerRideStatusPage>
           width: 140,
           child: Text(
             label,
-            style: const TextStyle(color: Colors.black54, fontSize: 13),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: Colors.black54),
           ),
         ),
         Expanded(
           child: Text(
             value ?? '—',
-            style: const TextStyle(fontWeight: FontWeight.w600),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
             overflow: TextOverflow.ellipsis,
           ),
         ),
@@ -1518,8 +1519,7 @@ class _Chip extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             label,
-            style: TextStyle(
-              fontSize: 12,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
               fontWeight: FontWeight.w700,
               color: textColor ?? Colors.black87,
             ),
@@ -1538,11 +1538,13 @@ class _CardTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, color: const AppColors.purple),
+        Icon(icon, color: AppColors.purple),
         const SizedBox(width: 8),
         Text(
           text,
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+          style: Theme.of(
+            context,
+          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
         ),
       ],
     );
@@ -1567,22 +1569,24 @@ class _FareBreakdownSimple extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Fare Breakdown',
-          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+          style: Theme.of(
+            context,
+          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 10),
-        _row('Booking type', bookingType.toUpperCase()),
-        _row('Seats', '$seats'),
+        _row(context, 'Booking type', bookingType.toUpperCase()),
+        _row(context, 'Seats', '$seats'),
         const SizedBox(height: 6),
-        _row('Per seat', peso(perSeat)),
+        _row(context, 'Per seat', peso(perSeat)),
         const Divider(height: 18),
-        _row('Total', peso(total), bold: true),
+        _row(context, 'Total', peso(total), bold: true),
       ],
     );
   }
 
-  Widget _row(String label, String value, {bool bold = false}) {
+  Widget _row(BuildContext context, String label, String value, {bool bold = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
@@ -1590,12 +1594,14 @@ class _FareBreakdownSimple extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(color: Colors.black54, fontSize: 13),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.black54),
             ),
           ),
           Text(
             value,
-            style: TextStyle(
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               fontWeight: bold ? FontWeight.w800 : FontWeight.w700,
             ),
           ),
@@ -1629,9 +1635,15 @@ class _FareBreakdownPro extends StatelessWidget {
   Widget build(BuildContext context) {
     final seatsBilled = (seatsBilledOverride ?? bx.seatsBilled).clamp(1, 6);
     final perSeat = seatsBilled > 0 ? (bx.total / seatsBilled) : bx.total;
-    TextStyle label = const TextStyle(color: Colors.black54, fontSize: 13);
-    TextStyle val = const TextStyle(fontWeight: FontWeight.w700);
-    TextStyle valStrong = const TextStyle(fontWeight: FontWeight.w800);
+    final label = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: Colors.black54);
+    final val = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      fontWeight: FontWeight.w700,
+    );
+    final valStrong = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      fontWeight: FontWeight.w800,
+    );
 
     Widget row(String l, String v, {bool strong = false}) => Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
@@ -1648,9 +1660,11 @@ class _FareBreakdownPro extends StatelessWidget {
       children: [
         Row(
           children: [
-            const Text(
+            Text(
               'Fare Breakdown',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
             ),
             if (estimating) ...[
               const SizedBox(width: 8),
@@ -1739,14 +1753,15 @@ class _CarpoolBreakdownTable extends StatelessWidget {
             color: isCurrent ? Colors.indigo.withValues(alpha: .05) : null,
           ),
           children: [
-            _cell('$tierSeats', bold: isCurrent),
+            _cell(context, '$tierSeats', bold: isCurrent),
             _cell(
+              context,
               '${(fb.carpoolDiscountPct * 100).toStringAsFixed(0)}%',
               mono: true,
               bold: isCurrent,
             ),
-            _cell(peso(fb.total), mono: false, bold: isCurrent),
-            _cell(peso(perSeat), mono: false, bold: isCurrent),
+            _cell(context, peso(fb.total), mono: false, bold: isCurrent),
+            _cell(context, peso(perSeat), mono: false, bold: isCurrent),
           ],
         ),
       );
@@ -1761,7 +1776,9 @@ class _CarpoolBreakdownTable extends StatelessWidget {
         const SizedBox(height: 6),
         Text(
           'How your fare changes with the number of riders sharing this route. Current riders highlighted.',
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade600),
         ),
         const SizedBox(height: 10),
         Table(
@@ -1789,13 +1806,17 @@ class _CarpoolBreakdownTable extends StatelessWidget {
     );
   }
 
-  static Widget _cell(String t, {bool mono = false, bool bold = false}) {
+  static Widget _cell(
+    BuildContext context,
+    String t, {
+    bool mono = false,
+    bool bold = false,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       child: Text(
         t,
-        style: TextStyle(
-          fontSize: 13,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
           fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
           fontFamily: mono ? 'monospace' : null,
         ),
@@ -1813,7 +1834,9 @@ class _TH extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       child: Text(
         t,
-        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
       ),
     );
   }
@@ -1835,7 +1858,7 @@ class _StatusTimeline extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             'Ride canceled',
-            style: TextStyle(
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: Colors.red.shade700,
               fontWeight: FontWeight.w700,
             ),
@@ -1896,8 +1919,7 @@ class _StatusTimeline extends StatelessWidget {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     fontWeight: FontWeight.w700,
                     color: isActive ? active : inactive,
                   ),
@@ -1927,6 +1949,7 @@ class _StatusBanner extends StatelessWidget {
     final s = status.toLowerCase();
     if (s == 'canceled' || s == 'cancelled' || s == 'declined') {
       return _banner(
+        context: context,
         icon: Icons.cancel,
         text: 'This ride was canceled.',
         color: Colors.red.shade700,
@@ -1935,6 +1958,7 @@ class _StatusBanner extends StatelessWidget {
     }
     if (s == 'completed') {
       return _banner(
+        context: context,
         icon: Icons.verified,
         text: 'Ride completed. Please rate your driver.',
         color: Colors.green.shade700,
@@ -1943,6 +1967,7 @@ class _StatusBanner extends StatelessWidget {
     }
     if (s == 'en_route') {
       return _banner(
+        context: context,
         icon: Icons.directions_car,
         text: 'Your driver is on the way.',
         color: Colors.orange.shade800,
@@ -1951,6 +1976,7 @@ class _StatusBanner extends StatelessWidget {
     }
     if (s == 'accepted' && driverId != null) {
       return _banner(
+        context: context,
         icon: Icons.check_circle,
         text: 'Driver matched. Preparing for pickup.',
         color: Colors.blue.shade700,
@@ -1958,6 +1984,7 @@ class _StatusBanner extends StatelessWidget {
       );
     }
     return _banner(
+      context: context,
       icon: Icons.hourglass_top,
       text: 'Searching for a driver...',
       color: Colors.grey.shade700,
@@ -1966,6 +1993,7 @@ class _StatusBanner extends StatelessWidget {
   }
 
   Widget _banner({
+    required BuildContext context,
     required IconData icon,
     required String text,
     required Color color,
@@ -1985,7 +2013,10 @@ class _StatusBanner extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: TextStyle(color: color, fontWeight: FontWeight.w600),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -2013,9 +2044,8 @@ class _LegendDot extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 6),
-        Text(label, style: const TextStyle(fontSize: 12)),
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
       ],
     );
   }
 }
-

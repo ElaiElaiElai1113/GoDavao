@@ -448,7 +448,12 @@ class _VehicleFormState extends State<VehicleForm> {
 
                 if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(_error!, style: const TextStyle(color: Colors.red)),
+                  Text(
+                    _error!,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: Colors.red),
+                  ),
                 ],
 
                 const SizedBox(height: 20),
@@ -509,12 +514,11 @@ class _VehicleFormState extends State<VehicleForm> {
                                         color: Colors.white,
                                       ),
                                     )
-                                    : const Text(
+                                    : Text(
                                       'Submit for Verification',
-                                      style: TextStyle(
+                                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
                                         color: Colors.white,
                                         fontWeight: FontWeight.w700,
-                                        fontSize: 15,
                                       ),
                                     ),
                           ),
@@ -547,7 +551,9 @@ class _SectionHeader extends StatelessWidget {
         const SizedBox(width: 8),
         Text(
           text,
-          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+          style: Theme.of(
+            context,
+          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
         ),
       ],
     );
@@ -609,4 +615,3 @@ class _DocPickerRow extends StatelessWidget {
     );
   }
 }
-

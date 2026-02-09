@@ -493,9 +493,8 @@ class _DashboardPageState extends State<DashboardPage> {
                                       _statusText(_verifStatus, role),
                                       maxLines: 3,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                      style: Theme.of(context).textTheme.bodyMedium
+                                          ?.copyWith(fontWeight: FontWeight.w600),
                                     ),
                                   ),
                                   const SizedBox(width: 12),
@@ -550,12 +549,11 @@ class _DashboardPageState extends State<DashboardPage> {
                                     size: 28,
                                   ),
                                   const SizedBox(width: 12),
-                                  const Expanded(
+                                  Expanded(
                                     child: Text(
                                       'Set up trusted contacts so we can notify family or friends during SOS.',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                      style: Theme.of(context).textTheme.bodyMedium
+                                          ?.copyWith(fontWeight: FontWeight.w600),
                                     ),
                                   ),
                                   const SizedBox(width: 12),
@@ -1097,10 +1095,9 @@ class _HeroHeader extends StatelessWidget {
                 backgroundColor: Colors.white,
                 child: Text(
                   name.isNotEmpty ? name[0].toUpperCase() : '?',
-                  style: TextStyle(
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     color: purpleDark,
                     fontWeight: FontWeight.w800,
-                    fontSize: 20,
                   ),
                 ),
               ),
@@ -1160,7 +1157,7 @@ class _HeroHeader extends StatelessWidget {
                         role.toUpperCase(),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
                           color: Colors.white,
                           fontWeight: FontWeight.w700,
                         ),
@@ -1557,7 +1554,7 @@ class _ErrorState extends StatelessWidget {
           child: Text(
             message,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 18),
+            style: Theme.of(context).textTheme.titleMedium,
           ),
         ),
         const SizedBox(height: 20),
