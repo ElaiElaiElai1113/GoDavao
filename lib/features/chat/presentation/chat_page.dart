@@ -364,10 +364,12 @@ class _ChatPageState extends State<ChatPage>
                 color: Colors.amber.shade50,
                 border: Border.all(color: Colors.amber.shade200),
               ),
-              child: const Text(
+              child: Text(
                 'This conversation is read-only because the ride was cancelled, declined, or completed.',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 12),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontSize: 12),
               ),
             ),
           Expanded(
@@ -381,7 +383,7 @@ class _ChatPageState extends State<ChatPage>
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       child: Text(
                         DateFormat('MMM d, yyyy').format(date),
-                        style: const TextStyle(
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                         ),
@@ -395,7 +397,9 @@ class _ChatPageState extends State<ChatPage>
                     padding: EdgeInsets.all(8),
                     child: Text(
                       'is typing…',
-                      style: TextStyle(color: Colors.grey),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
                     ),
                   ),
               ],
@@ -407,10 +411,12 @@ class _ChatPageState extends State<ChatPage>
                 padding: const EdgeInsets.all(16),
                 color: Colors.grey.shade100,
                 width: double.infinity,
-                child: const Text(
+                child: Text(
                   'Chat unavailable — this ride has been cancelled, declined, or completed.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.black54),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: Colors.black54),
                 ),
               )
               : Padding(
@@ -461,7 +467,9 @@ class _ChatPageState extends State<ChatPage>
             ),
             child: Text(
               msg.content,
-              style: TextStyle(color: isMe ? Colors.white : Colors.black87),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: isMe ? Colors.white : Colors.black87,
+              ),
             ),
           ),
           Row(
@@ -469,7 +477,10 @@ class _ChatPageState extends State<ChatPage>
             children: [
               Text(
                 time,
-                style: const TextStyle(fontSize: 10, color: Colors.grey),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontSize: 10,
+                  color: Colors.grey,
+                ),
               ),
               if (isMe)
                 Padding(
@@ -531,3 +542,4 @@ class ChatMessage {
             : null,
   );
 }
+

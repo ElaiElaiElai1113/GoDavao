@@ -77,10 +77,7 @@ final class MonitoringService {
   }
 
   /// Log a custom event
-  static void logEvent(
-    String name, {
-    Map<String, dynamic>? parameters,
-  }) {
+  static void logEvent(String name, {Map<String, dynamic>? parameters}) {
     if (!_enabled) return;
 
     try {
@@ -135,11 +132,7 @@ final class MonitoringService {
     if (!_enabled) return;
 
     try {
-      AppLogger.e(
-        'Error logged: ${error.toString()}',
-        error,
-        stackTrace,
-      );
+      AppLogger.e('Error logged: ${error.toString()}', error, stackTrace);
 
       // TODO: Send to crash reporting
       // Sentry.captureException(
@@ -154,10 +147,7 @@ final class MonitoringService {
   }
 
   /// Log a message/breadcrumb for crash context
-  static void logBreadcrumb(
-    String message, {
-    Map<String, dynamic>? data,
-  }) {
+  static void logBreadcrumb(String message, {Map<String, dynamic>? data}) {
     if (!_enabled) return;
 
     try {
@@ -198,10 +188,7 @@ final class MonitoringService {
   }) {
     logEvent(
       'ride_$action',
-      parameters: {
-        'ride_id': rideId,
-        ...?additionalParams,
-      },
+      parameters: {'ride_id': rideId, ...?additionalParams},
     );
   }
 
@@ -213,20 +200,13 @@ final class MonitoringService {
   }) {
     logEvent(
       'payment_$status',
-      parameters: {
-        'payment_id': paymentId,
-        'amount': amount,
-        'status': status,
-      },
+      parameters: {'payment_id': paymentId, 'amount': amount, 'status': status},
     );
   }
 
   /// Track user engagement
   static void trackEngagement(String action) {
-    logEvent(
-      'engagement',
-      parameters: {'action': action},
-    );
+    logEvent('engagement', parameters: {'action': action});
   }
 
   /// Clear user data (logout)
@@ -248,7 +228,8 @@ final class MonitoringService {
   static bool get isEnabled => _enabled;
 
   /// Check if crash reporting is enabled
-  static bool get crashReportingEnabled => AppConfig.enableCrashReporting && _enabled;
+  static bool get crashReportingEnabled =>
+      AppConfig.enableCrashReporting && _enabled;
 
   /// Check if analytics is enabled
   static bool get analyticsEnabled => AppConfig.enableAnalytics && _enabled;

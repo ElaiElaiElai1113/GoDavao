@@ -29,9 +29,7 @@ class StarRating extends StatelessWidget {
           child: Icon(
             filled ? Icons.star : Icons.star_border,
             size: size,
-            color: filled
-                ? Colors.amber.shade700
-                : Colors.grey.shade400,
+            color: filled ? Colors.amber.shade700 : Colors.grey.shade400,
           ),
         );
       }),

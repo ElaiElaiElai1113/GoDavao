@@ -63,17 +63,19 @@ class HowItWorksPage extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
-            _hero(),
+            _hero(context),
             const SizedBox(height: 12),
-            const Text(
-              'GoDavao makes carpooling simple and safe. Here’s the journey from request to drop-off:',
-              style: TextStyle(color: _textDim, height: 1.35),
+            Text('GoDavao makes carpooling simple and safe. Here’s the journey from request to drop-off:',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: _textDim, height: 1.35),
             ),
             const SizedBox(height: 12),
             for (int i = 0; i < steps.length; i++)
               _StepCard(index: i + 1, info: steps[i]),
             const SizedBox(height: 8),
             _tipTile(
+              context: context,
               icon: Icons.info_outline,
               title: 'Pro tip',
               text:
@@ -86,16 +88,18 @@ class HowItWorksPage extends StatelessWidget {
                 onPressed: () {
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute<void>(builder: (_) => const DashboardPage()),
+                    MaterialPageRoute<void>(
+                      builder: (_) => const DashboardPage(),
+                    ),
                   );
                 },
                 icon: const Icon(
                   Icons.dashboard_customize_outlined,
                   color: Colors.white,
                 ),
-                label: const Text(
+                label: Text(
                   'Start using GoDavao',
-                  style: TextStyle(
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Colors.white,
                     fontWeight: FontWeight.w700,
                     fontSize: 16,
@@ -109,7 +113,7 @@ class HowItWorksPage extends StatelessWidget {
     );
   }
 
-  Widget _hero() {
+  Widget _hero(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -135,10 +139,12 @@ class HowItWorksPage extends StatelessWidget {
             child: const Icon(Icons.rocket_launch_outlined, color: _purpleDark),
           ),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Text(
               'Welcome to GoDavao! Find a ride that fits your route, save money, and reduce traffic—together.',
-              style: TextStyle(fontWeight: FontWeight.w700),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
             ),
           ),
         ],
@@ -147,6 +153,7 @@ class HowItWorksPage extends StatelessWidget {
   }
 
   Widget _tipTile({
+    required BuildContext context,
     required IconData icon,
     required String title,
     required String text,
@@ -169,10 +176,17 @@ class HowItWorksPage extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 4),
-                Text(text, style: const TextStyle(color: _textDim)),
+                Text(
+                  text,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: _textDim),
+                ),
               ],
             ),
           ),
@@ -231,7 +245,7 @@ class _StepCard extends StatelessWidget {
             alignment: Alignment.center,
             child: Text(
               '$index',
-              style: const TextStyle(
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 fontWeight: FontWeight.w800,
                 color: _purple,
               ),
@@ -252,12 +266,17 @@ class _StepCard extends StatelessWidget {
                     children: [
                       Text(
                         info.title,
-                        style: const TextStyle(fontWeight: FontWeight.w800),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         info.desc,
-                        style: const TextStyle(color: _textDim, height: 1.35),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: _textDim,
+                          height: 1.35,
+                        ),
                       ),
                     ],
                   ),
@@ -270,4 +289,8 @@ class _StepCard extends StatelessWidget {
     );
   }
 }
+
+
+
+
 

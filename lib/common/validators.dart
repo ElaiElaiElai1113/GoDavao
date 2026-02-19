@@ -10,10 +10,7 @@ sealed class ValidationResult {
   bool get isValid => this is ValidationSuccess;
   bool get isInvalid => this is ValidationFailure;
 
-  String? get errorMessage => when(
-        success: () => null,
-        failure: (msg) => msg,
-      );
+  String? get errorMessage => when(success: () => null, failure: (msg) => msg);
 
   T when<T>({
     required T Function() success,
@@ -62,10 +59,14 @@ class Validators {
     }
     final trimmed = value.trim();
     if (trimmed.length < minNameLength) {
-      return ValidationFailure('Name must be at least $minNameLength characters');
+      return ValidationFailure(
+        'Name must be at least $minNameLength characters',
+      );
     }
     if (trimmed.length > maxNameLength) {
-      return ValidationFailure('Name must not exceed $maxNameLength characters');
+      return ValidationFailure(
+        'Name must not exceed $maxNameLength characters',
+      );
     }
     // Check for valid characters (letters, spaces, hyphens, apostrophes)
     if (!RegExp(r"^[\p{L}\s'-]+$", unicode: true).hasMatch(trimmed)) {
@@ -81,9 +82,7 @@ class Validators {
     }
     final trimmed = value.trim().toLowerCase();
     // Basic email regex
-    final emailRegex = RegExp(
-      r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-    );
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
     if (!emailRegex.hasMatch(trimmed)) {
       return const ValidationFailure('Please enter a valid email address');
     }
@@ -99,7 +98,9 @@ class Validators {
     // Philippine mobile numbers: 09XXXXXXXXX or +639XXXXXXXXX
     final phoneRegex = RegExp(r'^(0|\+63)?9\d{9}$');
     if (!phoneRegex.hasMatch(trimmed)) {
-      return const ValidationFailure('Please enter a valid Philippine mobile number');
+      return const ValidationFailure(
+        'Please enter a valid Philippine mobile number',
+      );
     }
     return const ValidationSuccess();
   }
@@ -110,14 +111,20 @@ class Validators {
       return const ValidationFailure('Password is required');
     }
     if (value.length < minPasswordLength) {
-      return ValidationFailure('Password must be at least $minPasswordLength characters');
+      return ValidationFailure(
+        'Password must be at least $minPasswordLength characters',
+      );
     }
     if (value.length > maxPasswordLength) {
-      return ValidationFailure('Password must not exceed $maxPasswordLength characters');
+      return ValidationFailure(
+        'Password must not exceed $maxPasswordLength characters',
+      );
     }
     // Check for at least one letter and one number
     if (!RegExp(r'^(?=.*[A-Za-z])(?=.*\d)').hasMatch(value)) {
-      return const ValidationFailure('Password must contain both letters and numbers');
+      return const ValidationFailure(
+        'Password must contain both letters and numbers',
+      );
     }
     return const ValidationSuccess();
   }
@@ -129,10 +136,14 @@ class Validators {
     }
     final trimmed = value.trim();
     if (trimmed.length < minAddressLength) {
-      return ValidationFailure('Address must be at least $minAddressLength characters');
+      return ValidationFailure(
+        'Address must be at least $minAddressLength characters',
+      );
     }
     if (trimmed.length > maxAddressLength) {
-      return ValidationFailure('Address must not exceed $maxAddressLength characters');
+      return ValidationFailure(
+        'Address must not exceed $maxAddressLength characters',
+      );
     }
     return const ValidationSuccess();
   }
@@ -143,7 +154,8 @@ class Validators {
       return const ValidationFailure('Plate number is required');
     }
     final trimmed = value.trim().toUpperCase();
-    if (trimmed.length < minPlateNumberLength || trimmed.length > maxPlateNumberLength) {
+    if (trimmed.length < minPlateNumberLength ||
+        trimmed.length > maxPlateNumberLength) {
       return ValidationFailure(
         'Plate number must be between $minPlateNumberLength and $maxPlateNumberLength characters',
       );
@@ -151,7 +163,9 @@ class Validators {
     // Philippine plate format: ABC 123 or ABC 1234
     final plateRegex = RegExp(r'^[A-Z]{3}\s?\d{3,4}$');
     if (!plateRegex.hasMatch(trimmed)) {
-      return const ValidationFailure('Please enter a valid plate number (e.g., ABC 123)');
+      return const ValidationFailure(
+        'Please enter a valid plate number (e.g., ABC 123)',
+      );
     }
     return const ValidationSuccess();
   }
@@ -265,7 +279,9 @@ class Validators {
     final extension = fileName.split('.').last.toLowerCase();
     const validExtensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
     if (!validExtensions.contains(extension)) {
-      return ValidationFailure('Invalid file type. Allowed: ${validExtensions.join(', ')}');
+      return ValidationFailure(
+        'Invalid file type. Allowed: ${validExtensions.join(', ')}',
+      );
     }
     return const ValidationSuccess();
   }

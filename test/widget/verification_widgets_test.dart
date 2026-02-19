@@ -8,11 +8,7 @@ void main() {
     testWidgets('builds without crashing', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: VerifiedBadge(
-              userId: 'test-user-id',
-            ),
-          ),
+          home: Scaffold(body: VerifiedBadge(userId: 'test-user-id')),
         ),
       );
 
@@ -22,11 +18,7 @@ void main() {
     testWidgets('uses FutureBuilder for async loading', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: VerifiedBadge(
-              userId: 'test-user-id',
-            ),
-          ),
+          home: Scaffold(body: VerifiedBadge(userId: 'test-user-id')),
         ),
       );
 
@@ -39,10 +31,7 @@ void main() {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
-            body: VerifiedBadge(
-              userId: 'test-user-id',
-              size: customSize,
-            ),
+            body: VerifiedBadge(userId: 'test-user-id', size: customSize),
           ),
         ),
       );
@@ -61,11 +50,7 @@ void main() {
 
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: VerifiedBadge(
-              userId: 'test-user-id',
-            ),
-          ),
+          home: Scaffold(body: VerifiedBadge(userId: 'test-user-id')),
         ),
       );
 
@@ -75,13 +60,7 @@ void main() {
 
     testWidgets('handles empty userId gracefully', (tester) async {
       await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: VerifiedBadge(
-              userId: '',
-            ),
-          ),
-        ),
+        const MaterialApp(home: Scaffold(body: VerifiedBadge(userId: ''))),
       );
 
       // Should not crash
@@ -93,11 +72,7 @@ void main() {
       // In actual usage with Supabase, approved status returns Icons.verified with Colors.green
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: VerifiedBadge(
-              userId: 'test-user-id',
-            ),
-          ),
+          home: Scaffold(body: VerifiedBadge(userId: 'test-user-id')),
         ),
       );
 
@@ -109,27 +84,21 @@ void main() {
       // In actual usage with Supabase, pending status returns Icons.hourglass_bottom with Colors.orange
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: VerifiedBadge(
-              userId: 'test-user-id',
-            ),
-          ),
+          home: Scaffold(body: VerifiedBadge(userId: 'test-user-id')),
         ),
       );
 
       expect(find.byType(VerifiedBadge), findsOneWidget);
     });
 
-    testWidgets('returns SizedBox.shrink() for unverified status', (tester) async {
+    testWidgets('returns SizedBox.shrink() for unverified status', (
+      tester,
+    ) async {
       // This test shows the expected behavior
       // In actual usage with Supabase, non-verified users return SizedBox.shrink()
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: VerifiedBadge(
-              userId: 'test-user-id',
-            ),
-          ),
+          home: Scaffold(body: VerifiedBadge(userId: 'test-user-id')),
         ),
       );
 
@@ -143,10 +112,7 @@ void main() {
         const MaterialApp(
           home: Scaffold(
             body: Row(
-              children: [
-                Text('User Name'),
-                VerifiedBadge(userId: 'test-user'),
-              ],
+              children: [Text('User Name'), VerifiedBadge(userId: 'test-user')],
             ),
           ),
         ),
@@ -212,9 +178,7 @@ void main() {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
-            body: CircleAvatar(
-              child: VerifiedBadge(userId: 'test-user'),
-            ),
+            body: CircleAvatar(child: VerifiedBadge(userId: 'test-user')),
           ),
         ),
       );
@@ -229,9 +193,7 @@ void main() {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
-            body: VerifiedBadge(
-              userId: 'user-with-special-chars-123',
-            ),
+            body: VerifiedBadge(userId: 'user-with-special-chars-123'),
           ),
         ),
       );
@@ -245,11 +207,7 @@ void main() {
 
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: VerifiedBadge(
-              userId: longUserId,
-            ),
-          ),
+          home: Scaffold(body: VerifiedBadge(userId: longUserId)),
         ),
       );
 

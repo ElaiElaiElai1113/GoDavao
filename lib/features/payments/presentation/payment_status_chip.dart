@@ -54,7 +54,7 @@ class PaymentStatusChip extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             label,
-            style: const TextStyle(
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
               fontWeight: FontWeight.w700,
               color: Colors.white,
             ),
@@ -62,8 +62,11 @@ class PaymentStatusChip extends StatelessWidget {
           if (amount != null) ...[
             const SizedBox(width: 6),
             Text(
-              '₱${amount!.toStringAsFixed(2)}',
-              style: const TextStyle(fontWeight: FontWeight.w600),
+              'â‚±${amount!.toStringAsFixed(2)}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
             ),
           ],
         ],
@@ -71,4 +74,3 @@ class PaymentStatusChip extends StatelessWidget {
     );
   }
 }
-

@@ -111,7 +111,7 @@ class DriverMarker extends StatelessWidget {
               label!,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 fontSize: 10,
                 fontWeight: FontWeight.w600,
                 color: Colors.black87,

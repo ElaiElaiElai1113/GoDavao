@@ -63,10 +63,7 @@ void main() {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
-            body: UserRatingBadge(
-              userId: 'test-user-id',
-              listenRealtime: true,
-            ),
+            body: UserRatingBadge(userId: 'test-user-id', listenRealtime: true),
           ),
         ),
       );
@@ -79,12 +76,7 @@ void main() {
     testWidgets('displays rating with stars', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: RatingBadge(
-              avg: 4.5,
-              count: 10,
-            ),
-          ),
+          home: Scaffold(body: RatingBadge(avg: 4.5, count: 10)),
         ),
       );
 
@@ -96,12 +88,7 @@ void main() {
     testWidgets('handles null average rating', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: RatingBadge(
-              avg: null,
-              count: 0,
-            ),
-          ),
+          home: Scaffold(body: RatingBadge(avg: null, count: 0)),
         ),
       );
 
@@ -112,12 +99,7 @@ void main() {
     testWidgets('handles NaN average rating', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: RatingBadge(
-              avg: double.nan,
-              count: 0,
-            ),
-          ),
+          home: Scaffold(body: RatingBadge(avg: double.nan, count: 0)),
         ),
       );
 
@@ -125,19 +107,12 @@ void main() {
     });
 
     testWidgets('respects custom text style', (tester) async {
-      const customStyle = TextStyle(
-        fontSize: 20,
-        fontWeight: FontWeight.bold,
-      );
+      const customStyle = TextStyle(fontSize: 20, fontWeight: FontWeight.bold);
 
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
-            body: RatingBadge(
-              avg: 3.5,
-              count: 5,
-              textStyle: customStyle,
-            ),
+            body: RatingBadge(avg: 3.5, count: 5, textStyle: customStyle),
           ),
         ),
       );
@@ -150,13 +125,7 @@ void main() {
     testWidgets('respects custom icon size', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: RatingBadge(
-              avg: 4.0,
-              count: 8,
-              iconSize: 24,
-            ),
-          ),
+          home: Scaffold(body: RatingBadge(avg: 4.0, count: 8, iconSize: 24)),
         ),
       );
 
@@ -167,12 +136,7 @@ void main() {
     testWidgets('handles null count gracefully', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: RatingBadge(
-              avg: 4.5,
-              count: null,
-            ),
-          ),
+          home: Scaffold(body: RatingBadge(avg: 4.5, count: null)),
         ),
       );
 
@@ -182,13 +146,7 @@ void main() {
     testWidgets('respects dense mode', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: RatingBadge(
-              avg: 4.0,
-              count: 5,
-              dense: false,
-            ),
-          ),
+          home: Scaffold(body: RatingBadge(avg: 4.0, count: 5, dense: false)),
         ),
       );
 

@@ -121,10 +121,7 @@ void main() {
 
       test('getOrThrow throws for failure', () {
         final result = Failure<int, String>('error');
-        expect(
-          () => result.getOrThrow(),
-          throwsA(isA<ResultException>()),
-        );
+        expect(() => result.getOrThrow(), throwsA(isA<ResultException>()));
       });
 
       test('getOrElse returns value for success', () {
@@ -151,7 +148,9 @@ void main() {
     group('ResultExtensions', () {
       test('andThen chains successful operations', () async {
         final result = Success<int, String>(5);
-        final chained = result.andThen((value) => Success<int, String>(value * 2));
+        final chained = result.andThen(
+          (value) => Success<int, String>(value * 2),
+        );
 
         expect(chained.isSuccess, true);
         expect((chained as Success).value, 10);
@@ -159,7 +158,9 @@ void main() {
 
       test('andThen returns failure on first error', () {
         final result = Failure<int, String>('error');
-        final chained = result.andThen((value) => Success<int, String>(value * 2));
+        final chained = result.andThen(
+          (value) => Success<int, String>(value * 2),
+        );
 
         expect(chained.isFailure, true);
       });
@@ -269,9 +270,9 @@ void main() {
 
     group('Result usage patterns', () {
       test('can chain multiple operations', () {
-        final result = Success<int, String>(5)
-            .map((v) => v * 2)
-            .map((v) => v + 10);
+        final result = Success<int, String>(
+          5,
+        ).map((v) => v * 2).map((v) => v + 10);
 
         expect((result as Success).value, 20);
       });

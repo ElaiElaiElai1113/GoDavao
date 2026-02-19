@@ -40,11 +40,7 @@ final class OfflineCache {
   }
 
   /// Store a value in cache with optional expiration
-  static Future<void> set<T>(
-    String key,
-    T value, {
-    Duration? duration,
-  }) async {
+  static Future<void> set<T>(String key, T value, {Duration? duration}) async {
     _ensureInitialized();
 
     try {
@@ -52,10 +48,7 @@ final class OfflineCache {
       final timestamp = DateTime.now().toIso8601String();
 
       await _prefs!.setString('$_prefix$key', jsonString);
-      await _prefs!.setString(
-        '$_timestampPrefix$key',
-        timestamp,
-      );
+      await _prefs!.setString('$_timestampPrefix$key', timestamp);
 
       if (duration != null) {
         final expiry = DateTime.now().add(duration).toIso8601String();
@@ -145,9 +138,12 @@ final class OfflineCache {
 
     try {
       final keys = _prefs!.getKeys();
-      final cacheKeys = keys
-          .where((k) => k.startsWith(_timestampPrefix) && !k.endsWith('_expiry'))
-          .toList();
+      final cacheKeys =
+          keys
+              .where(
+                (k) => k.startsWith(_timestampPrefix) && !k.endsWith('_expiry'),
+              )
+              .toList();
 
       int cleared = 0;
 
@@ -189,11 +185,7 @@ final class OfflineCache {
       }
     }
 
-    return {
-      'total': cacheKeys.length,
-      'valid': valid,
-      'expired': expired,
-    };
+    return {'total': cacheKeys.length, 'valid': valid, 'expired': expired};
   }
 
   /// Get approximate cache size in bytes
@@ -216,7 +208,10 @@ final class OfflineCache {
   }
 
   // Cache multiple items at once
-  static Future<void> setMap(Map<String, dynamic> data, {Duration? duration}) async {
+  static Future<void> setMap(
+    Map<String, dynamic> data, {
+    Duration? duration,
+  }) async {
     for (final entry in data.entries) {
       await set(entry.key, entry.value, duration: duration);
     }
@@ -319,7 +314,11 @@ class CacheKeys {
 class CacheHelpers {
   /// Cache user profile
   static Future<void> setUserProfile(Map<String, dynamic> profile) async {
-    await OfflineCache.set(CacheKeys.userProfile, profile, duration: OfflineCache.longCacheDuration);
+    await OfflineCache.set(
+      CacheKeys.userProfile,
+      profile,
+      duration: OfflineCache.longCacheDuration,
+    );
   }
 
   /// Get cached user profile
@@ -329,7 +328,11 @@ class CacheHelpers {
 
   /// Cache active ride
   static Future<void> setActiveRide(Map<String, dynamic> ride) async {
-    await OfflineCache.set(CacheKeys.activeRide, ride, duration: OfflineCache.shortCacheDuration);
+    await OfflineCache.set(
+      CacheKeys.activeRide,
+      ride,
+      duration: OfflineCache.shortCacheDuration,
+    );
   }
 
   /// Get cached active ride
@@ -338,19 +341,31 @@ class CacheHelpers {
   }
 
   /// Cache recent locations
-  static Future<void> setRecentLocations(List<Map<String, dynamic>> locations) async {
-    await OfflineCache.set(CacheKeys.recentLocations, locations, duration: OfflineCache.longCacheDuration);
+  static Future<void> setRecentLocations(
+    List<Map<String, dynamic>> locations,
+  ) async {
+    await OfflineCache.set(
+      CacheKeys.recentLocations,
+      locations,
+      duration: OfflineCache.longCacheDuration,
+    );
   }
 
   /// Get cached recent locations
   static List<Map<String, dynamic>>? getRecentLocations() {
-    return OfflineCache.get<List<Map<String, dynamic>>>(CacheKeys.recentLocations);
+    return OfflineCache.get<List<Map<String, dynamic>>>(
+      CacheKeys.recentLocations,
+    );
   }
 
   /// Add location to recent locations
   static Future<void> addRecentLocation(Map<String, dynamic> location) async {
     final current = getRecentLocations() ?? [];
-    final updated = [location, ...current.where((l) => l['id'] != location['id'])].take(10).toList();
+    final updated =
+        [
+          location,
+          ...current.where((l) => l['id'] != location['id']),
+        ].take(10).toList();
     await setRecentLocations(updated);
   }
 }

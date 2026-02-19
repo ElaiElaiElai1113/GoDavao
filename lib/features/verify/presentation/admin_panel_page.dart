@@ -214,7 +214,9 @@ class _AdminPanelPageState extends State<AdminPanelPage> {
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute<void>(builder: (_) => const AdminFeedbackPage()),
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AdminFeedbackPage(),
+                  ),
                 );
               },
             ),
@@ -348,7 +350,7 @@ class _StatCard extends StatelessWidget {
             const SizedBox(height: 14),
             Text(
               label,
-              style: const TextStyle(
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 fontWeight: FontWeight.w600,
                 fontSize: 13,
                 color: Color(0xFF3F2A8C),
@@ -363,7 +365,7 @@ class _StatCard extends StatelessWidget {
                 )
                 : Text(
                   value,
-                  style: const TextStyle(
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w800,
                     fontSize: 20,
                     color: Color(0xFF1A1435),
@@ -442,7 +444,9 @@ class _AdminTile extends StatelessWidget {
                       Expanded(
                         child: Text(
                           title,
-                          style: const TextStyle(
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodyMedium?.copyWith(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
                             color: Color(0xFF20124D),
@@ -460,7 +464,9 @@ class _AdminTile extends StatelessWidget {
                         ),
                         child: Text(
                           badgeLabel,
-                          style: const TextStyle(
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodyMedium?.copyWith(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
                             color: _purple,
@@ -472,7 +478,7 @@ class _AdminTile extends StatelessWidget {
                   const SizedBox(height: 6),
                   Text(
                     description,
-                    style: TextStyle(
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       fontSize: 13,
                       color: Colors.black.withValues(alpha: 0.6),
                     ),
@@ -502,7 +508,7 @@ class _SectionHeader extends StatelessWidget {
       children: [
         Text(
           title,
-          style: const TextStyle(
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
             fontSize: 18,
             fontWeight: FontWeight.w800,
             color: Color(0xFF1A1435),
@@ -511,7 +517,7 @@ class _SectionHeader extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           subtitle,
-          style: TextStyle(
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
             color: Colors.black.withValues(alpha: 0.55),
             fontSize: 12,
             height: 1.4,
@@ -536,9 +542,11 @@ class _LogoutButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 18),
       ),
       icon: const Icon(Icons.logout),
-      label: const Text(
+      label: Text(
         'Log out',
-        style: TextStyle(fontWeight: FontWeight.w700),
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
       ),
       onPressed: onPressed,
     );
@@ -564,14 +572,20 @@ class _ErrorBanner extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Unable to load stats',
-            style: TextStyle(fontWeight: FontWeight.w700, color: Colors.red),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: Colors.red,
+            ),
           ),
           const SizedBox(height: 6),
           Text(
             message,
-            style: TextStyle(color: Colors.red.shade700, fontSize: 12.5),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Colors.red.shade700,
+              fontSize: 12.5,
+            ),
           ),
           const SizedBox(height: 10),
           TextButton.icon(

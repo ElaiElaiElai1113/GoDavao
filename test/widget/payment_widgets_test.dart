@@ -8,9 +8,7 @@ void main() {
     testWidgets('displays pending status', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: PaymentStatusChip(status: 'pending'),
-          ),
+          home: Scaffold(body: PaymentStatusChip(status: 'pending')),
         ),
       );
 
@@ -20,9 +18,7 @@ void main() {
     testWidgets('displays completed status', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: PaymentStatusChip(status: 'completed'),
-          ),
+          home: Scaffold(body: PaymentStatusChip(status: 'completed')),
         ),
       );
 
@@ -32,9 +28,7 @@ void main() {
     testWidgets('displays failed status', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: PaymentStatusChip(status: 'failed'),
-          ),
+          home: Scaffold(body: PaymentStatusChip(status: 'failed')),
         ),
       );
 
@@ -45,9 +39,7 @@ void main() {
       // Pending - should be orange/amber
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: PaymentStatusChip(status: 'pending'),
-          ),
+          home: Scaffold(body: PaymentStatusChip(status: 'pending')),
         ),
       );
 
@@ -58,9 +50,7 @@ void main() {
       // Completed - should be green
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: PaymentStatusChip(status: 'completed'),
-          ),
+          home: Scaffold(body: PaymentStatusChip(status: 'completed')),
         ),
       );
 
@@ -71,9 +61,7 @@ void main() {
       // Failed - should be red
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: PaymentStatusChip(status: 'failed'),
-          ),
+          home: Scaffold(body: PaymentStatusChip(status: 'failed')),
         ),
       );
 
@@ -85,9 +73,7 @@ void main() {
     testWidgets('handles unknown status gracefully', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(
-            body: PaymentStatusChip(status: 'unknown_status'),
-          ),
+          home: Scaffold(body: PaymentStatusChip(status: 'unknown_status')),
         ),
       );
 

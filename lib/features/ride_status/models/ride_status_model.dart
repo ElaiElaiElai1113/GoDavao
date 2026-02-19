@@ -159,8 +159,7 @@ class RideStatus {
   /// Check if the ride has failed
   bool get isFailed {
     final type = statusType;
-    return type == RideStatusType.cancelled ||
-        type == RideStatusType.declined;
+    return type == RideStatusType.cancelled || type == RideStatusType.declined;
   }
 
   /// Check if chat should be disabled
@@ -173,7 +172,8 @@ class RideStatus {
   }
 
   /// Check if payment is completed
-  bool get isPaymentComplete => paymentStatus == 'completed' || paymentStatus == 'paid';
+  bool get isPaymentComplete =>
+      paymentStatus == 'completed' || paymentStatus == 'paid';
 
   /// Get the fare total
   double? get fareTotal {
@@ -207,7 +207,8 @@ class RideStatus {
       payment: payment ?? this.payment,
       passengerNote: passengerNote ?? this.passengerNote,
       fareBasis: fareBasis ?? this.fareBasis,
-      carpoolDiscountPctActual: carpoolDiscountPctActual ?? this.carpoolDiscountPctActual,
+      carpoolDiscountPctActual:
+          carpoolDiscountPctActual ?? this.carpoolDiscountPctActual,
       weatherDesc: weatherDesc ?? this.weatherDesc,
       driverLive: driverLive ?? this.driverLive,
       myLive: myLive ?? this.myLive,

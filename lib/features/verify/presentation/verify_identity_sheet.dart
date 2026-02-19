@@ -339,4 +339,3 @@ class IdType {
     this.isDriversLicense = false,
   });
 }
-

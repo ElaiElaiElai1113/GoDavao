@@ -9,12 +9,7 @@ import 'package:godavao/features/ride_status/models/match_card_model.dart';
 
 /// A reusable pill widget for displaying small tags with icons.
 class RidePill extends StatelessWidget {
-  const RidePill({
-    super.key,
-    required this.text,
-    this.icon,
-    this.color,
-  });
+  const RidePill({super.key, required this.text, this.icon, this.color});
 
   final String text;
   final IconData? icon;
@@ -48,7 +43,7 @@ class RidePill extends StatelessWidget {
           ],
           Text(
             text,
-            style: TextStyle(
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
               fontSize: 12.5,
               fontWeight: FontWeight.w700,
               color: baseColor.withValues(alpha: 0.95),
@@ -102,7 +97,9 @@ class RatingChip extends StatelessWidget {
             const SizedBox(width: 4),
             Text(
               _getLabel(),
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
             ),
           ],
         ),
@@ -233,8 +230,7 @@ class MatchListTile extends StatelessWidget {
 
   static const _defaultStatusColor = AppColors.purple;
 
-  Color get _trailingStatusColor =>
-      statusColor ?? _defaultStatusColor;
+  Color get _trailingStatusColor => statusColor ?? _defaultStatusColor;
 
   bool get _canOpenMap => onOpenRide != null;
 
@@ -301,9 +297,15 @@ class MatchListTile extends StatelessWidget {
                     runSpacing: 6,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      RidePill(text: '${match.pax} pax', icon: Icons.people_alt),
+                      RidePill(
+                        text: '${match.pax} pax',
+                        icon: Icons.people_alt,
+                      ),
                       if (match.fare != null)
-                        RidePill(text: _formatPeso(match.fare), icon: Icons.payments),
+                        RidePill(
+                          text: _formatPeso(match.fare),
+                          icon: Icons.payments,
+                        ),
                       Wrap(
                         spacing: 6,
                         runSpacing: 6,
@@ -320,9 +322,8 @@ class MatchListTile extends StatelessWidget {
                               match.passengerName,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                              ),
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
                             ),
                           ),
                           if (match.passengerId != null) ...[
@@ -371,7 +372,7 @@ class MatchListTile extends StatelessWidget {
                   ),
                   child: Text(
                     match.status.toUpperCase(),
-                    style: TextStyle(
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w800,
                       color: _trailingStatusColor,
@@ -430,4 +431,3 @@ class MatchListTile extends StatelessWidget {
     );
   }
 }
-

@@ -69,9 +69,18 @@ void main() {
 
       test('rejects invalid phone numbers', () {
         expect(Validators.phoneNumber('12345').isInvalid, true);
-        expect(Validators.phoneNumber('08123456789').isInvalid, true); // Starts with 08
-        expect(Validators.phoneNumber('0912345678').isInvalid, true); // Too short
-        expect(Validators.phoneNumber('091234567890').isInvalid, true); // Too long
+        expect(
+          Validators.phoneNumber('08123456789').isInvalid,
+          true,
+        ); // Starts with 08
+        expect(
+          Validators.phoneNumber('0912345678').isInvalid,
+          true,
+        ); // Too short
+        expect(
+          Validators.phoneNumber('091234567890').isInvalid,
+          true,
+        ); // Too long
       });
 
       test('rejects empty phone numbers', () {
@@ -170,11 +179,10 @@ void main() {
 
       test('rejects coordinates outside service area', () {
         expect(
-          Validators.coordinates(LatLng(14.6, 121.0)).isInvalid, true, // Manila
+          Validators.coordinates(LatLng(14.6, 121.0)).isInvalid,
+          true, // Manila
         );
-        expect(
-          Validators.coordinates(LatLng(0, 0)).isInvalid, true,
-        );
+        expect(Validators.coordinates(LatLng(0, 0)).isInvalid, true);
       });
 
       test('rejects null coordinates', () {
@@ -266,7 +274,8 @@ void main() {
 
       test('rejects files that are too large', () {
         expect(
-          Validators.fileSize(6 * 1024 * 1024).isInvalid, true, // 6MB
+          Validators.fileSize(6 * 1024 * 1024).isInvalid,
+          true, // 6MB
         );
       });
 
@@ -301,10 +310,7 @@ void main() {
     group('error messages', () {
       test('provide meaningful error messages', () {
         final emailResult = Validators.email('invalid');
-        expect(
-          emailResult.errorMessage,
-          contains('valid email'),
-        );
+        expect(emailResult.errorMessage, contains('valid email'));
 
         final phoneResult = Validators.phoneNumber('123');
         expect(
@@ -313,10 +319,7 @@ void main() {
         );
 
         final passwordResult = Validators.password('short');
-        expect(
-          passwordResult.errorMessage,
-          contains('at least'),
-        );
+        expect(passwordResult.errorMessage, contains('at least'));
       });
     });
 

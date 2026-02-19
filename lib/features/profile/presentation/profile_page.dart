@@ -173,13 +173,15 @@ class _ProfilePageState extends State<ProfilePage> {
                             ),
                       ),
                       const SizedBox(width: 8),
-                const Text(
-                  'Profile',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+                      Text(
+                        'Profile',
+                        style: Theme.of(
+                          context,
+                        ).textTheme.titleMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -336,12 +338,13 @@ class _ProfilePageState extends State<ProfilePage> {
                                             ),
                                       ),
                                     )
-                                    : const Text(
+                                    : Text(
                                       'Save changes',
-                                      style: TextStyle(
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium?.copyWith(
                                         color: Colors.white,
                                         fontWeight: FontWeight.w700,
-                                        fontSize: 16,
                                       ),
                                     ),
                           ),
@@ -394,16 +397,16 @@ class _ProfilePageState extends State<ProfilePage> {
             children: [
               Text(
                 title,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 4),
               Text(
                 subtitle,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: textDim,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: textDim),
               ),
             ],
           ),

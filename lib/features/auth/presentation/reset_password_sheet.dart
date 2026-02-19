@@ -77,14 +77,16 @@ class _ResetPasswordSheetState extends State<ResetPasswordSheet> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'Set a New Password',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               'Enter and confirm your new password.',
-              style: TextStyle(color: Colors.black54),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.black54),
             ),
             const SizedBox(height: 14),
             Form(
@@ -127,7 +129,12 @@ class _ResetPasswordSheetState extends State<ResetPasswordSheet> {
             ),
             if (_err != null) ...[
               const SizedBox(height: 10),
-              Text(_err!, style: const TextStyle(color: Colors.red)),
+              Text(
+                _err!,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: Colors.red),
+              ),
             ],
             const SizedBox(height: 14),
             SizedBox(

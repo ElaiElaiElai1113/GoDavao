@@ -18,12 +18,8 @@ final class SecureStorage {
   SecureStorage._();
 
   static const _secureStorage = FlutterSecureStorage(
-    aOptions: AndroidOptions(
-      encryptedSharedPreferences: true,
-    ),
-    iOptions: IOSOptions(
-      accessibility: KeychainAccessibility.first_unlock,
-    ),
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
   );
 
   static SharedPreferences? _prefs;
@@ -293,10 +289,7 @@ class AuthTokens {
   final String accessToken;
   final String? refreshToken;
 
-  const AuthTokens({
-    required this.accessToken,
-    this.refreshToken,
-  });
+  const AuthTokens({required this.accessToken, this.refreshToken});
 
   /// Save tokens to secure storage
   Future<void> save() async {
@@ -313,10 +306,7 @@ class AuthTokens {
 
     if (accessToken == null) return null;
 
-    return AuthTokens(
-      accessToken: accessToken,
-      refreshToken: refreshToken,
-    );
+    return AuthTokens(accessToken: accessToken, refreshToken: refreshToken);
   }
 
   /// Clear tokens from secure storage

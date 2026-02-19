@@ -58,7 +58,8 @@ final class AppConfig {
   }
 
   static Duration get apiTimeout {
-    final seconds = int.tryParse(dotenv.get('API_TIMEOUT', fallback: '30')) ?? 30;
+    final seconds =
+        int.tryParse(dotenv.get('API_TIMEOUT', fallback: '30')) ?? 30;
     return Duration(seconds: seconds);
   }
 
@@ -112,9 +113,11 @@ final class AppConfig {
     _ensureInitialized();
     return LatLngBounds(
       south: double.tryParse(dotenv.get('BOUND_SOUTH', fallback: '6.9')) ?? 6.9,
-      west: double.tryParse(dotenv.get('BOUND_WEST', fallback: '125.3')) ?? 125.3,
+      west:
+          double.tryParse(dotenv.get('BOUND_WEST', fallback: '125.3')) ?? 125.3,
       north: double.tryParse(dotenv.get('BOUND_NORTH', fallback: '7.2')) ?? 7.2,
-      east: double.tryParse(dotenv.get('BOUND_EAST', fallback: '125.7')) ?? 125.7,
+      east:
+          double.tryParse(dotenv.get('BOUND_EAST', fallback: '125.7')) ?? 125.7,
     );
   }
 
@@ -168,21 +171,10 @@ final class AppConfig {
 }
 
 /// Application environment
-enum AppEnvironment {
-  development,
-  staging,
-  production,
-}
+enum AppEnvironment { development, staging, production }
 
 /// Log level enum
-enum LogLevel {
-  trace,
-  debug,
-  info,
-  warning,
-  error,
-  fatal,
-}
+enum LogLevel { trace, debug, info, warning, error, fatal }
 
 /// Service area bounds
 class LatLngBounds {

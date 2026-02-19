@@ -175,10 +175,16 @@ class VehiclesService {
     put('seats', patch['seats']);
     // we don’t let callers arbitrarily set is_default here
     if (patch.containsKey('or_number') || patch.containsKey('orNumber')) {
-      put('or_number', _nullIfBlank((patch['or_number'] ?? patch['orNumber']) as String?));
+      put(
+        'or_number',
+        _nullIfBlank((patch['or_number'] ?? patch['orNumber']) as String?),
+      );
     }
     if (patch.containsKey('cr_number') || patch.containsKey('crNumber')) {
-      put('cr_number', _nullIfBlank((patch['cr_number'] ?? patch['crNumber']) as String?));
+      put(
+        'cr_number',
+        _nullIfBlank((patch['cr_number'] ?? patch['crNumber']) as String?),
+      );
     }
 
     if (allowed.isEmpty) return;

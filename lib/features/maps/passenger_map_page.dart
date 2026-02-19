@@ -321,10 +321,7 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
         content: const Text(
           'Tip: Search a destination, then tap the route to set pickup and drop-off.',
         ),
-        action: SnackBarAction(
-          label: 'Got it',
-          onPressed: () {},
-        ),
+        action: SnackBarAction(label: 'Got it', onPressed: () {}),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -634,12 +631,11 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
             ),
           ),
         ),
-        title: const Text(
+        title: Text(
           'Find a Route',
-          style: TextStyle(
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
             color: Colors.black87,
             fontWeight: FontWeight.bold,
-            fontSize: 18,
           ),
         ),
         bottom: PreferredSize(
@@ -703,7 +699,9 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                         _showAllRoutes
                             ? 'Showing all active routes'
                             : 'Filter routes by proximity to pickup/destination',
-                        style: const TextStyle(color: Colors.black87),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: Colors.black87),
                       ),
                     ),
                   ],
@@ -1040,11 +1038,10 @@ class _PassengerMapPageState extends State<PassengerMapPage> {
                           (_pickup != null && _dropoff != null)
                               ? _openConfirm
                               : null,
-                      child: const Text(
+                      child: Text(
                         'Review Fare',
-                        style: TextStyle(
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           fontWeight: FontWeight.w600,
-                          fontSize: 15,
                         ),
                       ),
                     ),
@@ -1155,9 +1152,8 @@ class _RouteChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         child: Text(
           label,
-          style: TextStyle(
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
             fontWeight: FontWeight.w600,
-            fontSize: 12,
             color: selected ? Colors.white : Colors.black87,
           ),
         ),
@@ -1298,3 +1294,4 @@ class BottomCard extends StatelessWidget {
     );
   }
 }
+

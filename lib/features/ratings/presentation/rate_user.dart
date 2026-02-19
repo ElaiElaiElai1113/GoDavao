@@ -144,32 +144,31 @@ class _RateUserSheetState extends State<RateUserSheet> {
               ),
               Text(
                 'Rate ${widget.rateeName}',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
 
               // Stars
-Row(
-  children: List.generate(5, (i) {
-    final idx = i + 1;
-    final filled = idx <= _rating;
-    final color = filled ? Colors.amber.shade700 : Colors.grey.shade400;
+              Row(
+                children: List.generate(5, (i) {
+                  final idx = i + 1;
+                  final filled = idx <= _rating;
+                  final color =
+                      filled ? Colors.amber.shade700 : Colors.grey.shade400;
 
-    return IconButton(
-      onPressed: () => setState(() => _rating = idx),
-      icon: Icon(
-        filled ? Icons.star : Icons.star_border,
-        size: 30,
-        color: color,
-      ),
-      style: IconButton.styleFrom(foregroundColor: color),
-    );
-  }),
-),
-
+                  return IconButton(
+                    onPressed: () => setState(() => _rating = idx),
+                    icon: Icon(
+                      filled ? Icons.star : Icons.star_border,
+                      size: 30,
+                      color: color,
+                    ),
+                    style: IconButton.styleFrom(foregroundColor: color),
+                  );
+                }),
+              ),
 
               const SizedBox(height: 8),
               Text(

@@ -91,7 +91,9 @@ class VerificationSubmissionSheet extends StatelessWidget {
                           backgroundColor: const Color(0xFFF2EEFF),
                           child: Text(
                             name.isNotEmpty ? name[0].toUpperCase() : '?',
-                            style: const TextStyle(
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodyMedium?.copyWith(
                               color: _purpleDark,
                               fontWeight: FontWeight.w800,
                             ),
@@ -106,7 +108,9 @@ class VerificationSubmissionSheet extends StatelessWidget {
                                 name,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.bodyMedium?.copyWith(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w800,
                                 ),
@@ -182,7 +186,9 @@ class VerificationSubmissionSheet extends StatelessWidget {
                         if (imageDocs.isNotEmpty) ...[
                           const Text(
                             'Photos',
-                            style: TextStyle(
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodyMedium?.copyWith(
                               fontWeight: FontWeight.w800,
                               fontSize: 14,
                             ),
@@ -209,7 +215,9 @@ class VerificationSubmissionSheet extends StatelessWidget {
                         if (fileDocs.isNotEmpty) ...[
                           const Text(
                             'Other Files',
-                            style: TextStyle(
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodyMedium?.copyWith(
                               fontWeight: FontWeight.w800,
                               fontSize: 14,
                             ),
@@ -296,7 +304,11 @@ class VerificationSubmissionSheet extends StatelessWidget {
     ),
     child: Text(
       text,
-      style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700),
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+        color: color,
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+      ),
     ),
   );
 }
@@ -347,7 +359,7 @@ class _ImageGrid extends StatelessWidget {
                       VerificationSubmissionSheet._prettyType(type),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Colors.white,
                         fontSize: 10.5,
                       ),
@@ -407,7 +419,9 @@ class _ImageGalleryPageState extends State<_ImageGalleryPage> {
                   const SizedBox(height: 8),
                   Text(
                     VerificationSubmissionSheet._prettyType(type),
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.85),
+                    ),
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -419,4 +433,3 @@ class _ImageGalleryPageState extends State<_ImageGalleryPage> {
     );
   }
 }
-

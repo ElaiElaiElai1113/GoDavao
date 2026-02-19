@@ -13,11 +13,9 @@ class SharedFareService {
   final SupabaseClient _supabase;
   final FareService _fareService;
 
-  SharedFareService({
-    SupabaseClient? client,
-    FareService? fareService,
-  })  : _supabase = client ?? Supabase.instance.client,
-        _fareService = fareService ?? FareService();
+  SharedFareService({SupabaseClient? client, FareService? fareService})
+    : _supabase = client ?? Supabase.instance.client,
+      _fareService = fareService ?? FareService();
 
   /// Calculate distance-proportional fares for all passengers on a driver route.
   ///
@@ -62,12 +60,13 @@ class SharedFareService {
     );
 
     // 4. Create SharedPassenger objects
-    final sharedPassengers = passengerDistances.map((p) {
-      return SharedPassenger(
-        id: p['ride_request_id'] as String,
-        distanceKm: p['distance_km'] as double,
-      );
-    }).toList();
+    final sharedPassengers =
+        passengerDistances.map((p) {
+          return SharedPassenger(
+            id: p['ride_request_id'] as String,
+            distanceKm: p['distance_km'] as double,
+          );
+        }).toList();
 
     // 5. Calculate distance-proportional fares
     final fareBreakdown = await _fareService.estimateSharedDistanceFare(
@@ -88,13 +87,14 @@ class SharedFareService {
   /// Fetch driver route details from database
   Future<Map<String, dynamic>> _fetchDriverRoute(String routeId) async {
     try {
-      final result = await _supabase
-          .from('driver_routes')
-          .select(
-            'id, start_lat, start_lng, end_lat, end_lng, route_mode, route_polyline, manual_polyline',
-          )
-          .eq('id', routeId)
-          .single();
+      final result =
+          await _supabase
+              .from('driver_routes')
+              .select(
+                'id, start_lat, start_lng, end_lat, end_lng, route_mode, route_polyline, manual_polyline',
+              )
+              .eq('id', routeId)
+              .single();
 
       return result as Map<String, dynamic>;
     } catch (e) {
@@ -212,7 +212,8 @@ class SharedFareService {
       final lat1 = _toRad(from.latitude);
       final lat2 = _toRad(to.latitude);
 
-      final a = (sin(dLat / 2) * sin(dLat / 2)) +
+      final a =
+          (sin(dLat / 2) * sin(dLat / 2)) +
           (sin(dLon / 2) * sin(dLon / 2) * cos(lat1) * cos(lat2));
       final c = 2 * atan2(sqrt(a), sqrt(1 - a));
 
@@ -266,12 +267,13 @@ class SharedFareService {
       routeData,
     );
 
-    final sharedPassengers = passengerDistances.map((p) {
-      return SharedPassenger(
-        id: p['ride_request_id'] as String,
-        distanceKm: p['distance_km'] as double,
-      );
-    }).toList();
+    final sharedPassengers =
+        passengerDistances.map((p) {
+          return SharedPassenger(
+            id: p['ride_request_id'] as String,
+            distanceKm: p['distance_km'] as double,
+          );
+        }).toList();
 
     return await _fareService.estimateSharedDistanceFare(
       routeStart: routeStart,

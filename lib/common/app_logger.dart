@@ -31,7 +31,10 @@ final class AppLogger {
         lineLength: 120,
         colors: kDebugMode,
         printEmojis: kDebugMode,
-        dateTimeFormat: kDebugMode ? DateTimeFormat.onlyTimeAndSinceStart : DateTimeFormat.none,
+        dateTimeFormat:
+            kDebugMode
+                ? DateTimeFormat.onlyTimeAndSinceStart
+                : DateTimeFormat.none,
         noBoxingByDefault: false,
       ),
       filter: kReleaseMode ? ProductionFilter() : DevelopmentFilter(),
@@ -42,61 +45,37 @@ final class AppLogger {
   }
 
   /// Log an informational message
-  static void i(
-    dynamic message, [
-    dynamic error,
-    StackTrace? stackTrace,
-  ]) {
+  static void i(dynamic message, [dynamic error, StackTrace? stackTrace]) {
     _ensureInitialized();
     _logger!.i(message, error: error, stackTrace: stackTrace);
   }
 
   /// Log a debug message
-  static void d(
-    dynamic message, [
-    dynamic error,
-    StackTrace? stackTrace,
-  ]) {
+  static void d(dynamic message, [dynamic error, StackTrace? stackTrace]) {
     _ensureInitialized();
     _logger!.d(message, error: error, stackTrace: stackTrace);
   }
 
   /// Log a warning message
-  static void w(
-    dynamic message, [
-    dynamic error,
-    StackTrace? stackTrace,
-  ]) {
+  static void w(dynamic message, [dynamic error, StackTrace? stackTrace]) {
     _ensureInitialized();
     _logger!.w(message, error: error, stackTrace: stackTrace);
   }
 
   /// Log an error message
-  static void e(
-    dynamic message, [
-    dynamic error,
-    StackTrace? stackTrace,
-  ]) {
+  static void e(dynamic message, [dynamic error, StackTrace? stackTrace]) {
     _ensureInitialized();
     _logger!.e(message, error: error, stackTrace: stackTrace);
   }
 
   /// Log a verbose trace message
-  static void t(
-    dynamic message, [
-    dynamic error,
-    StackTrace? stackTrace,
-  ]) {
+  static void t(dynamic message, [dynamic error, StackTrace? stackTrace]) {
     _ensureInitialized();
     _logger!.t(message, error: error, stackTrace: stackTrace);
   }
 
   /// Log a fatal error
-  static void fatal(
-    dynamic message, [
-    dynamic error,
-    StackTrace? stackTrace,
-  ]) {
+  static void fatal(dynamic message, [dynamic error, StackTrace? stackTrace]) {
     _ensureInitialized();
     _logger!.f(message, error: error, stackTrace: stackTrace);
   }

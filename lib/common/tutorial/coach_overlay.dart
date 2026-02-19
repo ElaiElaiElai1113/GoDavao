@@ -222,16 +222,17 @@ class _TooltipCard extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 16,
-              color: Colors.black87,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 6),
           Text(
             description,
-            style: const TextStyle(color: Color(0xFF667085), height: 1.4),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: const Color(0xFF667085),
+              height: 1.4,
+            ),
           ),
           const SizedBox(height: 12),
           Row(
@@ -261,7 +262,7 @@ class _TooltipCard extends StatelessWidget {
                     onPressed: onNext,
                     child: Text(
                       isLast ? 'Got it' : 'Next',
-                      style: const TextStyle(
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.w700,
                       ),
@@ -276,4 +277,3 @@ class _TooltipCard extends StatelessWidget {
     );
   }
 }
-

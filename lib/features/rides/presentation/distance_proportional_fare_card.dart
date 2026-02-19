@@ -21,12 +21,13 @@ class DistanceProportionalFareCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final currentPassengerFare = currentPassengerId != null
-        ? breakdown.passengerFares.firstWhere(
-            (p) => p.passengerId == currentPassengerId,
-            orElse: () => breakdown.passengerFares.first,
-          )
-        : null;
+    final currentPassengerFare =
+        currentPassengerId != null
+            ? breakdown.passengerFares.firstWhere(
+              (p) => p.passengerId == currentPassengerId,
+              orElse: () => breakdown.passengerFares.first,
+            )
+            : null;
 
     return Card(
       elevation: 2,
@@ -87,15 +88,18 @@ class DistanceProportionalFareCard extends StatelessWidget {
               // All passengers breakdown
               _buildSectionTitle('Fare Split by Passenger'),
               const SizedBox(height: 8),
-              ...breakdown.passengerFares.map((fare) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: _buildPassengerFareRow(
-                      context,
-                      fare,
-                      isCurrent: currentPassengerId != null &&
-                          fare.passengerId == currentPassengerId,
-                    ),
-                  )),
+              ...breakdown.passengerFares.map(
+                (fare) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _buildPassengerFareRow(
+                    context,
+                    fare,
+                    isCurrent:
+                        currentPassengerId != null &&
+                        fare.passengerId == currentPassengerId,
+                  ),
+                ),
+              ),
 
               const SizedBox(height: 16),
 
@@ -111,7 +115,7 @@ class DistanceProportionalFareCard extends StatelessWidget {
   Widget _buildSectionTitle(String title) {
     return Text(
       title,
-      style: const TextStyle(
+      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
         fontSize: 12,
         fontWeight: FontWeight.w600,
         color: Colors.grey,
@@ -156,12 +160,14 @@ class DistanceProportionalFareCard extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           label,
-          style: const TextStyle(fontSize: 10, color: Colors.grey),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(fontSize: 10, color: Colors.grey),
         ),
         const SizedBox(height: 2),
         Text(
           value,
-          style: const TextStyle(
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
             fontSize: 12,
             fontWeight: FontWeight.w600,
           ),
@@ -183,15 +189,17 @@ class DistanceProportionalFareCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: isHighlighted
-            ? theme.primaryColor.withValues(alpha: 0.1)
-            : isCurrent
+        color:
+            isHighlighted
+                ? theme.primaryColor.withValues(alpha: 0.1)
+                : isCurrent
                 ? Colors.amber.withValues(alpha: 0.1)
                 : Colors.grey[100],
         borderRadius: BorderRadius.circular(8),
-        border: isHighlighted
-            ? Border.all(color: theme.primaryColor, width: 1)
-            : isCurrent
+        border:
+            isHighlighted
+                ? Border.all(color: theme.primaryColor, width: 1)
+                : isCurrent
                 ? Border.all(color: Colors.amber, width: 1)
                 : null,
       ),
@@ -202,9 +210,10 @@ class DistanceProportionalFareCard extends StatelessWidget {
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              color: isHighlighted
-                  ? theme.primaryColor
-                  : isCurrent
+              color:
+                  isHighlighted
+                      ? theme.primaryColor
+                      : isCurrent
                       ? Colors.amber
                       : Colors.grey[400],
               shape: BoxShape.circle,
@@ -212,7 +221,7 @@ class DistanceProportionalFareCard extends StatelessWidget {
             child: Center(
               child: Text(
                 'P',
-                style: TextStyle(
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Colors.white,
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
@@ -229,17 +238,18 @@ class DistanceProportionalFareCard extends StatelessWidget {
               children: [
                 Text(
                   'Passenger ${fare.passengerId.substring(0, 8)}',
-                  style: TextStyle(
-                    fontWeight: isHighlighted || isCurrent
-                        ? FontWeight.bold
-                        : FontWeight.normal,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight:
+                        isHighlighted || isCurrent
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                     fontSize: 13,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   '${fare.distanceKm.toStringAsFixed(1)} km ($percentage% of route)',
-                  style: const TextStyle(
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     fontSize: 11,
                     color: Colors.grey,
                   ),
@@ -254,18 +264,19 @@ class DistanceProportionalFareCard extends StatelessWidget {
             children: [
               Text(
                 '₱${fare.total.toStringAsFixed(0)}',
-                style: TextStyle(
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
-                  color: isHighlighted || isCurrent
-                      ? theme.primaryColor
-                      : Colors.black87,
+                  color:
+                      isHighlighted || isCurrent
+                          ? theme.primaryColor
+                          : Colors.black87,
                 ),
               ),
               if (fare.platformFee > 0)
                 Text(
                   'incl. ₱${fare.platformFee.toStringAsFixed(0)} fee',
-                  style: const TextStyle(
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     fontSize: 10,
                     color: Colors.grey,
                   ),
@@ -288,16 +299,16 @@ class DistanceProportionalFareCard extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Text(
+          Text(
             'Total Collected',
-            style: TextStyle(
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.bold,
               fontSize: 14,
             ),
           ),
           Text(
             '₱${breakdown.totalFare.toStringAsFixed(0)}',
-            style: TextStyle(
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.bold,
               fontSize: 18,
               color: theme.primaryColor,
@@ -308,3 +319,4 @@ class DistanceProportionalFareCard extends StatelessWidget {
     );
   }
 }
+

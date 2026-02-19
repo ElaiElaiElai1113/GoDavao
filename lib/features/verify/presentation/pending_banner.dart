@@ -35,8 +35,10 @@ class PendingVerificationBanner extends StatelessWidget {
           Expanded(
             child: Text(
               'Your verification is pending.$dateText\n'
-              'Reviews typically take 24–48 hours. $roleLine',
-              style: const TextStyle(fontWeight: FontWeight.w600),
+              'Reviews typically take 24â€“48 hours. $roleLine',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
           const SizedBox(width: 12),

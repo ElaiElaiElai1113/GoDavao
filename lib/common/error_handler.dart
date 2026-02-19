@@ -15,7 +15,8 @@ import 'package:godavao/common/app_logger.dart';
 final class ErrorHandler {
   ErrorHandler._();
 
-  static const _defaultErrorMessage = 'An unexpected error occurred. Please try again.';
+  static const _defaultErrorMessage =
+      'An unexpected error occurred. Please try again.';
 
   static bool _initialized = false;
 
@@ -35,11 +36,7 @@ final class ErrorHandler {
   /// Handle Flutter framework errors
   static void _handleFlutterError(FlutterErrorDetails details) {
     // Log the error
-    AppLogger.e(
-      'Flutter Error',
-      details.exception,
-      details.stack,
-    );
+    AppLogger.e('Flutter Error', details.exception, details.stack);
 
     // In debug mode, show the red screen of death
     if (kDebugMode) {
@@ -54,11 +51,7 @@ final class ErrorHandler {
 
   /// Handle platform errors (async errors not caught by try-catch)
   static bool _handlePlatformError(Object error, StackTrace stack) {
-    AppLogger.e(
-      'Uncaught Async Error',
-      error,
-      stack,
-    );
+    AppLogger.e('Uncaught Async Error', error, stack);
 
     // In release mode, send to crash reporting
     if (kReleaseMode) {
@@ -112,11 +105,12 @@ final class ErrorHandler {
   }) {
     return showDialog<void>(
       context: context,
-      builder: (context) => ErrorDialog(
-        title: title ?? 'Error',
-        message: getUserMessage(error),
-        onRetry: onRetry,
-      ),
+      builder:
+          (context) => ErrorDialog(
+            title: title ?? 'Error',
+            message: getUserMessage(error),
+            onRetry: onRetry,
+          ),
     );
   }
 
@@ -161,11 +155,7 @@ final class ErrorHandler {
     } catch (error, stack) {
       AppLogger.e('Error in function with dialog', error, stack);
       if (context.mounted) {
-        await showErrorDialog(
-          context,
-          error,
-          title: 'Error',
-        );
+        await showErrorDialog(context, error, title: 'Error');
       }
       return null;
     }
@@ -198,11 +188,11 @@ class NetworkException extends AppException {
     Object? originalError,
     StackTrace? stackTrace,
   }) : super(
-          message: message,
-          userMessage: userMessage,
-          originalError: originalError,
-          stackTrace: stackTrace,
-        );
+         message: message,
+         userMessage: userMessage,
+         originalError: originalError,
+         stackTrace: stackTrace,
+       );
 
   factory NetworkException.timeout({Object? error, StackTrace? stack}) {
     return NetworkException(
@@ -240,11 +230,11 @@ class AuthException extends AppException {
     Object? originalError,
     StackTrace? stackTrace,
   }) : super(
-          message: message,
-          userMessage: userMessage,
-          originalError: originalError,
-          stackTrace: stackTrace,
-        );
+         message: message,
+         userMessage: userMessage,
+         originalError: originalError,
+         stackTrace: stackTrace,
+       );
 
   factory AuthException.sessionExpired({Object? error, StackTrace? stack}) {
     return AuthException(
@@ -285,11 +275,11 @@ class ValidationException extends AppException {
     Object? originalError,
     StackTrace? stackTrace,
   }) : super(
-          message: message,
-          userMessage: userMessage,
-          originalError: originalError,
-          stackTrace: stackTrace,
-        );
+         message: message,
+         userMessage: userMessage,
+         originalError: originalError,
+         stackTrace: stackTrace,
+       );
 }
 
 /// Database-related exceptions
@@ -300,11 +290,11 @@ class DatabaseException extends AppException {
     Object? originalError,
     StackTrace? stackTrace,
   }) : super(
-          message: message,
-          userMessage: userMessage,
-          originalError: originalError,
-          stackTrace: stackTrace,
-        );
+         message: message,
+         userMessage: userMessage,
+         originalError: originalError,
+         stackTrace: stackTrace,
+       );
 }
 
 /// Error dialog widget
@@ -325,10 +315,7 @@ class ErrorDialog extends StatelessWidget {
     return AlertDialog(
       title: Row(
         children: [
-          const Icon(
-            Icons.error_outline,
-            color: Colors.red,
-          ),
+          const Icon(Icons.error_outline, color: Colors.red),
           const SizedBox(width: 8),
           Expanded(child: Text(title)),
         ],
@@ -379,10 +366,8 @@ extension ErrorCatcher<T> on Future<T> {
 extension StreamErrorCatcher<T> on Stream<T> {
   /// Catch errors and return a Stream that doesn't emit errors
   Stream<T> catchErrors() {
-    return handleError(
-      (Object error, StackTrace stack) {
-        AppLogger.e('Stream error', error, stack);
-      },
-    );
+    return handleError((Object error, StackTrace stack) {
+      AppLogger.e('Stream error', error, stack);
+    });
   }
 }

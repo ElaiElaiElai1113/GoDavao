@@ -8,7 +8,8 @@ class DriverRoute {
   final double endLng;
 
   DriverRoute(
-    this.name, this.driverName, {
+    this.name,
+    this.driverName, {
     required this.driverId,
     required this.startLat,
     required this.startLng,

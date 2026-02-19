@@ -52,7 +52,7 @@ class _PrivacyDisclaimerPageState extends State<PrivacyDisclaimerPage> {
               const SizedBox(height: 12),
               Text(
                 title,
-                style: const TextStyle(
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w800,
                   fontSize: 18,
                 ),
@@ -62,7 +62,9 @@ class _PrivacyDisclaimerPageState extends State<PrivacyDisclaimerPage> {
                 child: SingleChildScrollView(
                   child: Text(
                     body,
-                    style: const TextStyle(height: 1.5, fontSize: 14),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(height: 1.5),
                   ),
                 ),
               ),
@@ -115,7 +117,7 @@ class _PrivacyDisclaimerPageState extends State<PrivacyDisclaimerPage> {
                     backgroundColor: Colors.white,
                     child: Text(
                       'G',
-                      style: TextStyle(
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: _purpleDark,
                         fontWeight: FontWeight.w900,
                         fontSize: 22,
@@ -162,18 +164,22 @@ class _PrivacyDisclaimerPageState extends State<PrivacyDisclaimerPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Terms & Privacy',
-                          style: TextStyle(
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodyMedium?.copyWith(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
                         const SizedBox(height: 10),
-                        const Text(
+                        Text(
                           'Before using GoDavao, please review the key points below. '
                           'We process minimal personal data to provide rides, live tracking, and SOS alerts.',
-                          style: TextStyle(fontSize: 14, height: 1.5),
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodyMedium?.copyWith(height: 1.5),
                         ),
                         const SizedBox(height: 12),
                         const _Bullet(
@@ -233,10 +239,11 @@ class _PrivacyDisclaimerPageState extends State<PrivacyDisclaimerPage> {
                               activeColor: _purple,
                             ),
                             const SizedBox(width: 6),
-                            const Expanded(
+                            Expanded(
                               child: Text(
                                 'I have read and agree to the Terms of Service and Privacy Policy.',
-                                style: TextStyle(fontWeight: FontWeight.w600),
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(fontWeight: FontWeight.w600),
                               ),
                             ),
                           ],
@@ -287,7 +294,14 @@ class _Bullet extends StatelessWidget {
             child: Icon(Icons.circle, size: 6, color: Colors.black54),
           ),
           const SizedBox(width: 8),
-          Expanded(child: Text(text, style: const TextStyle(height: 1.5))),
+          Expanded(
+            child: Text(
+              text,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(height: 1.5),
+            ),
+          ),
         ],
       ),
     );
@@ -306,4 +320,3 @@ GoDavao collects limited data (name, contact, GPS) to enable rides, live trackin
 and SOS features. Data is stored securely in Supabase and shared only as needed for
 safety (e.g., your trusted contacts during SOS). You may request deletion of your data.
 ''';
-

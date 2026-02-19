@@ -46,7 +46,7 @@ class EmptyStateCard extends StatelessWidget {
             Text(
               subtitle,
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Colors.grey.shade600,
                 fontSize: compact ? 11 : 12,
               ),

@@ -104,20 +104,11 @@ double polylineDistanceBetweenProgress(
     double sum = 0.0;
 
     for (var i = 0; i < idx; i++) {
-      sum += dist.as(
-        LengthUnit.Meter,
-        polyline[i],
-        polyline[i + 1],
-      );
+      sum += dist.as(LengthUnit.Meter, polyline[i], polyline[i + 1]);
     }
 
     if (t > 0) {
-      sum += dist.as(
-            LengthUnit.Meter,
-            polyline[idx],
-            polyline[idx + 1],
-          ) *
-          t;
+      sum += dist.as(LengthUnit.Meter, polyline[idx], polyline[idx + 1]) * t;
     }
 
     return sum;

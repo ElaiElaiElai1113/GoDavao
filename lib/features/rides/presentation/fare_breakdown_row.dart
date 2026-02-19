@@ -7,6 +7,7 @@ class FareBreakdownRow extends StatelessWidget {
   const FareBreakdownRow({super.key, required this.breakdown});
 
   Widget _row(
+    BuildContext context,
     String label,
     String value, {
     Color? color,
@@ -15,8 +16,18 @@ class FareBreakdownRow extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: TextStyle(color: color)),
-        Text(value, style: TextStyle(fontWeight: weight, color: color)),
+        Text(
+          label,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: color, fontWeight: weight),
+        ),
+        Text(
+          value,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: color, fontWeight: weight),
+        ),
       ],
     );
   }
@@ -25,26 +36,38 @@ class FareBreakdownRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        _row("Base fare", "₱${breakdown.baseFare.toStringAsFixed(2)}"),
         _row(
-          "Per km (${breakdown.km} km)",
-          "₱${breakdown.perKmComponent.toStringAsFixed(2)}",
+          context,
+          'Base fare',
+          'â‚±${breakdown.baseFare.toStringAsFixed(2)}',
         ),
         _row(
-          "Per min (${breakdown.minutes} min)",
-          "₱${breakdown.perMinComponent.toStringAsFixed(2)}",
+          context,
+          'Per km (${breakdown.km} km)',
+          'â‚±${breakdown.perKmComponent.toStringAsFixed(2)}',
         ),
-        _row("Booking fee", "₱${breakdown.bookingFee.toStringAsFixed(2)}"),
+        _row(
+          context,
+          'Per min (${breakdown.minutes} min)',
+          'â‚±${breakdown.perMinComponent.toStringAsFixed(2)}',
+        ),
+        _row(
+          context,
+          'Booking fee',
+          'â‚±${breakdown.bookingFee.toStringAsFixed(2)}',
+        ),
         if (breakdown.nightSurcharge > 0)
           _row(
-            "Night surcharge (15%)",
-            "₱${breakdown.nightSurcharge.toStringAsFixed(2)}",
+            context,
+            'Night surcharge (15%)',
+            'â‚±${breakdown.nightSurcharge.toStringAsFixed(2)}',
             color: Colors.deepOrange,
           ),
         const Divider(),
         _row(
-          "Total",
-          "₱${breakdown.total.toStringAsFixed(2)}",
+          context,
+          'Total',
+          'â‚±${breakdown.total.toStringAsFixed(2)}',
           weight: FontWeight.bold,
         ),
       ],

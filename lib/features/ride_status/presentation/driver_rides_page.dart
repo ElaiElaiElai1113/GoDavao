@@ -105,7 +105,10 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           const SizedBox(width: 4),
           Text(
             label,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
@@ -671,7 +674,11 @@ class _DriverRidesPageState extends State<DriverRidesPage>
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Accepted $acceptedCount rider(s). Fares updated based on distance.')),
+          SnackBar(
+            content: Text(
+              'Accepted $acceptedCount rider(s). Fares updated based on distance.',
+            ),
+          ),
         );
       }
     } catch (e) {
@@ -792,7 +799,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           ],
           Text(
             text,
-            style: TextStyle(
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               fontSize: 12.5,
               fontWeight: FontWeight.w700,
               color: baseColor.withValues(alpha: 0.95),
@@ -830,7 +837,9 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           children: [
             Text(
               '${m.pickupAddress} → ${m.destinationAddress}',
-              style: const TextStyle(fontWeight: FontWeight.w800),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -858,7 +867,9 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                       child: Text(
                         m.passengerName,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                     if (m.passengerId != null) ...[
@@ -1040,7 +1051,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
           child: Text(
             label,
-            style: const TextStyle(
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.w800,
               fontSize: 13,
               color: _purpleDark,
@@ -1101,7 +1112,9 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             onChat: () {
               Navigator.push(
                 context,
-                MaterialPageRoute<void>(builder: (_) => ChatPage(matchId: m.matchId)),
+                MaterialPageRoute<void>(
+                  builder: (_) => ChatPage(matchId: m.matchId),
+                ),
               );
             },
             buildPill:
@@ -1180,7 +1193,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           leading: const Icon(Icons.alt_route, color: _purple),
           title: Text(
             routeTitle,
-            style: const TextStyle(
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.w900,
               color: _purpleDark,
             ),
@@ -1584,9 +1597,12 @@ class _DriverRidesPageState extends State<DriverRidesPage>
             ),
           ),
         ),
-        title: const Text(
+        title: Text(
           'Ride Matches',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
         actionsIconTheme: const IconThemeData(color: Colors.white),
@@ -1645,7 +1661,7 @@ class _DriverRidesPageState extends State<DriverRidesPage>
                   labelColor: Colors.white,
                   unselectedLabelColor: Colors.black87,
                   dividerColor: Colors.transparent,
-                  labelStyle: const TextStyle(
+                  labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
                     fontWeight: FontWeight.w700,
                     fontSize: 14,
                     letterSpacing: 0.3,
@@ -1763,7 +1779,10 @@ class _DriverRidesPageState extends State<DriverRidesPage>
           const SizedBox(width: 6),
           Text(
             label,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),
@@ -1813,7 +1832,7 @@ class _TabWithBadge extends StatelessWidget {
         children: [
           Text(
             text,
-            style: const TextStyle(
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.w700,
               letterSpacing: 0.2,
             ),
@@ -1839,7 +1858,7 @@ class _TabWithBadge extends StatelessWidget {
               ),
               child: Text(
                 '$count',
-                style: const TextStyle(
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Colors.white,
                   fontSize: 11,
                   fontWeight: FontWeight.w800,
@@ -2131,7 +2150,7 @@ class _LiveMapSheetState extends State<_LiveMapSheet> {
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: Colors.black12),
                       ),
-                      child: const Padding(
+                      child: Padding(
                         padding: EdgeInsets.symmetric(
                           horizontal: 10,
                           vertical: 6,
@@ -2141,7 +2160,12 @@ class _LiveMapSheetState extends State<_LiveMapSheet> {
                           children: [
                             Icon(Icons.route, size: 16, color: Colors.purple),
                             SizedBox(width: 6),
-                            Text('Live Map', style: TextStyle(fontSize: 12)),
+                            Text(
+                              'Live Map',
+                              style: Theme.of(
+                                context,
+                              ).textTheme.bodyMedium?.copyWith(fontSize: 12),
+                            ),
                           ],
                         ),
                       ),
@@ -2216,7 +2240,9 @@ class _LiveMapSheetState extends State<_LiveMapSheet> {
                       const SizedBox(width: 6),
                       Text(
                         'Pax ${_ago(_paxTs)}',
-                        style: const TextStyle(fontSize: 12),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodyMedium?.copyWith(fontSize: 12),
                       ),
                     ] else if (_me != null) ...[
                       const Icon(
@@ -2229,10 +2255,17 @@ class _LiveMapSheetState extends State<_LiveMapSheet> {
                         _acc != null
                             ? '±${_acc!.toStringAsFixed(0)} m • ${_ago(_ts)}'
                             : 'Live',
-                        style: const TextStyle(fontSize: 12),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodyMedium?.copyWith(fontSize: 12),
                       ),
                     ] else ...[
-                      const Text('Map preview', style: TextStyle(fontSize: 12)),
+                      Text(
+                        'Map preview',
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodyMedium?.copyWith(fontSize: 12),
+                      ),
                     ],
                   ],
                 ),
@@ -2283,7 +2316,10 @@ class _LiveMapSheetState extends State<_LiveMapSheet> {
           const SizedBox(width: 6),
           Text(
             label,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),
@@ -2404,9 +2440,8 @@ class _MatchListTile extends StatelessWidget {
                               m.passengerName,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                              ),
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
                             ),
                           ),
                           if (m.passengerId != null) ...[
@@ -2450,7 +2485,7 @@ class _MatchListTile extends StatelessWidget {
                   ),
                   child: Text(
                     m.status.toUpperCase(),
-                    style: TextStyle(
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w800,
                       color: trailingStatusColor,

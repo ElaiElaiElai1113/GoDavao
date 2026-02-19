@@ -76,9 +76,14 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
     }
 
     try {
-      final rows = await sb.rpc<List<Map<String, dynamic>>>('passenger_rides_for_user').select();
+      final rows =
+          await sb
+              .rpc<List<Map<String, dynamic>>>('passenger_rides_for_user')
+              .select();
       final list =
-          (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          (rows as List)
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
       _applyRidesToState(list);
       await _refreshRatedFlagsForCompleted(list);
       _backfillAddresses(list);
@@ -130,7 +135,9 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
           .inFilter('id', rideIds);
 
       final list =
-          (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          (rows as List)
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
 
       _applyRidesToState(list);
       await _refreshRatedFlagsForCompleted(list);
@@ -207,21 +214,23 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
     final filter = upcoming ? _upcomingFilter : _historyFilter;
     final out =
         list.where((r) {
-          final status =
-              (r['effective_status'] as String? ?? '').toLowerCase();
+          final status = (r['effective_status'] as String? ?? '').toLowerCase();
           final normalized =
-              (status == 'canceled' || status == 'cancelled' || status == 'declined')
+              (status == 'canceled' ||
+                      status == 'cancelled' ||
+                      status == 'declined')
                   ? 'canceled'
                   : status;
 
           if (filter != 'all' && normalized != filter) return false;
           if (q.isEmpty) return true;
 
-          final haystack = [
-            r['driver_name']?.toString(),
-            r['pickup_address']?.toString(),
-            r['destination_address']?.toString(),
-          ].whereType<String>().join(' ').toLowerCase();
+          final haystack =
+              [
+                r['driver_name']?.toString(),
+                r['pickup_address']?.toString(),
+                r['destination_address']?.toString(),
+              ].whereType<String>().join(' ').toLowerCase();
           return haystack.contains(q);
         }).toList();
     return out;
@@ -416,7 +425,11 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
       ),
       child: Text(
         s.toUpperCase(),
-        style: TextStyle(color: c, fontWeight: FontWeight.w800, fontSize: 12),
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: c,
+          fontWeight: FontWeight.w800,
+          fontSize: 12,
+        ),
       ),
     );
   }
@@ -550,7 +563,9 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
               '$pickupText → $destText',
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w800),
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 6),
             Wrap(
@@ -571,7 +586,9 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                       driverId == null
                           ? 'Driver: unassigned'
                           : 'Driver: ${driverName ?? driverId.substring(0, 8)}',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     if (driverId != null) ...[
                       const SizedBox(width: 6),
@@ -591,7 +608,9 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                       const SizedBox(width: 6),
                       Text(
                         _peso(fare),
-                        style: const TextStyle(fontWeight: FontWeight.w700),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ],
                   ),
@@ -606,7 +625,9 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                     const SizedBox(width: 6),
                     Text(
                       created,
-                      style: const TextStyle(color: Colors.black54),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: Colors.black54),
                     ),
                   ],
                 ),
@@ -750,7 +771,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
         label: Text(
           label,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
             color: Colors.white,
             fontWeight: FontWeight.w800,
           ),
@@ -799,12 +820,11 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
               ),
             ),
           ),
-          title: const Text(
+          title: Text(
             'My Rides',
-            style: TextStyle(
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.bold,
-              fontSize: 18,
             ),
           ),
         ),
@@ -853,12 +873,11 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
               ),
             ),
           ),
-          title: const Text(
+          title: Text(
             'My Rides',
-            style: TextStyle(
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.bold,
-              fontSize: 18,
             ),
           ),
           bottom: PreferredSize(
@@ -913,16 +932,14 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                         _filterChips(upcoming: true),
                         const SizedBox(height: 6),
                         ...() {
-                          final list =
-                              _filterRides(_upcoming, upcoming: true);
+                          final list = _filterRides(_upcoming, upcoming: true);
                           if (list.isEmpty) {
                             return [
                               const SizedBox(height: 24),
                               EmptyStateCard(
                                 icon: Icons.event_note,
                                 title: 'No upcoming rides',
-                                subtitle:
-                                    'Book a ride to see it appear here.',
+                                subtitle: 'Book a ride to see it appear here.',
                                 ctaLabel: 'Book a ride',
                                 onCta:
                                     () => Navigator.push(
@@ -935,9 +952,7 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                               ),
                             ];
                           }
-                          return list.map(
-                            (r) => _rideCard(r, upcoming: true),
-                          );
+                          return list.map((r) => _rideCard(r, upcoming: true));
                         }(),
                       ],
                     ),
@@ -950,22 +965,18 @@ class _PassengerMyRidesPageState extends State<PassengerMyRidesPage> {
                         _filterChips(upcoming: false),
                         const SizedBox(height: 6),
                         ...() {
-                          final list =
-                              _filterRides(_history, upcoming: false);
+                          final list = _filterRides(_history, upcoming: false);
                           if (list.isEmpty) {
                             return [
                               const SizedBox(height: 24),
                               const EmptyStateCard(
                                 icon: Icons.event_note,
                                 title: 'No ride history yet',
-                                subtitle:
-                                    'Completed rides will show up here.',
+                                subtitle: 'Completed rides will show up here.',
                               ),
                             ];
                           }
-                          return list.map(
-                            (r) => _rideCard(r, upcoming: false),
-                          );
+                          return list.map((r) => _rideCard(r, upcoming: false));
                         }(),
                       ],
                     ),

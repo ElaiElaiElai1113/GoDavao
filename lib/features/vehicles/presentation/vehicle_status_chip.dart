@@ -31,7 +31,11 @@ class VehicleStatusChip extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: TextStyle(color: c, fontWeight: FontWeight.w700, fontSize: 11),
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: c,
+          fontWeight: FontWeight.w700,
+          fontSize: 11,
+        ),
       ),
     );
   }

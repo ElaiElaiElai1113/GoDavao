@@ -61,7 +61,7 @@ class PassengerMarker extends StatelessWidget {
           ),
           child: Text(
             label!,
-            style: const TextStyle(
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
               fontSize: 10,
               fontWeight: FontWeight.w600,
               color: Colors.black87,

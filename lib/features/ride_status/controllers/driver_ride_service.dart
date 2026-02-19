@@ -11,8 +11,8 @@ class DriverRideService {
   DriverRideService({
     SupabaseClient? client,
     SharedFareService? sharedFareService,
-  })  : _supabase = client ?? Supabase.instance.client,
-        _sharedFareService = sharedFareService ?? SharedFareService();
+  }) : _supabase = client ?? Supabase.instance.client,
+       _sharedFareService = sharedFareService ?? SharedFareService();
 
   /// Fetch all matches for a driver's routes
   Future<List<MatchCard>> fetchMatches(
@@ -61,8 +61,12 @@ class DriverRideService {
           rideRequestId: matchRow['ride_request_id'] as String,
           driverRouteId: matchRow['driver_route_id'] as String?,
           status: matchRow['status'] as String? ?? 'pending',
-          createdAt: DateTime.parse(matchRow['created_at'] as String? ?? DateTime.now().toIso8601String()),
-          passengerName: requestData['passenger_name'] as String? ?? 'Passenger',
+          createdAt: DateTime.parse(
+            matchRow['created_at'] as String? ??
+                DateTime.now().toIso8601String(),
+          ),
+          passengerName:
+              requestData['passenger_name'] as String? ?? 'Passenger',
           pickupAddress: requestData['pickup_address'] as String? ?? '',
           destinationAddress:
               requestData['destination_address'] as String? ?? '',
@@ -82,9 +86,7 @@ class DriverRideService {
   }
 
   /// Fetch declined and completed matches
-  Future<List<MatchCard>> fetchHistoricalMatches(
-    String driverId,
-  ) async {
+  Future<List<MatchCard>> fetchHistoricalMatches(String driverId) async {
     try {
       final data = await _supabase
           .from('ride_matches')
@@ -112,7 +114,11 @@ class DriverRideService {
             )
           ''')
           .eq('driver_routes.driver_id', driverId)
-          .inFilter('ride_matches.status', ['declined', 'completed', 'cancelled'])
+          .inFilter('ride_matches.status', [
+            'declined',
+            'completed',
+            'cancelled',
+          ])
           .order('created_at', ascending: true);
 
       return data.map<MatchCard>((row) {
@@ -125,8 +131,12 @@ class DriverRideService {
           rideRequestId: matchRow['ride_request_id'] as String,
           driverRouteId: matchRow['driver_route_id'] as String?,
           status: matchRow['status'] as String? ?? 'pending',
-          createdAt: DateTime.parse(matchRow['created_at'] as String? ?? DateTime.now().toIso8601String()),
-          passengerName: requestData['passenger_name'] as String? ?? 'Passenger',
+          createdAt: DateTime.parse(
+            matchRow['created_at'] as String? ??
+                DateTime.now().toIso8601String(),
+          ),
+          passengerName:
+              requestData['passenger_name'] as String? ?? 'Passenger',
           pickupAddress: requestData['pickup_address'] as String? ?? '',
           destinationAddress:
               requestData['destination_address'] as String? ?? '',
@@ -174,10 +184,7 @@ class DriverRideService {
     try {
       final result = await _supabase.rpc<Map<String, dynamic>>(
         'accept_ride_match',
-        params: {
-          'p_match_id': matchId,
-          'p_ride_request_id': rideRequestId,
-        },
+        params: {'p_match_id': matchId, 'p_ride_request_id': rideRequestId},
       );
 
       // Recalculate fares for all passengers on this route using distance-proportional pricing
@@ -270,11 +277,12 @@ class DriverRideService {
       for (final passengerId in passengerIds) {
         // Try to get ratings for each passenger
         try {
-          final ratingData = await _supabase
-              .from('ratings')
-              .select('ratee_user_id, avg(score), count(*)')
-              .eq('ratee_user_id', passengerId)
-              .single();
+          final ratingData =
+              await _supabase
+                  .from('ratings')
+                  .select('ratee_user_id, avg(score), count(*)')
+                  .eq('ratee_user_id', passengerId)
+                  .single();
 
           result[passengerId] = {
             'avg': (ratingData['avg'] as num?)?.toDouble(),
@@ -282,10 +290,7 @@ class DriverRideService {
           };
         } catch (_) {
           // If a passenger has no ratings yet
-          result[passengerId] = {
-            'avg': null,
-            'count': 0,
-          };
+          result[passengerId] = {'avg': null, 'count': 0};
         }
       }
 
@@ -302,11 +307,12 @@ class DriverRideService {
   ) async {
     try {
       // Check if payment exists and update status
-      final existingPayment = await _supabase
-          .from('payment_intents')
-          .select('id, status')
-          .eq('ride_request_id', rideRequestId)
-          .maybeSingle();
+      final existingPayment =
+          await _supabase
+              .from('payment_intents')
+              .select('id, status')
+              .eq('ride_request_id', rideRequestId)
+              .maybeSingle();
 
       if (existingPayment != null) {
         final paymentId = existingPayment['id']?.toString();

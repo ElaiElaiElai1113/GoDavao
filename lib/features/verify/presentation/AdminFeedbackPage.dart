@@ -81,7 +81,7 @@ class _AdminFeedbackPageState extends State<AdminFeedbackPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('User Feedback & Ratings'),
-        backgroundColor: const AppColors.purple,
+        backgroundColor: AppColors.purple,
         foregroundColor: Colors.white,
       ),
       body:
@@ -128,10 +128,7 @@ class _AdminFeedbackPageState extends State<AdminFeedbackPage> {
                               Expanded(
                                 child: Text(
                                   userName,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
-                                  ),
+                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
                                 ),
                               ),
                               Column(
@@ -151,7 +148,7 @@ class _AdminFeedbackPageState extends State<AdminFeedbackPage> {
         const SizedBox(height: 4),
         Text(
           formatWhen(when),                // ⬅️ formatted timestamp
-          style: const TextStyle(fontSize: 11, color: Colors.black54),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54, fontSize: 11),
         ),
       ],
     ),
@@ -162,11 +159,7 @@ class _AdminFeedbackPageState extends State<AdminFeedbackPage> {
                             comment.isNotEmpty
                                 ? comment
                                 : '(No comment provided)',
-                            style: const TextStyle(
-                              fontSize: 13.5,
-                              color: Colors.black87,
-                              height: 1.3,
-                            ),
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.black87, height: 1.3),
                           ),
                         ],
                       ),
@@ -177,4 +170,8 @@ class _AdminFeedbackPageState extends State<AdminFeedbackPage> {
     );
   }
 }
+
+
+
+
 

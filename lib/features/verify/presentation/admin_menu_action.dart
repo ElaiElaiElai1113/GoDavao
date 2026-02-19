@@ -12,7 +12,9 @@ class AdminMenuAction extends StatelessWidget {
       onTap: () {
         Navigator.pop(context);
         Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => const AdminVerificationPage()),
+          MaterialPageRoute<void>(
+            builder: (_) => const AdminVerificationPage(),
+          ),
         );
       },
     );

@@ -25,21 +25,37 @@ class PaymentMethodSheet extends StatelessWidget {
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            const Text(
+            Text(
               'Choose payment method',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              style: Theme.of(context).textTheme.titleSmall,
             ),
             const SizedBox(height: 12),
             ListTile(
               leading: const Icon(Icons.account_balance_wallet),
-              title: const Text('GCash'),
-              subtitle: const Text('Upload proof and we’ll hold the payment'),
+              title: Text(
+                'GCash',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              subtitle: Text(
+                'Upload proof and weâ€™ll hold the payment',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: Colors.black54),
+              ),
               onTap: () => Navigator.pop(context, PaymentChoice('gcash')),
             ),
             ListTile(
               leading: const Icon(Icons.payments),
-              title: const Text('Cash'),
-              subtitle: const Text('Pay your driver in cash on arrival'),
+              title: Text(
+                'Cash',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              subtitle: Text(
+                'Pay your driver in cash on arrival',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: Colors.black54),
+              ),
               onTap: () => Navigator.pop(context, PaymentChoice('cash')),
             ),
           ],

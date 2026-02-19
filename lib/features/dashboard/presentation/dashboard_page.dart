@@ -22,7 +22,6 @@ import 'package:godavao/features/verify/presentation/pending_banner.dart'; // �
 
 import 'package:godavao/features/safety/presentation/trusted_contacts_page.dart';
 
-
 // 🟣 Coach marks
 import 'package:godavao/common/tutorial/coach_overlay.dart';
 import 'package:godavao/common/tutorial/tutorial_service.dart';
@@ -92,200 +91,207 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<void> _fetch() async {
-  setState(() {
-    _loading = true;
-    _error = null;
-  });
-
-  final u = _sb.auth.currentUser;
-  if (u == null) {
-    if (!mounted) return;
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute<void>(builder: (_) => const AuthPage()),
-      (_) => false,
-    );
-    return;
-  }
-
-  try {
-    // tolerant profile fetch
-    final res = await _sb
-        .from('users')
-        .select('id, name, role, verification_status')
-        .eq('id', u.id)
-        .maybeSingle();
-
-    if (!mounted) return;
-
-    final row = res ??
-        {
-          'id': u.id,
-          'name': (u.userMetadata?['full_name'] ??
-                   u.userMetadata?['name'] ??
-                   u.email ??
-                   'GoDavao user'),
-          'role': 'passenger',
-          'verification_status': 'unknown',
-        };
-
     setState(() {
-      _user = row;
-      final vs = (row['verification_status'] ?? '').toString().toLowerCase();
-      _verifStatus = (vs == 'verified' || vs == 'approved')
-          ? VerificationStatus.verified
-          : (vs == 'pending')
-              ? VerificationStatus.pending
-              : (vs == 'rejected')
-                  ? VerificationStatus.rejected
-                  : VerificationStatus.unknown;
-      _loading = false;
+      _loading = true;
+      _error = null;
     });
 
-    // latest verification submission (best effort)
-    try {
-      final req = await _sb
-          .from('verification_requests')
-          .select('created_at')
-          .eq('user_id', u.id)
-          .order('created_at', ascending: false)
-          .limit(1)
-          .maybeSingle();
-
-      if (mounted) {
-        setState(() {
-          _verifSubmittedAt = (req?['created_at'] != null)
-              ? DateTime.tryParse(req!['created_at'].toString())
-              : null;
-        });
-      }
-    } catch (_) {/* ignore */}
-
-    // realtime watcher
-    _verifSub?.cancel();
-    _verifSub = _verifSvc.watchStatus(userId: u.id).listen((s) {
+    final u = _sb.auth.currentUser;
+    if (u == null) {
       if (!mounted) return;
-      setState(() => _verifStatus = s);
-    });
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute<void>(builder: (_) => const AuthPage()),
+        (_) => false,
+      );
+      return;
+    }
 
-  } catch (e) {
-    if (!mounted) return;
-    final message = (e is PostgrestException) ? e.message : e.toString();
-    setState(() {
-      _error = 'Profile query failed: $message';
-      _loading = false;
-      _loadingOverview = false;
-    });
-    return;
+    try {
+      // tolerant profile fetch
+      final res =
+          await _sb
+              .from('users')
+              .select('id, name, role, verification_status')
+              .eq('id', u.id)
+              .maybeSingle();
+
+      if (!mounted) return;
+
+      final row =
+          res ??
+          {
+            'id': u.id,
+            'name':
+                (u.userMetadata?['full_name'] ??
+                    u.userMetadata?['name'] ??
+                    u.email ??
+                    'GoDavao user'),
+            'role': 'passenger',
+            'verification_status': 'unknown',
+          };
+
+      setState(() {
+        _user = row;
+        final vs = (row['verification_status'] ?? '').toString().toLowerCase();
+        _verifStatus =
+            (vs == 'verified' || vs == 'approved')
+                ? VerificationStatus.verified
+                : (vs == 'pending')
+                ? VerificationStatus.pending
+                : (vs == 'rejected')
+                ? VerificationStatus.rejected
+                : VerificationStatus.unknown;
+        _loading = false;
+      });
+
+      // latest verification submission (best effort)
+      try {
+        final req =
+            await _sb
+                .from('verification_requests')
+                .select('created_at')
+                .eq('user_id', u.id)
+                .order('created_at', ascending: false)
+                .limit(1)
+                .maybeSingle();
+
+        if (mounted) {
+          setState(() {
+            _verifSubmittedAt =
+                (req?['created_at'] != null)
+                    ? DateTime.tryParse(req!['created_at'].toString())
+                    : null;
+          });
+        }
+      } catch (_) {
+        /* ignore */
+      }
+
+      // realtime watcher
+      _verifSub?.cancel();
+      _verifSub = _verifSvc.watchStatus(userId: u.id).listen((s) {
+        if (!mounted) return;
+        setState(() => _verifStatus = s);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      final message = (e is PostgrestException) ? e.message : e.toString();
+      setState(() {
+        _error = 'Profile query failed: $message';
+        _loading = false;
+        _loadingOverview = false;
+      });
+      return;
+    }
+
+    // Run overview separately so errors here don't show as "profile failed"
+    await _loadOverview();
+
+    // Decide if we show tutorial (after first frame)
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowTutorial());
   }
-
-  // Run overview separately so errors here don't show as "profile failed"
-  await _loadOverview();
-
-  // Decide if we show tutorial (after first frame)
-  WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowTutorial());
-}
-
 
   Future<void> _loadOverview() async {
-  setState(() => _loadingOverview = true);
+    setState(() => _loadingOverview = true);
 
-  final uid = _sb.auth.currentUser?.id;
-  if (uid == null) {
-    if (mounted) setState(() => _loadingOverview = false);
-    return;
-  }
-
-  int len(dynamic res) => (res is List) ? res.length : 0;
-
-  try {
-    final role = (_user?['role'] as String?) ?? 'passenger';
-
-    if (role == 'driver') {
-      final activeRoutes = await _sb
-          .from('driver_routes')
-          .select('id')
-          .eq('driver_id', uid)
-          .eq('is_active', true);
-
-      final pendingReqs = await _sb
-          .from('ride_matches')
-          .select('id')
-          .eq('driver_id', uid)
-          .eq('status', 'pending');
-
-      final vehicles = await _sb
-          .from('vehicles')
-          .select('id')
-          .eq('driver_id', uid);
-
-      if (!mounted) return;
-      setState(() {
-        _driverActiveRoutes = len(activeRoutes);
-        _driverPendingRequests = len(pendingReqs);
-        _vehicleCount = len(vehicles);
-      });
-    } else {
-  // PASSENGER
-  const up = ['pending', 'accepted', 'en_route'];
-  const hist = ['completed', 'declined', 'canceled', 'cancelled'];
-
-  int upcomingCount = 0;
-  int pastCount = 0;
-
-  try {
-    // Pull current-user rides exactly like PassengerMyRidesPage
-    final rows = await _sb
-        .rpc<List<Map<String, dynamic>>>('passenger_rides_for_user')
-        .select('id, effective_status');
-
-    final list = rows;
-    for (final r in list) {
-      final s = (r['effective_status']?.toString() ?? '').toLowerCase();
-      if (up.contains(s)) {
-        upcomingCount++;
-      } else if (hist.contains(s)) {
-        pastCount++;
-      }
+    final uid = _sb.auth.currentUser?.id;
+    if (uid == null) {
+      if (mounted) setState(() => _loadingOverview = false);
+      return;
     }
-  } catch (e) {
-    // OPTIONAL: tiny fallback (still less accurate than RPC)
-    final upRows = await _sb
-        .from('ride_requests')
-        .select('id')
-        .eq('passenger_id', _sb.auth.currentUser!.id)
-        .inFilter('status', up);
-    final hiRows = await _sb
-        .from('ride_requests')
-        .select('id')
-        .eq('passenger_id', _sb.auth.currentUser!.id)
-        .inFilter('status', hist);
-    upcomingCount = upRows.length;
-    pastCount     = hiRows.length;
-  }
 
-  if (!mounted) return;
-  setState(() {
-    _passengerUpcoming = upcomingCount;
-    _passengerHistory  = pastCount;
-  });
-}
+    int len(dynamic res) => (res is List) ? res.length : 0;
 
-    // Trusted contacts (best effort)
     try {
-      final tcs = await _sb
-          .from('trusted_contacts')
-          .select('id')
-          .eq('user_id', uid);
-      if (mounted) setState(() => _trustedCount = len(tcs));
-    } catch (_) {/* ignore */}
+      final role = (_user?['role'] as String?) ?? 'passenger';
 
-  } catch (_) {
-    // swallow overview errors; UI will just show "—"
-  } finally {
-    if (mounted) setState(() => _loadingOverview = false);
+      if (role == 'driver') {
+        final activeRoutes = await _sb
+            .from('driver_routes')
+            .select('id')
+            .eq('driver_id', uid)
+            .eq('is_active', true);
+
+        final pendingReqs = await _sb
+            .from('ride_matches')
+            .select('id')
+            .eq('driver_id', uid)
+            .eq('status', 'pending');
+
+        final vehicles = await _sb
+            .from('vehicles')
+            .select('id')
+            .eq('driver_id', uid);
+
+        if (!mounted) return;
+        setState(() {
+          _driverActiveRoutes = len(activeRoutes);
+          _driverPendingRequests = len(pendingReqs);
+          _vehicleCount = len(vehicles);
+        });
+      } else {
+        // PASSENGER
+        const up = ['pending', 'accepted', 'en_route'];
+        const hist = ['completed', 'declined', 'canceled', 'cancelled'];
+
+        int upcomingCount = 0;
+        int pastCount = 0;
+
+        try {
+          // Pull current-user rides exactly like PassengerMyRidesPage
+          final rows = await _sb
+              .rpc<List<Map<String, dynamic>>>('passenger_rides_for_user')
+              .select('id, effective_status');
+
+          final list = rows;
+          for (final r in list) {
+            final s = (r['effective_status']?.toString() ?? '').toLowerCase();
+            if (up.contains(s)) {
+              upcomingCount++;
+            } else if (hist.contains(s)) {
+              pastCount++;
+            }
+          }
+        } catch (e) {
+          // OPTIONAL: tiny fallback (still less accurate than RPC)
+          final upRows = await _sb
+              .from('ride_requests')
+              .select('id')
+              .eq('passenger_id', _sb.auth.currentUser!.id)
+              .inFilter('status', up);
+          final hiRows = await _sb
+              .from('ride_requests')
+              .select('id')
+              .eq('passenger_id', _sb.auth.currentUser!.id)
+              .inFilter('status', hist);
+          upcomingCount = upRows.length;
+          pastCount = hiRows.length;
+        }
+
+        if (!mounted) return;
+        setState(() {
+          _passengerUpcoming = upcomingCount;
+          _passengerHistory = pastCount;
+        });
+      }
+
+      // Trusted contacts (best effort)
+      try {
+        final tcs = await _sb
+            .from('trusted_contacts')
+            .select('id')
+            .eq('user_id', uid);
+        if (mounted) setState(() => _trustedCount = len(tcs));
+      } catch (_) {
+        /* ignore */
+      }
+    } catch (_) {
+      // swallow overview errors; UI will just show "—"
+    } finally {
+      if (mounted) setState(() => _loadingOverview = false);
+    }
   }
-}
 
   // =========================
   // Tutorial logic
@@ -493,7 +499,9 @@ class _DashboardPageState extends State<DashboardPage> {
                                       _statusText(_verifStatus, role),
                                       maxLines: 3,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium?.copyWith(
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
@@ -550,10 +558,12 @@ class _DashboardPageState extends State<DashboardPage> {
                                     size: 28,
                                   ),
                                   const SizedBox(width: 12),
-                                  const Expanded(
+                                  Expanded(
                                     child: Text(
                                       'Set up trusted contacts so we can notify family or friends during SOS.',
-                                      style: TextStyle(
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium?.copyWith(
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
@@ -596,10 +606,9 @@ class _DashboardPageState extends State<DashboardPage> {
                                       context: context,
                                       isScrollControlled: true,
                                       builder:
-                                          (_) =>
-                                              const VerifyIdentitySheet(
-                                                role: 'driver',
-                                              ),
+                                          (_) => const VerifyIdentitySheet(
+                                            role: 'driver',
+                                          ),
                                     );
                                     _fetch();
                                   },
@@ -618,8 +627,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                       () => Navigator.push(
                                         context,
                                         MaterialPageRoute<void>(
-                                          builder:
-                                              (_) => const VehiclesPage(),
+                                          builder: (_) => const VehiclesPage(),
                                         ),
                                       ),
                                 ),
@@ -638,8 +646,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                       context,
                                       MaterialPageRoute<void>(
                                         builder:
-                                            (_) =>
-                                                const TrustedContactsPage(),
+                                            (_) => const TrustedContactsPage(),
                                       ),
                                     ).then((_) => _loadOverview());
                                   },
@@ -659,8 +666,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                         context,
                                         MaterialPageRoute<void>(
                                           builder:
-                                              (_) =>
-                                                  const PassengerMapPage(),
+                                              (_) => const PassengerMapPage(),
                                         ),
                                       ),
                                 ),
@@ -676,16 +682,16 @@ class _DashboardPageState extends State<DashboardPage> {
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 16,
                                   ),
-                                  child: const SectionHeader(title: 'Next Steps'),
+                                  child: const SectionHeader(
+                                    title: 'Next Steps',
+                                  ),
                                 ),
                                 const SizedBox(height: 8),
                                 Padding(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 16,
                                   ),
-                                  child: Column(
-                                    children: steps,
-                                  ),
+                                  child: Column(children: steps),
                                 ),
                                 const SizedBox(height: 16),
                               ],
@@ -1097,10 +1103,9 @@ class _HeroHeader extends StatelessWidget {
                 backgroundColor: Colors.white,
                 child: Text(
                   name.isNotEmpty ? name[0].toUpperCase() : '?',
-                  style: TextStyle(
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: purpleDark,
                     fontWeight: FontWeight.w800,
-                    fontSize: 20,
                   ),
                 ),
               ),
@@ -1113,9 +1118,7 @@ class _HeroHeader extends StatelessWidget {
                       'Welcome',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.labelLarge?.copyWith(
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
                         color: Colors.white.withValues(alpha: 0.9),
                       ),
                     ),
@@ -1160,7 +1163,7 @@ class _HeroHeader extends StatelessWidget {
                         role.toUpperCase(),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Colors.white,
                           fontWeight: FontWeight.w700,
                         ),
@@ -1234,10 +1237,7 @@ class _NextStepCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
+                Text(title, style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
@@ -1249,10 +1249,7 @@ class _NextStepCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          TextButton(
-            onPressed: onTap,
-            child: Text(cta),
-          ),
+          TextButton(onPressed: onTap, child: Text(cta)),
         ],
       ),
     );
@@ -1320,17 +1317,15 @@ class _ChecklistCard extends StatelessWidget {
                   Icon(
                     i.done ? Icons.check_circle : Icons.radio_button_unchecked,
                     size: 18,
-                    color: i.done ? Colors.green.shade700 : Colors.grey.shade500,
+                    color:
+                        i.done ? Colors.green.shade700 : Colors.grey.shade500,
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       i.label,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color:
-                            i.done
-                                ? Colors.black87
-                                : Colors.grey.shade700,
+                        color: i.done ? Colors.black87 : Colors.grey.shade700,
                       ),
                     ),
                   ),
@@ -1557,7 +1552,7 @@ class _ErrorState extends StatelessWidget {
           child: Text(
             message,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 18),
+            style: Theme.of(context).textTheme.titleMedium,
           ),
         ),
         const SizedBox(height: 20),

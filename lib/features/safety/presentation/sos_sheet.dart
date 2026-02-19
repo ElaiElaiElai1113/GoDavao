@@ -128,9 +128,11 @@ class _SosSheetState extends State<SosSheet> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'Safety Center',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 12),
             const Text(

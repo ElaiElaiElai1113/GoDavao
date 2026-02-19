@@ -67,7 +67,10 @@ class PaymentsService {
             .maybeSingle();
 
     if (p != null && p['status'] == 'requires_capture') {
-      await _sb.rpc<void>('rpc_capture_payment', params: {'p_payment_id': p['id']});
+      await _sb.rpc<void>(
+        'rpc_capture_payment',
+        params: {'p_payment_id': p['id']},
+      );
     }
   }
 
@@ -88,7 +91,10 @@ class PaymentsService {
     if (p != null &&
         (p['status'] == 'requires_capture' ||
             p['status'] == 'requires_payment_method')) {
-      await _sb.rpc<void>('rpc_void_payment', params: {'p_payment_id': p['id']});
+      await _sb.rpc<void>(
+        'rpc_void_payment',
+        params: {'p_payment_id': p['id']},
+      );
     }
   }
 

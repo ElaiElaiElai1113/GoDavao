@@ -56,7 +56,7 @@ class NotificationBell extends StatelessWidget {
                   ),
                   child: Text(
                     '$unread',
-                    style: const TextStyle(
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.white,
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
@@ -83,9 +83,9 @@ class _NotificationsSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
-            title: const Text(
+            title: Text(
               'Notifications',
-              style: TextStyle(fontWeight: FontWeight.w800),
+              style: Theme.of(context).textTheme.titleSmall,
             ),
             trailing: TextButton(
               onPressed: onMarkAll,
@@ -101,7 +101,7 @@ class _NotificationsSheet extends StatelessWidget {
                       child: EmptyStateCard(
                         icon: Icons.notifications_none,
                         title: 'No notifications yet',
-                        subtitle: 'You’re all caught up.',
+                        subtitle: 'Youâ€™re all caught up.',
                       ),
                     )
                     : ListView.separated(
@@ -112,8 +112,15 @@ class _NotificationsSheet extends StatelessWidget {
                         final n = notifs[i];
                         return ListTile(
                           leading: const Icon(Icons.notifications),
-                          title: Text(n['title'] as String? ?? ''),
-                          subtitle: Text(n['body'] as String? ?? ''),
+                          title: Text(
+                            n['title'] as String? ?? '',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          subtitle: Text(
+                            n['body'] as String? ?? '',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: Colors.black54),
+                          ),
                           dense: true,
                         );
                       },

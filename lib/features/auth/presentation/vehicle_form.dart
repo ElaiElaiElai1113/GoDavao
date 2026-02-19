@@ -215,9 +215,10 @@ class _VehicleFormState extends State<VehicleForm> {
                         const SizedBox(height: 16),
                         Row(
                           children: [
-                            const Text(
+                            Text(
                               'Seats',
-                              style: TextStyle(fontWeight: FontWeight.w600),
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
                             ),
                             const SizedBox(width: 12),
                             DropdownButton<int>(
@@ -249,9 +250,11 @@ class _VehicleFormState extends State<VehicleForm> {
                   margin: const EdgeInsets.only(bottom: 16),
                   child: ListTile(
                     contentPadding: const EdgeInsets.all(16),
-                    title: const Text(
+                    title: Text(
                       'Upload OR/CR Document',
-                      style: TextStyle(fontWeight: FontWeight.w600),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     subtitle: Text(
                       _orcrFile == null
@@ -285,12 +288,13 @@ class _VehicleFormState extends State<VehicleForm> {
                                 ),
                               ),
                             )
-                            : const Text(
+                            : Text(
                               'Submit for Verification',
-                              style: TextStyle(
+                              style: Theme.of(
+                                context,
+                              ).textTheme.bodyMedium?.copyWith(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w700,
-                                fontSize: 16,
                               ),
                             ),
                   ),
@@ -298,7 +302,12 @@ class _VehicleFormState extends State<VehicleForm> {
 
                 if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(_error!, style: const TextStyle(color: Colors.red)),
+                  Text(
+                    _error!,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: Colors.red),
+                  ),
                 ],
               ],
             ),
@@ -308,4 +317,3 @@ class _VehicleFormState extends State<VehicleForm> {
     );
   }
 }
-

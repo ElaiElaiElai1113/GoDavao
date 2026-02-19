@@ -140,13 +140,13 @@ class VerificationService {
 
     // 2) Mark user as pending in `users` (source of truth).
     await _sb
-    .from('users')
-    .update({
-      'verification_status': 'pending',
-      'verified_role': roleNorm,
-      'verified_at': null, // ← only set on approval
-    })
-    .eq('id', _userId);
+        .from('users')
+        .update({
+          'verification_status': 'pending',
+          'verified_role': roleNorm,
+          'verified_at': null, // ← only set on approval
+        })
+        .eq('id', _userId);
 
     // 3) Fetch existing request so we can preserve file keys if not re-uploaded.
     final existing =
@@ -175,7 +175,9 @@ class VerificationService {
               ? keepOr(licenseKey, existing?['driver_license_key'] as String?)
               : null,
       'orcr_key':
-          roleNorm == 'driver' ? keepOr(orcrKey, existing?['orcr_key'] as String?) : null,
+          roleNorm == 'driver'
+              ? keepOr(orcrKey, existing?['orcr_key'] as String?)
+              : null,
       'created_at': DateTime.now().toIso8601String(),
     };
 
@@ -307,12 +309,16 @@ class VerificationService {
     final statusText = _statusToText(status);
 
     // 1) Update the user record (source of truth in the app).
-    await _sb.from('users').update({
-  'verification_status': statusText,
-  'verified_at': status == VerificationStatus.verified
-      ? DateTime.now().toIso8601String()
-      : null,
-}).eq('id', userId);
+    await _sb
+        .from('users')
+        .update({
+          'verification_status': statusText,
+          'verified_at':
+              status == VerificationStatus.verified
+                  ? DateTime.now().toIso8601String()
+                  : null,
+        })
+        .eq('id', userId);
 
     // 2) Optionally annotate the latest verification request.
     if (requestId != null) {

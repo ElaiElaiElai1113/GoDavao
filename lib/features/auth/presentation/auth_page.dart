@@ -43,14 +43,23 @@ class _AuthPageState extends State<AuthPage> {
     super.dispose();
   }
 
-  InputDecoration _fieldDecor({String? hint, String? label, Widget? suffix}) {
+  InputDecoration _fieldDecor(
+    BuildContext context, {
+    String? hint,
+    String? label,
+    Widget? suffix,
+  }) {
     return InputDecoration(
       hintText: hint,
       labelText: label,
-      labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
+      labelStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+        color: Colors.white.withValues(alpha: 0.85),
+      ),
       filled: true,
       fillColor: Colors.white.withValues(alpha: 0.15),
-      hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.75)),
+      hintStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+        color: Colors.white.withValues(alpha: 0.75),
+      ),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
@@ -342,8 +351,10 @@ class _AuthPageState extends State<AuthPage> {
                             keyboardType: TextInputType.emailAddress,
                             autofillHints: const [AutofillHints.email],
                             textInputAction: TextInputAction.next,
-                            style: const TextStyle(color: Colors.white),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: Colors.white),
                             decoration: _fieldDecor(
+                              context,
                               label: 'Email',
                               hint: 'you@example.com',
                             ),
@@ -368,8 +379,10 @@ class _AuthPageState extends State<AuthPage> {
                             onFieldSubmitted: (_) {
                               if (_isLogin) _submit();
                             },
-                            style: const TextStyle(color: Colors.white),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: Colors.white),
                             decoration: _fieldDecor(
+                              context,
                               label: 'Password',
                               hint: 'Enter your password',
                               suffix: IconButton(
@@ -399,9 +412,10 @@ class _AuthPageState extends State<AuthPage> {
                             alignment: Alignment.centerRight,
                             child: TextButton(
                               onPressed: _forgotPassword,
-                              child: const Text(
+                              child: Text(
                                 'Forgot Password?',
-                                style: TextStyle(color: Colors.white),
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(color: Colors.white),
                               ),
                             ),
                           ),
@@ -411,8 +425,12 @@ class _AuthPageState extends State<AuthPage> {
                             TextFormField(
                               controller: _nameCtrl,
                               textInputAction: TextInputAction.next,
-                              style: const TextStyle(color: Colors.white),
-                              decoration: _fieldDecor(label: 'Full Name'),
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(color: Colors.white),
+                              decoration: _fieldDecor(
+                                context,
+                                label: 'Full Name',
+                              ),
                               validator:
                                   (v) =>
                                       _isLogin
@@ -426,8 +444,12 @@ class _AuthPageState extends State<AuthPage> {
                               controller: _phoneCtrl,
                               keyboardType: TextInputType.phone,
                               textInputAction: TextInputAction.done,
-                              style: const TextStyle(color: Colors.white),
-                              decoration: _fieldDecor(label: 'Phone Number'),
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(color: Colors.white),
+                              decoration: _fieldDecor(
+                                context,
+                                label: 'Phone Number',
+                              ),
                               validator:
                                   (v) =>
                                       _isLogin
@@ -439,26 +461,33 @@ class _AuthPageState extends State<AuthPage> {
                             const SizedBox(height: 12),
                             DropdownButtonFormField<String>(
                               initialValue: _role,
-                              decoration: _fieldDecor(label: 'Role'),
+                              decoration: _fieldDecor(context, label: 'Role'),
                               dropdownColor: _purpleDark,
                               iconEnabledColor: Colors.white,
                               iconDisabledColor: Colors.white.withValues(
                                 alpha: 0.75,
                               ),
-                              style: const TextStyle(color: Colors.white),
-                              items: const [
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(color: Colors.white),
+                              items: [
                                 DropdownMenuItem(
                                   value: 'passenger',
                                   child: Text(
                                     'Passenger',
-                                    style: TextStyle(color: Colors.white),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(color: Colors.white),
                                   ),
                                 ),
                                 DropdownMenuItem(
                                   value: 'driver',
                                   child: Text(
                                     'Driver',
-                                    style: TextStyle(color: Colors.white),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(color: Colors.white),
                                   ),
                                 ),
                               ],
@@ -492,9 +521,10 @@ class _AuthPageState extends State<AuthPage> {
                                       )
                                       : Text(
                                         _isLogin ? 'Login' : 'Register',
-                                        style: const TextStyle(
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyMedium?.copyWith(
                                           fontWeight: FontWeight.w700,
-                                          fontSize: 16,
                                         ),
                                       ),
                             ),
@@ -506,7 +536,9 @@ class _AuthPageState extends State<AuthPage> {
                             children: [
                               Text(
                                 _isLogin ? 'or ' : 'Already have an account? ',
-                                style: TextStyle(
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.bodySmall?.copyWith(
                                   color: Colors.white.withValues(alpha: 0.85),
                                 ),
                               ),
@@ -515,7 +547,9 @@ class _AuthPageState extends State<AuthPage> {
                                     () => setState(() => _isLogin = !_isLogin),
                                 child: Text(
                                   _isLogin ? 'Register' : 'Login',
-                                  style: const TextStyle(
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.bodyMedium?.copyWith(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w700,
                                   ),
@@ -529,9 +563,8 @@ class _AuthPageState extends State<AuthPage> {
                             Text(
                               _error!,
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Colors.yellowAccent,
-                              ),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: Colors.yellowAccent),
                             ),
                           ],
                           const SizedBox(height: 8),
@@ -548,3 +581,4 @@ class _AuthPageState extends State<AuthPage> {
     );
   }
 }
+

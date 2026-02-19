@@ -127,9 +127,12 @@ class _VehiclesPageState extends State<VehiclesPage> {
             ),
           ),
         ),
-        title: const Text(
+        title: Text(
           'My Vehicles',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
         actionsIconTheme: const IconThemeData(color: Colors.white),
@@ -422,7 +425,7 @@ class _VehicleCardState extends State<_VehicleCard> {
                     children: [
                       Text(
                         title.isEmpty ? 'Vehicle' : title,
-                        style: const TextStyle(
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
                         ),
@@ -430,7 +433,9 @@ class _VehicleCardState extends State<_VehicleCard> {
                       if (subtitle.isNotEmpty)
                         Text(
                           subtitle,
-                          style: TextStyle(
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodyMedium?.copyWith(
                             color: Colors.grey.shade700,
                             fontSize: 13,
                           ),
@@ -449,12 +454,14 @@ class _VehicleCardState extends State<_VehicleCard> {
             if (isDefault) ...[
               const SizedBox(height: 8),
               Row(
-                children: const [
+                children: [
                   Icon(Icons.check_circle, size: 16, color: Colors.green),
                   SizedBox(width: 6),
                   Text(
                     'Default vehicle',
-                    style: TextStyle(color: Colors.green),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: Colors.green),
                   ),
                 ],
               ),
@@ -509,9 +516,9 @@ class _VehicleCardState extends State<_VehicleCard> {
                   children: [
                     const Icon(Icons.folder_open, size: 18, color: _purple),
                     const SizedBox(width: 8),
-                    const Text(
-                      'Documents',
-                      style: TextStyle(
+                    Text(
+                      'Documents & verification',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                         fontSize: 14,
                       ),
@@ -522,9 +529,11 @@ class _VehicleCardState extends State<_VehicleCard> {
                     _DocChip(label: 'CR', hasIt: hasCR),
                   ],
                 ),
-                subtitle: const Text(
+                subtitle: Text(
                   'Replacing a document restarts the review.',
-                  style: TextStyle(fontSize: 12),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontSize: 12),
                 ),
                 expandedAlignment: Alignment.centerLeft,
                 children: [
@@ -551,7 +560,10 @@ class _VehicleCardState extends State<_VehicleCard> {
                   const SizedBox(height: 6),
                   Text(
                     'Tip: use clear, well-lit photos for faster verification.',
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey.shade600,
+                      fontSize: 12,
+                    ),
                   ),
                   const SizedBox(height: 10),
 
@@ -590,7 +602,8 @@ class _DocChip extends StatelessWidget {
   const _DocChip({required this.label, required this.hasIt});
   @override
   Widget build(BuildContext context) {
-    final bg = hasIt ? Colors.green.withValues(alpha: .12) : Colors.grey.shade200;
+    final bg =
+        hasIt ? Colors.green.withValues(alpha: .12) : Colors.grey.shade200;
     final fg = hasIt ? Colors.green.shade700 : Colors.grey.shade700;
     final icon = hasIt ? Icons.check_circle : Icons.error_outline;
     return Container(
@@ -604,7 +617,13 @@ class _DocChip extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: fg),
           const SizedBox(width: 4),
-          Text(label, style: TextStyle(color: fg, fontWeight: FontWeight.w600)),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: fg,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ],
       ),
     );
@@ -659,7 +678,10 @@ class _StatusChip extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             v.$4,
-            style: TextStyle(color: v.$2, fontWeight: FontWeight.w600),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: v.$2,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),
@@ -687,7 +709,12 @@ class _NoteBanner extends StatelessWidget {
           const Icon(Icons.error_outline, color: Colors.red),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(text, style: const TextStyle(color: Colors.red)),
+            child: Text(
+              text,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: Colors.red),
+            ),
           ),
         ],
       ),
@@ -727,7 +754,12 @@ class _DocPreviews extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Preview', style: TextStyle(fontWeight: FontWeight.w700)),
+        Text(
+          'Preview',
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
         const SizedBox(height: 8),
         LayoutBuilder(
           builder: (context, c) {
@@ -768,7 +800,9 @@ class _DocTile extends StatelessWidget {
         child: Center(
           child: Text(
             'No $title uploaded',
-            style: TextStyle(color: Colors.grey.shade600),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade600),
           ),
         ),
       );
@@ -788,7 +822,9 @@ class _DocTile extends StatelessWidget {
             child: Center(
               child: Text(
                 'No $title uploaded',
-                style: TextStyle(color: Colors.grey.shade600),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade600),
               ),
             ),
           );
@@ -877,11 +913,16 @@ class _FullScreenImageViewerState extends State<_FullScreenImageViewer> {
           if (pos == null) return;
 
           const zoom = 2.5;
-          final translation = Matrix4.translationValues(-pos.dx * (zoom - 1), -pos.dy * (zoom - 1), 0.0);
+          final translation = Matrix4.translationValues(
+            -pos.dx * (zoom - 1),
+            -pos.dy * (zoom - 1),
+            0.0,
+          );
           final scaling = Matrix4.diagonal3Values(zoom, zoom, 1.0);
-          final matrix = _controller.value.isIdentity()
-              ? (scaling * translation) as Matrix4
-              : Matrix4.identity();
+          final matrix =
+              _controller.value.isIdentity()
+                  ? (scaling * translation) as Matrix4
+                  : Matrix4.identity();
 
           _controller.value = matrix;
         },
@@ -950,22 +991,29 @@ class _SubmitBlock extends StatelessWidget {
 
     if (approved) {
       return Row(
-        children: const [
+        children: [
           Icon(Icons.verified, size: 16, color: Colors.green),
           SizedBox(width: 6),
-          Text('Approved', style: TextStyle(color: Colors.green)),
+          Text(
+            'Approved',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: Colors.green),
+          ),
         ],
       );
     }
 
     if (pending) {
       return Row(
-        children: const [
+        children: [
           Icon(Icons.hourglass_top, size: 16, color: Colors.orange),
           SizedBox(width: 6),
           Text(
             'Submitted — waiting for review',
-            style: TextStyle(color: Colors.orange),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: Colors.orange),
           ),
         ],
       );
@@ -1000,7 +1048,8 @@ class _Empty extends StatelessWidget {
         EmptyStateCard(
           icon: Icons.directions_car_filled,
           title: 'No vehicles yet',
-          subtitle: 'Add your vehicle and upload OR/CR to start accepting rides.',
+          subtitle:
+              'Add your vehicle and upload OR/CR to start accepting rides.',
           ctaLabel: 'Add a vehicle',
           onCta: onAdd,
         ),
@@ -1092,9 +1141,7 @@ class _EditVehicleSheetState extends State<_EditVehicleSheet> {
     _plate = TextEditingController(text: (v['plate'] ?? '').toString());
     _color = TextEditingController(text: (v['color'] ?? '').toString());
     _year = TextEditingController(text: (v['year'] ?? '').toString());
-    _seats = TextEditingController(
-      text: (v['seats'] ?? 4).toString(),
-    );
+    _seats = TextEditingController(text: (v['seats'] ?? 4).toString());
     _orNumber = TextEditingController(text: (v['or_number'] ?? '').toString());
     _crNumber = TextEditingController(text: (v['cr_number'] ?? '').toString());
   }
@@ -1170,9 +1217,12 @@ class _EditVehicleSheetState extends State<_EditVehicleSheet> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
+                Text(
                   'Edit Vehicle',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 _Section(
@@ -1203,7 +1253,9 @@ class _EditVehicleSheetState extends State<_EditVehicleSheet> {
                         Expanded(
                           child: TextFormField(
                             controller: _year,
-                            decoration: const InputDecoration(labelText: 'Year'),
+                            decoration: const InputDecoration(
+                              labelText: 'Year',
+                            ),
                             keyboardType: TextInputType.number,
                           ),
                         ),
@@ -1337,10 +1389,7 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
       },
     );
     if (source == null) return;
-    final x = await _picker.pickImage(
-      source: source,
-      imageQuality: 85,
-    );
+    final x = await _picker.pickImage(source: source, imageQuality: 85);
     if (x == null) return;
     setState(() => isOR ? _orFile = File(x.path) : _crFile = File(x.path));
   }
@@ -1441,9 +1490,12 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
+                Text(
                   'Add Vehicle',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(height: 12),
 
@@ -1557,7 +1609,10 @@ class _AddVehicleSheetState extends State<_AddVehicleSheet> {
                     const SizedBox(height: 6),
                     Text(
                       'Tip: use clear, well-lit photos for faster verification.',
-                      style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Colors.grey.shade600,
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                 ),
@@ -1611,7 +1666,12 @@ class _Section extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+          Text(
+            title,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
           const SizedBox(height: 4),
           ..._withSpacing(children, 8),
         ],

@@ -100,25 +100,25 @@ class RouteSection extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
         child: Text(
           label,
-          style: const TextStyle(
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
             fontWeight: FontWeight.w800,
-            fontSize: 13,
             color: _purpleDark,
           ),
         ),
       ),
       ...list.map((m) {
         final canOpenRide =
-            m.status == 'accepted' || m.status == 'en_route' || m.status == 'completed';
+            m.status == 'accepted' ||
+            m.status == 'en_route' ||
+            m.status == 'completed';
         final isSelected = routeGroup.selected.contains(m.matchId);
 
         return MatchListTile(
           match: m,
           selectable: selectable,
           selected: selectable ? isSelected : false,
-          onSelect: selectable
-              ? (v) => onToggleSelection?.call(m.matchId)
-              : null,
+          onSelect:
+              selectable ? (v) => onToggleSelection?.call(m.matchId) : null,
           onDecline: onDeclineMatch != null ? () => onDeclineMatch!(m) : null,
           onOpenRide: canOpenRide ? () => onOpenRide?.call(m) : null,
           onChat: onChat != null ? () => onChat!(m) : null,
@@ -160,7 +160,7 @@ class RouteSection extends StatelessWidget {
           leading: const Icon(Icons.alt_route, color: _purple),
           title: Text(
             _routeTitle,
-            style: const TextStyle(
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.w900,
               color: _purpleDark,
             ),
@@ -177,7 +177,10 @@ class RouteSection extends StatelessWidget {
                   text: 'Pending: ${_pending.length}',
                   icon: Icons.hourglass_bottom,
                 ),
-                RidePill(text: 'Accepted: ${_accepted.length}', icon: Icons.check_circle),
+                RidePill(
+                  text: 'Accepted: ${_accepted.length}',
+                  icon: Icons.check_circle,
+                ),
                 RidePill(
                   text: 'En route: ${_enRoute.length}',
                   icon: Icons.directions_car,
@@ -269,7 +272,10 @@ class RouteSection extends StatelessWidget {
                         ),
                         elevation: 3,
                       ),
-                      onPressed: _accepted.isEmpty ? null : () => onStartRoute!(routeGroup),
+                      onPressed:
+                          _accepted.isEmpty
+                              ? null
+                              : () => onStartRoute!(routeGroup),
                     ),
                   if (onCompleteRoute != null)
                     ElevatedButton.icon(
@@ -283,7 +289,10 @@ class RouteSection extends StatelessWidget {
                         ),
                         elevation: 3,
                       ),
-                      onPressed: _enRoute.isEmpty ? null : () => onCompleteRoute!(routeGroup),
+                      onPressed:
+                          _enRoute.isEmpty
+                              ? null
+                              : () => onCompleteRoute!(routeGroup),
                     ),
                 ],
               ),
@@ -300,4 +309,3 @@ class RouteSection extends StatelessWidget {
     );
   }
 }
-

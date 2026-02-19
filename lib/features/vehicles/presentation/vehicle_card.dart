@@ -25,7 +25,7 @@ class VehicleCard extends StatelessWidget {
       if (v.year != null) '${v.year}',
       if (v.seats != null) '${v.seats} seats',
     ];
-    final subtitle = subtitleParts.join(' • ');
+    final subtitle = subtitleParts.join(' â€¢ ');
 
     return Card(
       elevation: 0,
@@ -57,7 +57,7 @@ class VehicleCard extends StatelessWidget {
                       Expanded(
                         child: Text(
                           title,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
+                          style: Theme.of(context).textTheme.titleSmall,
                         ),
                       ),
                       if (v.isPrimary)
@@ -70,9 +70,11 @@ class VehicleCard extends StatelessWidget {
                             color: Colors.blue.shade50,
                             borderRadius: BorderRadius.circular(999),
                           ),
-                          child: const Text(
+                          child: Text(
                             'PRIMARY',
-                            style: TextStyle(
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodySmall?.copyWith(
                               color: Colors.blue,
                               fontWeight: FontWeight.w700,
                               fontSize: 11,
@@ -84,7 +86,12 @@ class VehicleCard extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text(subtitle, style: const TextStyle(color: Colors.black54)),
+                  Text(
+                    subtitle,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: Colors.black54),
+                  ),
                 ],
               ),
             ),

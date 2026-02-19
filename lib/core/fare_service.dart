@@ -12,13 +12,11 @@ enum PricingMode { shared, sharedDistance, groupFlat, pakyaw }
 class SharedPassenger {
   /// Unique identifier for the passenger
   final String id;
+
   /// Distance this passenger travels along the route in kilometers
   final double distanceKm;
 
-  const SharedPassenger({
-    required this.id,
-    required this.distanceKm,
-  });
+  const SharedPassenger({required this.id, required this.distanceKm});
 }
 
 /// Fare calculation rules for GoDavao rides.
@@ -46,31 +44,44 @@ class SharedPassenger {
 class FareRules {
   /// Base starting fare for all rides (₱25)
   final double baseFare;
+
   /// Rate per kilometer traveled (₱14/km)
   final double perKm;
+
   /// Rate per minute of travel time (₱0.80/min)
   final double perMin;
+
   /// Minimum fare regardless of distance (₱70)
   final double minFare;
+
   /// One-time booking fee (₱5)
   final double bookingFee;
+
   /// Additional percentage charge for night rides (15%)
   final double nightSurchargePct;
+
   /// Night surcharge start hour (21:00 / 9 PM)
   final int nightStartHour;
+
   /// Night surcharge end hour (05:00 / 5 AM)
   final int nightEndHour;
+
   /// Platform fee percentage of total fare (15%)
   final double defaultPlatformFeeRate;
+
   /// Minimum surge multiplier during low demand (0.7×)
   final double minSurgeMultiplier;
+
   /// Maximum surge multiplier during high demand (2.0×)
   final double maxSurgeMultiplier;
+
   /// Carpool discounts based on total seats filled
   /// Key = number of seats, Value = discount percentage
   final Map<int, double> carpoolDiscountBySeats;
+
   /// Group flat mode multiplier (1.10×)
   final double groupFlatMultiplier;
+
   /// Pakyaw (private) mode multiplier (1.20×)
   final double pakyawMultiplier;
 
@@ -99,12 +110,16 @@ class FareRules {
 class PassengerFare {
   /// Unique identifier for the passenger
   final String passengerId;
+
   /// Distance this passenger traveled in kilometers
   final double distanceKm;
+
   /// This passenger's share of the route fare (before platform fee)
   final double fareShare;
+
   /// Platform fee for this passenger
   final double platformFee;
+
   /// Total amount this passenger pays (fareShare + platformFee)
   final double total;
 
@@ -132,16 +147,22 @@ class PassengerFare {
 class SharedFareBreakdown {
   /// Total distance of the route in kilometers
   final double totalRouteDistanceKm;
+
   /// Estimated travel time in minutes
   final double durationMin;
+
   /// Total fare collected from all passengers (before platform fees)
   final double totalFare;
+
   /// Total platform fee collected from all passengers
   final double totalPlatformFee;
+
   /// Total driver earnings after platform fees
   final double totalDriverTake;
+
   /// Individual fare breakdown for each passenger
   final List<PassengerFare> passengerFares;
+
   /// Pricing mode used (should be [PricingMode.sharedDistance])
   final PricingMode mode;
 
@@ -388,9 +409,10 @@ class FareService {
 
     for (final passenger in passengers) {
       // Calculate this passenger's share of the route fare
-      final distanceShare = totalPassengerKm > 0
-          ? (passenger.distanceKm / totalPassengerKm)
-          : (1.0 / passengers.length);
+      final distanceShare =
+          totalPassengerKm > 0
+              ? (passenger.distanceKm / totalPassengerKm)
+              : (1.0 / passengers.length);
 
       final fareShare = baseFareBreakdown.total * distanceShare;
       final pTotal = _roundPeso(fareShare);
@@ -413,13 +435,15 @@ class FareService {
       );
       final fareShare = _round2(pTotal - pFee);
 
-      passengerFares.add(PassengerFare(
-        passengerId: passenger.id,
-        distanceKm: passenger.distanceKm,
-        fareShare: fareShare,
-        platformFee: pFee,
-        total: pTotal,
-      ));
+      passengerFares.add(
+        PassengerFare(
+          passengerId: passenger.id,
+          distanceKm: passenger.distanceKm,
+          fareShare: fareShare,
+          platformFee: pFee,
+          total: pTotal,
+        ),
+      );
 
       totalFare += pTotal;
       totalPlatformFee += pFee;

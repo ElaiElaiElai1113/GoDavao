@@ -49,7 +49,10 @@ class _ConversationsListState extends State<ConversationsList> {
               unread > 0
                   ? CircleAvatar(
                     radius: 10,
-                    child: Text('$unread', style: TextStyle(fontSize: 12)),
+                    child: Text(
+                      '$unread',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                   )
                   : null,
           onTap: () {

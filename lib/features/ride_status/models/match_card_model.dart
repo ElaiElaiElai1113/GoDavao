@@ -54,12 +54,10 @@ class MatchCard {
       destLng != null;
 
   /// Get pickup coordinate as LatLng
-  LatLng? get pickup =>
-      hasCoords ? LatLng(pickupLat!, pickupLng!) : null;
+  LatLng? get pickup => hasCoords ? LatLng(pickupLat!, pickupLng!) : null;
 
   /// Get destination coordinate as LatLng
-  LatLng? get destination =>
-      hasCoords ? LatLng(destLat!, destLng!) : null;
+  LatLng? get destination => hasCoords ? LatLng(destLat!, destLng!) : null;
 
   /// Whether this match is in pending state
   bool get isPending => status == 'pending';
@@ -75,9 +73,7 @@ class MatchCard {
 
   /// Whether this match is declined or cancelled
   bool get isFailed =>
-      status == 'declined' ||
-      status == 'cancelled' ||
-      status == 'canceled';
+      status == 'declined' || status == 'cancelled' || status == 'canceled';
 
   /// Create a copy with updated fields
   MatchCard copyWith({
@@ -129,7 +125,9 @@ class MatchCard {
       rideRequestId: row['ride_request_id'] as String? ?? '',
       driverRouteId: row['driver_route_id'] as String?,
       status: row['status'] as String? ?? 'pending',
-      createdAt: DateTime.parse(row['created_at'] as String? ?? DateTime.now().toIso8601String()),
+      createdAt: DateTime.parse(
+        row['created_at'] as String? ?? DateTime.now().toIso8601String(),
+      ),
       passengerName: row['passenger_name'] as String? ?? 'Passenger',
       pickupAddress: row['pickup_address'] as String? ?? '',
       destinationAddress: row['destination_address'] as String? ?? '',

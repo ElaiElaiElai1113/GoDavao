@@ -58,18 +58,12 @@ sealed class Result<S, F> {
 
   /// Returns the success value or a default value if this is a failure
   S getOrElse(S Function(F failure) defaultValue) {
-    return when(
-      success: (value) => value,
-      failure: defaultValue,
-    );
+    return when(success: (value) => value, failure: defaultValue);
   }
 
   /// Returns the success value or null if this is a failure
   S? getOrNull() {
-    return when(
-      success: (value) => value,
-      failure: (_) => null,
-    );
+    return when(success: (value) => value, failure: (_) => null);
   }
 }
 
@@ -132,19 +126,13 @@ extension ResultExtensions<S, F> on Result<S, F> {
 
   /// Executes a side effect for success values
   Result<S, F> onSuccess(void Function(S success) effect) {
-    when(
-      success: effect,
-      failure: (_) {},
-    );
+    when(success: effect, failure: (_) {});
     return this;
   }
 
   /// Executes a side effect for failure values
   Result<S, F> onFailure(void Function(F failure) effect) {
-    when(
-      success: (_) {},
-      failure: effect,
-    );
+    when(success: (_) {}, failure: effect);
     return this;
   }
 

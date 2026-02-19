@@ -71,19 +71,25 @@ class AppTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.purple,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           side: const BorderSide(color: AppColors.purple),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         ),
       ),
@@ -96,13 +102,41 @@ class AppTheme {
 
   static TextTheme _textTheme(TextTheme base) {
     return base.copyWith(
-      titleLarge: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.black87),
-      titleMedium: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.black87),
-      titleSmall: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black87),
-      bodyLarge: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black87),
-      bodyMedium: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.black87),
-      bodySmall: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.black87),
-      labelLarge: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.black87),
+      titleLarge: const TextStyle(
+        fontSize: 22,
+        fontWeight: FontWeight.w800,
+        color: Colors.black87,
+      ),
+      titleMedium: const TextStyle(
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+        color: Colors.black87,
+      ),
+      titleSmall: const TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.w700,
+        color: Colors.black87,
+      ),
+      bodyLarge: const TextStyle(
+        fontSize: 15,
+        fontWeight: FontWeight.w600,
+        color: Colors.black87,
+      ),
+      bodyMedium: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        color: Colors.black87,
+      ),
+      bodySmall: const TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        color: Colors.black87,
+      ),
+      labelLarge: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w700,
+        color: Colors.black87,
+      ),
     );
   }
 }

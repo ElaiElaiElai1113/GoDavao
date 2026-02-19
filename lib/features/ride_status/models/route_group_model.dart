@@ -35,25 +35,21 @@ class RouteGroup {
   List<MatchCard> get completed => byStatus('completed');
 
   /// Get all failed rides (declined, cancelled)
-  List<MatchCard> get failed =>
-      items.where((m) => m.isFailed).toList();
+  List<MatchCard> get failed => items.where((m) => m.isFailed).toList();
 
   /// Calculate total seats from accepted matches
-  int get acceptedSeats =>
-      accepted.fold(0, (sum, m) => sum + (m.pax));
+  int get acceptedSeats => accepted.fold(0, (sum, m) => sum + (m.pax));
 
   /// Calculate total seats from pending matches that are selected
-  int get pendingSeatsSelected =>
-      items
-          .where((m) => selected.contains(m.matchId) && m.isPending)
-          .fold<int>(0, (sum, m) => sum + m.pax);
+  int get pendingSeatsSelected => items
+      .where((m) => selected.contains(m.matchId) && m.isPending)
+      .fold<int>(0, (sum, m) => sum + m.pax);
 
   /// Calculate total seats used (accepted + selected pending)
   int get totalUsedSeats => acceptedSeats + pendingSeatsSelected;
 
   /// Calculate available seats
-  int get availableSeats =>
-      (capacityTotal ?? 0) - totalUsedSeats;
+  int get availableSeats => (capacityTotal ?? 0) - totalUsedSeats;
 
   /// Check if route has capacity for additional seats
   bool hasCapacityFor(int seats) => availableSeats >= seats;
@@ -132,7 +128,10 @@ class RouteGroup {
     return RouteGroup(
       routeId: routeId,
       routeName: routeName,
-      items: items.map((m) => m.matchId == updatedMatch.matchId ? updatedMatch : m).toList(),
+      items:
+          items
+              .map((m) => m.matchId == updatedMatch.matchId ? updatedMatch : m)
+              .toList(),
       capacityTotal: capacityTotal,
       capacityAvailable: capacityAvailable,
       selected: selected,
@@ -140,10 +139,7 @@ class RouteGroup {
   }
 
   /// Update capacity information
-  RouteGroup updateCapacity({
-    int? total,
-    int? available,
-  }) {
+  RouteGroup updateCapacity({int? total, int? available}) {
     return RouteGroup(
       routeId: routeId,
       routeName: routeName,
@@ -187,10 +183,12 @@ extension RouteGroupListExtension on List<RouteGroup> {
   int get totalItems => fold(0, (count, group) => count + group.itemCount);
 
   /// Count pending items across all groups
-  int get totalPending => fold(0, (count, group) => count + group.pending.length);
+  int get totalPending =>
+      fold(0, (count, group) => count + group.pending.length);
 
   /// Count accepted items across all groups
-  int get totalAccepted => fold(0, (count, group) => count + group.accepted.length);
+  int get totalAccepted =>
+      fold(0, (count, group) => count + group.accepted.length);
 
   /// Get group by route ID
   RouteGroup? getByRouteId(String routeId) {
