@@ -52,10 +52,9 @@ class _PrivacyDisclaimerPageState extends State<PrivacyDisclaimerPage> {
               const SizedBox(height: 12),
               Text(
                 title,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 18,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 12),
               Flexible(
@@ -117,10 +116,9 @@ class _PrivacyDisclaimerPageState extends State<PrivacyDisclaimerPage> {
                     backgroundColor: Colors.white,
                     child: Text(
                       'G',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         color: _purpleDark,
                         fontWeight: FontWeight.w900,
-                        fontSize: 22,
                       ),
                     ),
                   ),
@@ -166,12 +164,8 @@ class _PrivacyDisclaimerPageState extends State<PrivacyDisclaimerPage> {
                       children: [
                         Text(
                           'Terms & Privacy',
-                          style: Theme.of(
-                            context,
-                          ).textTheme.bodyMedium?.copyWith(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                          ),
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: 10),
                         Text(
@@ -297,9 +291,9 @@ class _Bullet extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(height: 1.5),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                height: 1.5,
+              ),
             ),
           ),
         ],

@@ -47,33 +47,32 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
     final v = r[key];
     if (v == null) return DateTime.fromMillisecondsSinceEpoch(0);
     if (v is DateTime) return v;
-    return DateTime.tryParse(v.toString()) ??
-        DateTime.fromMillisecondsSinceEpoch(0);
+    return DateTime.tryParse(v.toString()) ?? DateTime.fromMillisecondsSinceEpoch(0);
   }
 
   Future<Set<String>> _fetchBlockedRouteIds() async {
     // Routes that currently have accepted or en_route ride matches
     try {
-      // If you have an unrestricted view, prefer it:
-      // final rows = await sb.from('ride_matches_v')
-      //   .select('route_id, status')
-      //   .inFilter('status', ['accepted','en_route']);
+    // If you have an unrestricted view, prefer it:
+    // final rows = await sb.from('ride_matches_v')
+    //   .select('route_id, status')
+    //   .inFilter('status', ['accepted','en_route']);
 
-      // Otherwise, query the base table:
-      final rows = await sb
-          .from('ride_matches')
-          .select('route_id, status')
-          .inFilter('status', ['accepted', 'en_route']);
+    // Otherwise, query the base table:
+    final rows = await sb
+        .from('ride_matches')
+        .select('route_id, status')
+        .inFilter('status', ['accepted', 'en_route']);
 
-      return <String>{
-        for (final r in (rows as List))
-          if (r['route_id'] != null) r['route_id'].toString(),
-      };
-    } catch (e) {
-      // If RLS blocks us or any other error occurs, don’t kill the UI.
-      debugPrint('ride_matches fetch failed, continuing without block: $e');
-      return const <String>{};
-    }
+    return <String>{
+      for (final r in (rows as List))
+        if (r['route_id'] != null) r['route_id'].toString(),
+    };
+  } catch (e) {
+    // If RLS blocks us or any other error occurs, don’t kill the UI.
+    debugPrint('ride_matches fetch failed, continuing without block: $e');
+    return const <String>{};
+  }
   }
 
   // ---------- Bootstrap ----------
@@ -124,17 +123,16 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
     // Realtime: whenever routes change, refresh and re-tag blocked routes
     _sub?.cancel();
     _sub = sb
-        .from('driver_routes')
-        .stream(primaryKey: ['id'])
-        .eq('driver_id', sb.auth.currentUser!.id)
-        .listen((rows) async {
-          final blocked =
-              await _fetchBlockedRouteIds(); // returns empty set on failure
-          await _ingest(
-            rows.map((e) => Map<String, dynamic>.from(e)).toList(),
-            blockedRouteIds: blocked,
-          );
-        });
+    .from('driver_routes')
+    .stream(primaryKey: ['id'])
+    .eq('driver_id', sb.auth.currentUser!.id)
+    .listen((rows) async {
+      final blocked = await _fetchBlockedRouteIds(); // returns empty set on failure
+      await _ingest(
+        rows.map((e) => Map<String, dynamic>.from(e)).toList(),
+        blockedRouteIds: blocked,
+      );
+    });
   }
 
   // ---------- Ingest + sort ----------
@@ -205,20 +203,12 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
     } on PostgrestException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            e.message.isNotEmpty
-                ? e.message
-                : 'Cannot change route status right now.',
-          ),
-        ),
+        SnackBar(content: Text(e.message.isNotEmpty ? e.message : 'Cannot change route status right now.')),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Something went wrong changing route status.'),
-        ),
+        const SnackBar(content: Text('Something went wrong changing route status.')),
       );
     } finally {
       if (mounted) setState(() => _working = false);
@@ -228,20 +218,12 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
   // ---------- UI ----------
   Widget _card(Map<String, dynamic> r) {
     final id = r['id'].toString();
-    final start =
-        (r['start_lat'] != null && r['start_lng'] != null)
-            ? LatLng(
-              (r['start_lat'] as num).toDouble(),
-              (r['start_lng'] as num).toDouble(),
-            )
-            : null;
-    final end =
-        (r['end_lat'] != null && r['end_lng'] != null)
-            ? LatLng(
-              (r['end_lat'] as num).toDouble(),
-              (r['end_lng'] as num).toDouble(),
-            )
-            : null;
+    final start = (r['start_lat'] != null && r['start_lng'] != null)
+        ? LatLng((r['start_lat'] as num).toDouble(), (r['start_lng'] as num).toDouble())
+        : null;
+    final end = (r['end_lat'] != null && r['end_lng'] != null)
+        ? LatLng((r['end_lat'] as num).toDouble(), (r['end_lng'] as num).toDouble())
+        : null;
 
     final isActive = (r['is_active'] as bool?) ?? true;
     final hasActiveRide = (r['has_active_ride'] as bool?) ?? false;
@@ -272,14 +254,7 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
                     future: fetchOsrmRoute(start: start, end: end),
                     builder: (_, snap) {
                       final lines = <Polyline>[
-                        if (snap.hasData)
-                          snap.data!
-                        else
-                          Polyline(
-                            points: [start, end],
-                            strokeWidth: 3,
-                            color: _purple,
-                          ),
+                        if (snap.hasData) snap.data! else Polyline(points: [start, end], strokeWidth: 3, color: _purple),
                       ];
                       return FlutterMap(
                         options: MapOptions(
@@ -288,38 +263,19 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
                             (start.longitude + end.longitude) / 2,
                           ),
                           initialZoom: 12.5,
-                          interactionOptions: const InteractionOptions(
-                            flags: InteractiveFlag.none,
-                          ),
+                          interactionOptions: const InteractionOptions(flags: InteractiveFlag.none),
                         ),
                         children: [
                           TileLayer(
-                            urlTemplate:
-                                'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                             subdomains: const ['a', 'b', 'c'],
                             userAgentPackageName: 'com.godavao.app',
                           ),
                           PolylineLayer(polylines: lines),
                           MarkerLayer(
                             markers: [
-                              Marker(
-                                point: start,
-                                width: 26,
-                                height: 26,
-                                child: const Icon(
-                                  Icons.location_on,
-                                  color: Colors.green,
-                                ),
-                              ),
-                              Marker(
-                                point: end,
-                                width: 26,
-                                height: 26,
-                                child: const Icon(
-                                  Icons.flag,
-                                  color: Colors.red,
-                                ),
-                              ),
+                              Marker(point: start, width: 26, height: 26, child: const Icon(Icons.location_on, color: Colors.green)),
+                              Marker(point: end, width: 26, height: 26, child: const Icon(Icons.flag, color: Colors.red)),
                             ],
                           ),
                         ],
@@ -333,36 +289,27 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
               children: [
                 Expanded(
                   child: Text(
-                    (r['name'] as String?)?.trim().isNotEmpty == true
-                        ? r['name'] as String
-                        : 'Route ${id.substring(0, 8)}',
+                    (r['name'] as String?)?.trim().isNotEmpty == true ? r['name'] as String : 'Route ${id.substring(0, 8)}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w800,
-                      fontSize: 16,
                       color: Colors.black87,
                     ),
                   ),
                 ),
                 const SizedBox(width: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: (isActive ? Colors.green : Colors.red).withValues(
-                      alpha: 0.1,
-                    ),
+                    color: (isActive ? Colors.green : Colors.red).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
                     isActive ? 'ACTIVE' : 'INACTIVE',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: isActive ? Colors.green : Colors.red,
                       fontWeight: FontWeight.w800,
-                      fontSize: 12,
                     ),
                   ),
                 ),
@@ -375,23 +322,16 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
               overflow: TextOverflow.ellipsis,
               style: Theme.of(
                 context,
-              ).textTheme.bodyMedium?.copyWith(color: Colors.black54),
+              ).textTheme.bodySmall?.copyWith(color: Colors.black54),
             ),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
-                _chip(
-                  'Seats ${r['capacity_available'] ?? '-'} / ${r['capacity_total'] ?? '-'}',
-                  Icons.event_seat,
-                ),
-                if (vehicleText.isNotEmpty)
-                  _chip(vehicleText, Icons.directions_car),
-                _chip(
-                  (r['route_mode'] ?? 'osrm').toString().toUpperCase(),
-                  Icons.alt_route,
-                ),
+                _chip('Seats ${r['capacity_available'] ?? '-'} / ${r['capacity_total'] ?? '-'}', Icons.event_seat),
+                if (vehicleText.isNotEmpty) _chip(vehicleText, Icons.directions_car),
+                _chip((r['route_mode'] ?? 'osrm').toString().toUpperCase(), Icons.alt_route),
               ],
             ),
             const SizedBox(height: 12),
@@ -402,18 +342,15 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
                   child: _primary(
                     label: isActive ? 'Deactivate' : 'Activate',
                     icon: Icons.power_settings_new,
-                    onPressed:
-                        (hasActiveRide && isActive)
-                            ? () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'You have an accepted or ongoing ride. Complete/cancel it before deactivating this route.',
-                                  ),
-                                ),
-                              );
-                            }
-                            : () => _toggleActive(id, !isActive),
+                    onPressed: (hasActiveRide && isActive)
+                        ? () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('You have an accepted or ongoing ride. Complete/cancel it before deactivating this route.'),
+                              ),
+                            );
+                          }
+                        : () => _toggleActive(id, !isActive),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -425,9 +362,7 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
                     onPressed: () async {
                       final updated = await Navigator.push<bool>(
                         context,
-                        MaterialPageRoute<bool>(
-                          builder: (_) => DriverRouteEditPage(routeId: id),
-                        ),
+                        MaterialPageRoute<bool>(builder: (_) => DriverRouteEditPage(routeId: id)),
                       );
                       if (updated == true && mounted) {
                         await _bootstrap();
@@ -458,9 +393,8 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
           const SizedBox(width: 6),
           Text(
             text,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
               fontWeight: FontWeight.w700,
-              fontSize: 12,
               color: Colors.black87,
             ),
           ),
@@ -482,7 +416,7 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
         label: Text(
           label,
           overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
             color: Colors.white,
             fontWeight: FontWeight.w800,
           ),
@@ -496,11 +430,7 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
     return AppBar(
       flexibleSpace: Container(
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [_purple.withValues(alpha: 0.4), Colors.transparent],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
+          gradient: LinearGradient(colors: [_purple.withValues(alpha: 0.4), Colors.transparent], begin: Alignment.topCenter, end: Alignment.bottomCenter),
         ),
       ),
       backgroundColor: const Color.fromARGB(3, 0, 0, 0),
@@ -513,21 +443,16 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
         child: CircleAvatar(
           backgroundColor: Colors.white.withValues(alpha: 0.9),
           child: IconButton(
-            icon: const Icon(
-              Icons.arrow_back_ios_new,
-              color: _purple,
-              size: 18,
-            ),
+            icon: const Icon(Icons.arrow_back_ios_new, color: _purple, size: 18),
             onPressed: () => Navigator.pop(context),
           ),
         ),
       ),
       title: Text(
         'My Routes',
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(
           fontWeight: FontWeight.w700,
           color: _purpleDark,
-          fontSize: 18,
         ),
       ),
     );
@@ -536,17 +461,11 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return Scaffold(
-        appBar: _buildAppBar(),
-        body: const Center(child: CircularProgressIndicator()),
-      );
+      return Scaffold(appBar: _buildAppBar(), body: const Center(child: CircularProgressIndicator()));
     }
 
     if (_error != null) {
-      return Scaffold(
-        appBar: _buildAppBar(),
-        body: Center(child: Text(_error!)),
-      );
+      return Scaffold(appBar: _buildAppBar(), body: Center(child: Text(_error!)));
     }
 
     if (_routes.isEmpty) {
@@ -583,4 +502,3 @@ class _DriverRoutesListTabState extends State<DriverRoutesListTab> {
     );
   }
 }
-

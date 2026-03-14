@@ -65,10 +65,11 @@ class HowItWorksPage extends StatelessWidget {
           children: [
             _hero(context),
             const SizedBox(height: 12),
-            Text('GoDavao makes carpooling simple and safe. Here’s the journey from request to drop-off:',
+            Text(
+              'GoDavao makes carpooling simple and safe. Here’s the journey from request to drop-off:',
               style: Theme.of(
                 context,
-              ).textTheme.bodySmall?.copyWith(color: _textDim, height: 1.35),
+              ).textTheme.bodyMedium?.copyWith(color: _textDim, height: 1.35),
             ),
             const SizedBox(height: 12),
             for (int i = 0; i < steps.length; i++)
@@ -88,9 +89,7 @@ class HowItWorksPage extends StatelessWidget {
                 onPressed: () {
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => const DashboardPage(),
-                    ),
+                    MaterialPageRoute<void>(builder: (_) => const DashboardPage()),
                   );
                 },
                 icon: const Icon(
@@ -99,10 +98,9 @@ class HowItWorksPage extends StatelessWidget {
                 ),
                 label: Text(
                   'Start using GoDavao',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: Colors.white,
                     fontWeight: FontWeight.w700,
-                    fontSize: 16,
                   ),
                 ),
               ),
@@ -142,9 +140,9 @@ class HowItWorksPage extends StatelessWidget {
           Expanded(
             child: Text(
               'Welcome to GoDavao! Find a ride that fits your route, save money, and reduce traffic—together.',
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -178,14 +176,14 @@ class HowItWorksPage extends StatelessWidget {
                   title,
                   style: Theme.of(
                     context,
-                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   text,
                   style: Theme.of(
                     context,
-                  ).textTheme.bodyMedium?.copyWith(color: _textDim),
+                  ).textTheme.bodySmall?.copyWith(color: _textDim),
                 ),
               ],
             ),
@@ -245,7 +243,7 @@ class _StepCard extends StatelessWidget {
             alignment: Alignment.center,
             child: Text(
               '$index',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w800,
                 color: _purple,
               ),
@@ -266,14 +264,16 @@ class _StepCard extends StatelessWidget {
                     children: [
                       Text(
                         info.title,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w800,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         info.desc,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(
                           color: _textDim,
                           height: 1.35,
                         ),
@@ -289,8 +289,3 @@ class _StepCard extends StatelessWidget {
     );
   }
 }
-
-
-
-
-

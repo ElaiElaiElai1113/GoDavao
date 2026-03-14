@@ -516,9 +516,7 @@ class _VehicleFormState extends State<VehicleForm> {
                                     )
                                     : Text(
                                       'Submit for Verification',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodyMedium?.copyWith(
+                                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
                                         color: Colors.white,
                                         fontWeight: FontWeight.w700,
                                       ),

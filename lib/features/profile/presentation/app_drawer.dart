@@ -86,11 +86,8 @@ class AppDrawer extends StatelessWidget {
                                       name,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodyMedium?.copyWith(
+                                      style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
                                         fontWeight: FontWeight.w700,
-                                        fontSize: 18,
                                         color: Colors.white,
                                       ),
                                     ),
@@ -99,13 +96,8 @@ class AppDrawer extends StatelessWidget {
                                         email,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodyMedium?.copyWith(
-                                          color: Colors.white.withValues(
-                                            alpha: 0.85,
-                                          ),
-                                          fontSize: 12.5,
+                                        style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                                          color: Colors.white.withValues(alpha: 0.85),
                                         ),
                                       ),
                                     const SizedBox(height: 8),
@@ -118,16 +110,13 @@ class AppDrawer extends StatelessWidget {
                                         children: [
                                           // verification chip
                                           _chip(
-                                            context: context,
                                             label:
                                                 (verification == 'approved' ||
                                                         verification ==
                                                             'verified')
                                                     ? 'Verified'
                                                     : 'Unverified',
-                                            bg: Colors.white.withValues(
-                                              alpha: 0.18,
-                                            ),
+                                            bg: Colors.white.withValues(alpha: 0.18),
                                             fg: Colors.white,
                                             icon:
                                                 (verification == 'approved' ||
@@ -140,7 +129,6 @@ class AppDrawer extends StatelessWidget {
                                           // admin chip
                                           if (isAdmin)
                                             _chip(
-                                              context: context,
                                               label: 'Admin',
                                               bg: Colors.white.withValues(
                                                 alpha: 0.18,
@@ -224,9 +212,8 @@ class AppDrawer extends StatelessWidget {
                   child: ListView(
                     padding: EdgeInsets.zero,
                     children: [
-                      _sectionTitle(context, "General"),
+                      _sectionTitle("General"),
                       _item(
-                        context: context,
                         icon: Icons.dashboard,
                         label: 'Dashboard',
                         subtitle: 'View map, routes, and requests',
@@ -242,7 +229,6 @@ class AppDrawer extends StatelessWidget {
                         },
                       ),
                       _item(
-                        context: context,
                         icon: Icons.history,
                         label: 'Booking History',
                         subtitle: 'See past and current rides',
@@ -259,9 +245,8 @@ class AppDrawer extends StatelessWidget {
 
                       const Divider(height: 24),
 
-                      _sectionTitle(context, "Account"),
+                      _sectionTitle("Account"),
                       _item(
-                        context: context,
                         icon: Icons.help_outline,
                         label: 'How it works',
                         subtitle: 'Short guide to get started',
@@ -276,7 +261,6 @@ class AppDrawer extends StatelessWidget {
                         },
                       ),
                       _item(
-                        context: context,
                         icon: Icons.person_outline,
                         label: 'View Profile',
                         subtitle: 'Edit name, email, phone',
@@ -294,7 +278,6 @@ class AppDrawer extends StatelessWidget {
                       // 👇 NEW: My ratings & feedback
                       if (uid != null)
                         _item(
-                          context: context,
                           icon: Icons.star_rate_rounded,
                           label: 'My ratings & feedback',
                           subtitle: 'See how other users rated you',
@@ -319,9 +302,8 @@ class AppDrawer extends StatelessWidget {
 
                       if (isAdmin) ...[
                         const Divider(height: 24),
-                        _sectionTitle(context, "Admin"),
+                        _sectionTitle("Admin"),
                         _item(
-                          context: context,
                           icon: Icons.admin_panel_settings,
                           label: 'Admin Panel',
                           subtitle: 'Manage verification & reports',
@@ -351,16 +333,16 @@ class AppDrawer extends StatelessWidget {
                     leading: const Icon(Icons.logout, color: Colors.red),
                     title: Text(
                       'Logout',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         color: Colors.red,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                     subtitle: Text(
                       'Sign out of your account',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodySmall?.copyWith(color: _textDim),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: _textDim,
+                      ),
                     ),
                     onTap: () async {
                       final nav = Navigator.of(context);
@@ -373,9 +355,7 @@ class AppDrawer extends StatelessWidget {
                       } catch (_) {}
                       if (!context.mounted) return;
                       nav.pushAndRemoveUntil(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const AuthPage(),
-                        ),
+                        MaterialPageRoute<void>(builder: (_) => const AuthPage()),
                         (route) => false,
                       );
                     },
@@ -393,7 +373,6 @@ class AppDrawer extends StatelessWidget {
   // ─────────────────── helpers ───────────────────
 
   static Widget _chip({
-    required BuildContext context,
     required String label,
     required Color bg,
     required Color fg,
@@ -412,7 +391,7 @@ class AppDrawer extends StatelessWidget {
           if (icon != null) const SizedBox(width: 4),
           Text(
             label,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            style: TextStyle(
               color: fg,
               fontSize: 11.5,
               fontWeight: FontWeight.w600,
@@ -453,8 +432,7 @@ class AppDrawer extends StatelessWidget {
               const SizedBox(height: 6),
               Text(
                 label,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontSize: 12.5,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   fontWeight: FontWeight.w600,
                   color: _textDim,
                 ),
@@ -466,22 +444,23 @@ class AppDrawer extends StatelessWidget {
     );
   }
 
-  Widget _sectionTitle(BuildContext context, String title) {
+  Widget _sectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-          fontWeight: FontWeight.w800,
-          color: _purpleDark,
-          letterSpacing: 0.2,
+      child: Builder(
+        builder: (context) => Text(
+          title,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: _purpleDark,
+            letterSpacing: 0.2,
+          ),
         ),
       ),
     );
   }
 
   Widget _item({
-    required BuildContext context,
     required IconData icon,
     required String label,
     required VoidCallback onTap,
@@ -503,21 +482,24 @@ class AppDrawer extends StatelessWidget {
           size: 20,
         ),
       ),
-      title: Text(
-        label,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-          fontSize: 16,
-          fontWeight: highlight ? FontWeight.w700 : FontWeight.w600,
-          color: highlight ? _purple : Colors.black87,
+      title: Builder(
+        builder: (context) => Text(
+          label,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: highlight ? FontWeight.w700 : FontWeight.w600,
+            color: highlight ? _purple : Colors.black87,
+          ),
         ),
       ),
       subtitle:
           subtitle != null
-              ? Text(
-                subtitle,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: _textDim),
+              ? Builder(
+                builder: (context) => Text(
+                  subtitle,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: _textDim,
+                  ),
+                ),
               )
               : null,
       onTap: onTap,
@@ -553,4 +535,3 @@ class _HeaderSkeleton extends StatelessWidget {
     );
   }
 }
-

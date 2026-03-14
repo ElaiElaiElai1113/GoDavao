@@ -517,10 +517,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         ),
         title: Text(
           'Confirm Ride',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
             color: Colors.black87,
-            fontWeight: FontWeight.bold,
-            fontSize: 18,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ),
@@ -557,7 +556,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 ),
                 child: Text(
                   _error!,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.amber.shade900),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.amber.shade900),
                 ),
               ),
             ),
@@ -636,8 +637,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                     : _groupFlat
                     ? 'Confirm Group • ${_peso(fareTotal)}'
                     : 'Confirm • ${_peso(fareTotal)}',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontSize: 16,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
                   fontWeight: FontWeight.w600,
                   color: Colors.white,
                 ),
@@ -747,7 +747,6 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 Text(
                   'Driver rating',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontSize: 14,
                     color: Colors.grey.shade700,
                     fontWeight: FontWeight.w600,
                   ),
@@ -797,7 +796,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
               children: [
                 Text(
                   'Driver rating',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700, fontSize: 15),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 4),
                 Row(
@@ -807,14 +808,15 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                     const SizedBox(width: 6),
                     Text(
                       (_driverRating ?? 0).toStringAsFixed(1),
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(width: 4),
                     Text(
                       '($_driverRatingCount)',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Colors.grey.shade600,
-                        fontSize: 12,
                       ),
                     ),
                   ],
@@ -822,7 +824,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 const SizedBox(height: 2),
                 Text(
                   'Tap to view feedback',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade500, fontSize: 11),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Colors.grey.shade500,
+                  ),
                 ),
               ],
             ),
@@ -867,7 +871,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
           if (_pakyaw)
             Text(
               'Whole vehicle reserved. Discount tier uses your reserved seats.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12, color: Colors.grey.shade600),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade600),
             ),
         ],
       ),
@@ -892,7 +898,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                   maxLines: 2,
                   softWrap: true,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 16, fontWeight: FontWeight.w600),
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -900,8 +908,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 fit: BoxFit.scaleDown,
                 child: Text(
                   'Available: $capAvail / $capTotal',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontSize: 13,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color:
                         capAvail > 0
                             ? Colors.green.shade700
@@ -930,15 +937,13 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
             children: [
               Text(
                 'Requested: $_seatsRequested',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
               ),
               Text(
                 'Available: $capAvail / $capTotal',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontSize: 13,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color:
                       capAvail > 0
                           ? Colors.green.shade700
@@ -957,7 +962,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
           const SizedBox(height: 4),
           Text(
             'Tip: carpooling makes it cheaper per seat.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12, color: Colors.grey.shade600),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade600),
           ),
         ],
       ),
@@ -1034,7 +1041,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
           const SizedBox(height: 8),
           Text(
             'Pickup comes first, followed by destination.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12, color: Colors.grey.shade600),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade600),
           ),
         ],
       ),
@@ -1057,10 +1066,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         const SizedBox(height: 6),
         Text(
           label,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: color,
             fontWeight: FontWeight.w700,
-            fontSize: 13,
           ),
         ),
       ],
@@ -1185,7 +1193,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
           const SizedBox(height: 6),
           Text(
             'See how price changes as more seats are taken on this route.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12, color: Colors.grey.shade600),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade600),
           ),
           const SizedBox(height: 10),
           Table(
@@ -1236,7 +1246,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
 //             const SizedBox(height: 6),
 //             Text(
 //               'See how price changes as more seats are taken on this route.',
-//               style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12, color: Colors.grey.shade600),
+//               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
 //             ),
 //             const SizedBox(height: 10),
 //             SingleChildScrollView(
@@ -1274,9 +1284,8 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
                 padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
                 child: Text(
                   c,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     fontWeight: FontWeight.w700,
-                    fontSize: 12,
                   ),
                 ),
               ),
@@ -1290,7 +1299,7 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
             .map(
               (c) => Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-                child: Text(c, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13)),
+                child: Text(c, style: Theme.of(context).textTheme.bodySmall),
               ),
             )
             .toList(),
@@ -1303,7 +1312,9 @@ class _ConfirmRidePageState extends State<ConfirmRidePage> {
         Expanded(
           child: Text(
             label,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.black54, fontSize: 13),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: Colors.black54),
           ),
         ),
         Text(
@@ -1353,11 +1364,11 @@ class _Card extends StatelessWidget {
 //   Widget build(BuildContext context) {
 //     return Row(
 //       children: [
-//         Icon(icon, color: AppColors.purple),
+//         Icon(icon, color: const AppColors.purple),
 //         const SizedBox(width: 8),
 //         Text(
 //           text,
-//           style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700, fontSize: 16),
+//           style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
 //         ),
 //       ],
 //     );
@@ -1380,10 +1391,9 @@ class _CardTitle extends StatelessWidget {
         Expanded(
           child: Text(
             text,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-              fontSize: 16,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
@@ -1412,7 +1422,7 @@ class _ChipIcon extends StatelessWidget {
         children: [
           Icon(icon, size: 16, color: Colors.grey.shade700),
           const SizedBox(width: 6),
-          Text(label, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12)),
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
         ],
       ),
     );
@@ -1442,15 +1452,16 @@ class _InfoRow extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontSize: 16,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
                 ),
                 if (subtitle != null)
                   Text(
                     subtitle!,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12, color: Colors.grey.shade700),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade700),
                   ),
               ],
             ),
@@ -1486,7 +1497,9 @@ class _SeatStepper extends StatelessWidget {
         const SizedBox(width: 12),
         Text(
           '$value',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 18, fontWeight: FontWeight.w700),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
         ),
         const SizedBox(width: 12),
         _RoundIconBtn(
@@ -1496,7 +1509,9 @@ class _SeatStepper extends StatelessWidget {
         const Spacer(),
         Text(
           'Max: $max',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12, color: Colors.grey.shade600),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade600),
         ),
       ],
     );
@@ -1557,7 +1572,3 @@ class StarRatings extends StatelessWidget {
     );
   }
 }
-
-
-
-

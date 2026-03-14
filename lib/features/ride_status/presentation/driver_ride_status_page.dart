@@ -276,8 +276,9 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     } catch (e) {
       _error = e.toString();
     } finally {
-      if (!mounted) return;
-      setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -321,8 +322,9 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
     } catch (_) {
       // ignore
     } finally {
-      if (!mounted) return;
-      setState(() => _fetchingPassengerAgg = false);
+      if (mounted) {
+        setState(() => _fetchingPassengerAgg = false);
+      }
     }
   }
 
@@ -508,10 +510,9 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
         s.toUpperCase(),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
           color: c,
           fontWeight: FontWeight.w700,
-          fontSize: 12,
           letterSpacing: .3,
         ),
       ),
@@ -626,10 +627,9 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
         ),
         title: Text(
           'Driver Ride Details',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
             color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 18,
+            fontWeight: FontWeight.w700,
           ),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
@@ -778,15 +778,13 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                   decoration: BoxDecoration(
                     color: Colors.red.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: Colors.red.withValues(alpha: 0.25),
-                    ),
+                    border: Border.all(color: Colors.red.withValues(alpha: 0.25)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.cancel, size: 16, color: Colors.red),
-                      SizedBox(width: 8),
+                      const Icon(Icons.cancel, size: 16, color: Colors.red),
+                      const SizedBox(width: 8),
                       Text(
                         'This ride has been canceled',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -827,8 +825,9 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
                       children: [
                         Text(
                           'Passenger',
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(fontWeight: FontWeight.w700),
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                         const SizedBox(width: 6),
                         if (_passengerId != null)
@@ -1027,10 +1026,9 @@ class _DriverRideStatusPageState extends State<DriverRideStatusPage>
         ),
         title: Text(
           'Driver Ride Details',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
             color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 18,
+            fontWeight: FontWeight.w700,
           ),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
@@ -1108,16 +1106,16 @@ class _EarningsCard extends StatelessWidget {
               const SizedBox(width: 6),
               Text(
                 'Ride value',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const Spacer(),
               Text(
                 peso(fare),
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ],
           ),
@@ -1144,9 +1142,9 @@ class _EarningsCard extends StatelessWidget {
               const SizedBox(width: 6),
               Text(
                 'Your take',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               const Spacer(),
               Text(
@@ -1171,4 +1169,3 @@ extension _Kill on RealtimeChannel? {
     if (c != null) sb.removeChannel(c);
   }
 }
-

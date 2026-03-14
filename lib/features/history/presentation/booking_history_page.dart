@@ -269,112 +269,105 @@ class _BookingHistoryPageState extends State<BookingHistoryPage> {
                       'MMM d, y • h:mm a',
                     ).format(DateTime.parse(it['created_at'] as String));
                     final status = it['status'] as String;
-                    final pickupAddr =
-                        (it['pickup'] as Map)['address'] as String;
-                    final destAddr =
-                        (it['destination'] as Map)['address'] as String;
+                    final pickupAddr = (it['pickup'] as Map)['address'] as String;
+                    final destAddr = (it['destination'] as Map)['address'] as String;
 
                     return Card(
-                      elevation: 2,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Route line
+                    Text(
+                      '$pickupAddr → $destAddr',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      dt,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: Colors.black54),
+                    ),
+
+                    if (it['counterparty_name'] != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        _role == 'driver'
+                            ? 'Passenger: ${it['counterparty_name']}'
+                            : 'Driver: ${it['counterparty_name']}',
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Route line
-                            Text(
-                              '$pickupAddr → $destAddr',
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(fontWeight: FontWeight.w600),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              dt,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: Colors.black54),
-                            ),
+                    ],
+                    if (it['fare'] != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Fare: ₱${(it['fare'] as double).toStringAsFixed(2)}',
+                      ),
+                    ],
 
-                            if (it['counterparty_name'] != null) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                _role == 'driver'
-                                    ? 'Passenger: ${it['counterparty_name']}'
-                                    : 'Driver: ${it['counterparty_name']}',
-                              ),
-                            ],
-                            if (it['fare'] != null) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                'Fare: ₱${(it['fare'] as double).toStringAsFixed(2)}',
-                              ),
-                            ],
-
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 4,
-                                    horizontal: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: _statusColor(
-                                      status,
-                                    ).withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    status.toUpperCase(),
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall?.copyWith(
-                                      color: _statusColor(status),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                const Spacer(),
-                                TextButton(
-                                  onPressed: () {
-                                    final rideId = it['ride_id'] as String;
-                                    if (_role == 'driver') {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute<void>(
-                                          builder:
-                                              (_) => DriverRideStatusPage(
-                                                rideId: rideId,
-                                              ),
-                                        ),
-                                      );
-                                    } else {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute<void>(
-                                          builder:
-                                              (_) => PassengerRideStatusPage(
-                                                rideId: rideId,
-                                              ),
-                                        ),
-                                      );
-                                    }
-                                  },
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: purple,
-                                  ),
-                                  child: const Text('View details'),
-                                ),
-                              ],
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 4,
+                            horizontal: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _statusColor(status).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            status.toUpperCase(),
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: _statusColor(status),
+                              fontWeight: FontWeight.w600,
                             ),
-                          ],
+                          ),
                         ),
-                      ),
-                    );
-                  },
+                        const Spacer(),
+                        TextButton(
+                          onPressed: () {
+                            final rideId = it['ride_id'] as String;
+                            if (_role == 'driver') {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute<void>(
+                                  builder:
+                                      (_) =>
+                                          DriverRideStatusPage(rideId: rideId),
+                                ),
+                              );
+                            } else {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute<void>(
+                                  builder:
+                                      (_) => PassengerRideStatusPage(
+                                        rideId: rideId,
+                                      ),
+                                ),
+                              );
+                            }
+                          },
+                          style: TextButton.styleFrom(foregroundColor: purple),
+                          child: const Text('View details'),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }

@@ -8,8 +8,7 @@ import 'package:godavao/common/app_shadows.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:google_polyline_algorithm/google_polyline_algorithm.dart'
-    as gpa;
+import 'package:google_polyline_algorithm/google_polyline_algorithm.dart' as gpa;
 import 'package:geolocator/geolocator.dart';
 
 import 'package:godavao/core/osrm_service.dart';
@@ -611,7 +610,13 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
             ),
           ),
         ),
-        title: Text('Create Driver Route', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Text(
+          'Create Driver Route',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         iconTheme: const IconThemeData(color: Colors.white),
         actionsIconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -870,7 +875,9 @@ class _DriverRoutePageState extends State<DriverRoutePage> {
                   child: Text(
                     _error!,
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.red),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: Colors.red),
                   ),
                 ),
               ),
@@ -1033,15 +1040,15 @@ class _ModeSegment extends StatelessWidget {
                     onTap: () => onChanged(rm),
                     child: Center(
                       child: Text(
-                        rm == RouteMode.osrm ? 'OSRM' : 'Manual',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        rm == RouteMode.osrm ? "OSRM" : "Manual",
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
                           color: selected ? Colors.white : _purpleDark,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 0.3,
                           shadows:
                               selected
-                                  ? const [
-                                    Shadow(
+                                  ? [
+                                    const Shadow(
                                       color: Colors.black26,
                                       blurRadius: 2,
                                       offset: Offset(0, 1),
@@ -1173,7 +1180,8 @@ class _CollapsibleRouteSheet extends StatelessWidget {
                             const SizedBox(width: 6),
                             Text(
                               osrmInfo ?? manualInfo!,
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
                             ),
                           ],
                         ),
@@ -1243,7 +1251,8 @@ class _CollapsibleRouteSheet extends StatelessWidget {
                                     vehicleSeats == null
                                         ? '—'
                                         : '$vehicleSeats seats',
-                                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                                    style: Theme.of(context).textTheme.bodyMedium
+                                        ?.copyWith(fontWeight: FontWeight.w600),
                                   ),
                                 ),
                               ],
@@ -1442,5 +1451,3 @@ class _GlassFab extends StatelessWidget {
     );
   }
 }
-
-

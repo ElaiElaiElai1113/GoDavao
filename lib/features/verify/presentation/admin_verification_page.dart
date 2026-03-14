@@ -422,16 +422,14 @@ class _VerificationCard extends StatelessWidget {
                     children: [
                       Text(
                         name,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontSize: 16,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                       if (row['phone'] != null && row['phone'] != '—')
                         Text(
                           row['phone'] as String,
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            fontSize: 13,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: Colors.black54,
                           ),
                         ),
@@ -449,14 +447,18 @@ class _VerificationCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               'Reviewed: $reviewed',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54, fontSize: 12.5),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.black54),
             ),
             if (notes.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
                   notes,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black87, fontSize: 12.5),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.black87),
                 ),
               ),
             // --- Verification images (Pending only) ---
@@ -466,9 +468,9 @@ class _VerificationCard extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  _idImageBox(context, row['id_front_key'], 'Front ID'),
-                  _idImageBox(context, row['id_back_key'], 'Back ID'),
-                  _idImageBox(context, row['selfie_key'], 'Selfie'),
+                  _idImageBox(row['id_front_key'], 'Front ID'),
+                  _idImageBox(row['id_back_key'], 'Back ID'),
+                  _idImageBox(row['selfie_key'], 'Selfie'),
                 ],
               ),
             ],
@@ -510,7 +512,7 @@ class _VerificationCard extends StatelessWidget {
   }
 }
 
-Widget _idImageBox(BuildContext context, dynamic key, String label) {
+Widget _idImageBox(dynamic key, String label) {
   final keyStr = key?.toString() ?? '';
   if (keyStr.isEmpty) {
     return Container(
@@ -544,7 +546,7 @@ Widget _idImageBox(BuildContext context, dynamic key, String label) {
         ),
       ),
       const SizedBox(height: 4),
-      Text(label, style: Theme.of(context).textTheme.bodySmall),
+      Text(label),
     ],
   );
 }
@@ -562,7 +564,10 @@ class _Tag extends StatelessWidget {
     ),
     child: Text(
       text,
-      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color, fontSize: 11, fontWeight: FontWeight.w700),
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: color,
+        fontWeight: FontWeight.w700,
+      ),
     ),
   );
 }
@@ -636,8 +641,3 @@ extension on String {
   String capitalize() =>
       isEmpty ? this : '${this[0].toUpperCase()}${substring(1)}';
 }
-
-
-
-
-

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:godavao/common/app_colors.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:godavao/common/app_colors.dart';
 
 class AppTheme {
   static ThemeData light() {
@@ -102,37 +101,37 @@ class AppTheme {
 
   static TextTheme _textTheme(TextTheme base) {
     return base.copyWith(
-      titleLarge: const TextStyle(
+      titleLarge: base.titleLarge?.copyWith(
         fontSize: 22,
         fontWeight: FontWeight.w800,
         color: Colors.black87,
       ),
-      titleMedium: const TextStyle(
+      titleMedium: base.titleMedium?.copyWith(
         fontSize: 18,
         fontWeight: FontWeight.w700,
         color: Colors.black87,
       ),
-      titleSmall: const TextStyle(
+      titleSmall: base.titleSmall?.copyWith(
         fontSize: 16,
         fontWeight: FontWeight.w700,
         color: Colors.black87,
       ),
-      bodyLarge: const TextStyle(
+      bodyLarge: base.bodyLarge?.copyWith(
         fontSize: 15,
         fontWeight: FontWeight.w600,
         color: Colors.black87,
       ),
-      bodyMedium: const TextStyle(
+      bodyMedium: base.bodyMedium?.copyWith(
         fontSize: 14,
         fontWeight: FontWeight.w500,
         color: Colors.black87,
       ),
-      bodySmall: const TextStyle(
+      bodySmall: base.bodySmall?.copyWith(
         fontSize: 12,
         fontWeight: FontWeight.w500,
         color: Colors.black87,
       ),
-      labelLarge: const TextStyle(
+      labelLarge: base.labelLarge?.copyWith(
         fontSize: 14,
         fontWeight: FontWeight.w700,
         color: Colors.black87,
